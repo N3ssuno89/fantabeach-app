@@ -1237,7 +1237,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     <span style={{color:B.grayLight,fontSize:12}}>›</span>
                   </button>
                 ))}
-                <button onClick={()=>showNotif("Logout: in sviluppo!")}
+                <button onClick={()=>{setShowMenu(false);onLogout();}}
                   style={{width:"100%",padding:"12px 16px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${B.sandDeep}`,textAlign:"left"}}>
                   <div style={{width:36,height:36,borderRadius:10,background:B.orangePale,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     <span style={{fontSize:18}}>🚪</span>
