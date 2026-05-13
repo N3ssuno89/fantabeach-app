@@ -1437,10 +1437,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       <div key={i} style={{width:72,height:72,borderRadius:"50%",border:`2px dashed ${B.grayLight}`,display:"flex",alignItems:"center",justifyContent:"center",color:B.grayLight,fontSize:24}}>+</div>
                     ))}
                   </div>
-                </div>
-
                   </div>
-                </div> {/* fine IN CAMPO */}
 
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                   <div style={{flex:1,height:1,background:B.creamDark}}/>
