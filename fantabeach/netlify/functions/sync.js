@@ -122,8 +122,10 @@ exports.handler = async (event) => {
         .filter(a => a.player_id); // solo atleti con ID trovato
     };
 
-    const men   = processRanking((rankMRes.data.values || []).slice(1), "M");
-    const women = processRanking((rankWRes.data.values || []).slice(1), "F");
+    const men   = processRanking((rankMRes.data.values || []).slice(1), "M")
+      .sort((a,b) => a.ranking - b.ranking);
+    const women = processRanking((rankWRes.data.values || []).slice(1), "F")
+      .sort((a,b) => a.ranking - b.ranking);
     const allAthletes = [...women, ...men];
 
     // ── Salva snapshot su Supabase ──
