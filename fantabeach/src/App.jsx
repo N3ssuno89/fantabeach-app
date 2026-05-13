@@ -150,6 +150,8 @@ const enrichAthlete = (a) => {
   const cost    = parseInt(a.cost)    || getPrice(ranking);
   return {
     ...a,
+    id:          a.id       || a.player_id,
+    name:        a.name     || a.player_name || "—",
     ranking,
     cost,
     prevCost:    parseInt(a.cost_prev) || parseInt(a.prevCost) || cost,
@@ -1469,7 +1471,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 title:"Risultati Tappa",
                 desc:`Ultimo caricamento: ${lastSyncResults||"mai"} ${lastSyncResultsOk===true?"✓":lastSyncResultsOk===false?"✗":""}`,
                 isOpen: null,
-                action:()=>showNotif("In sviluppo — richiede Google Sheets API")
+                action:()=>showNotif("In sviluppo — prossimamente")
               },
             ].map((item,i)=>(
               <div key={i} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
@@ -1486,8 +1488,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     {item.isOpen?"Chiudi":"Apri"}
                   </button>
                 ):(
-                  <button onClick={item.action} disabled={syncLoading} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${B.grayLight}`,background:syncLoading?B.grayPale:B.greenPale,color:syncLoading?B.gray:B.greenDark,fontSize:11,fontWeight:"bold",cursor:syncLoading?"not-allowed":"pointer",fontFamily:"Georgia,serif",flexShrink:0}}>
-                    {syncLoading?"...":"Sync"}
+                  <button onClick={item.action} disabled={item.title==="Ranking FIPAV"?syncLoading:false}
+                    style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${B.grayLight}`,
+                    background:B.greenPale,color:B.greenDark,
+                    fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif",flexShrink:0}}>
+                    {item.title==="Ranking FIPAV" && syncLoading ? "..." : "Sync"}
                   </button>
                 )}
               </div>
