@@ -157,7 +157,7 @@ const enrichAthlete = (a) => {
     prevCost,
     rankingPrev: rankPrev,
     rankDelta:   rankPrev !== ranking ? rankPrev - ranking : null, // positivo = salito
-    costHistory: Array.from({length:5}, (_,j) => getPrice(Math.max(1, ranking + (2-j)))),
+    costHistory: prevCost !== cost ? [prevCost, cost] : [cost],
     results:     a.results || [],
   };
 };
@@ -1030,7 +1030,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               ))}
             </div>
 
-            {!canTrade()&&<div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:12,color:B.orange,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>🔒</span>{league.type==="classic"?"Iscrizioni chiuse":"Mercato chiuso — riapre lunedì 09:00"}</div>}
+            {!canTrade()&&(()=>{
+              const activeTappa = EVENTS.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender);
+              const msg = activeTappa
+                ? `🔴 Mercato chiuso — ${activeTappa.name} in corso`
+                : league.type==="classic"
+                  ? "🔒 Classic: mercato chiuso per tutta la stagione"
+                  : "🔒 Mercato chiuso — riapre lunedì 09:00";
+              return <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:12,color:B.orange,display:"flex",alignItems:"center",gap:8}}>{msg}</div>;
+            })()}
 
             {marketTab==="athletes"&&(
               <div>
@@ -1147,90 +1155,170 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {/* Vista punti durante tappa in corso */}
             {(()=>{
               const activeEvent = EVENTS.find(e => e.status==="In corso" && (e.gender||"").toUpperCase()===league.gender);
-              const isLocked = !canTrade() && activeEvent;
-              if (!isLocked || roster.length===0) return null;
+              if (!activeEvent || roster.length===0) return null;
               const eventMatches = MOCK_MATCHES_V2[activeEvent.id] || [];
               const et = EVENT_TYPE_META[activeEvent.type]||EVENT_TYPE_META.Silver;
 
-              // Calcola punti per ogni mio atleta
-              const calcPlayerPts = (athleteName) => {
-                let total = 0;
-                const bonusDetails = [];
+              // Calcola partite di un atleta con punti per partita
+              const calcPlayerMatches = (athleteName) => {
                 const cognome = athleteName.split(" ")[0].toLowerCase();
+                const matchResults = [];
+                let grandTotal = 0;
                 eventMatches.forEach(m => {
                   const inA = m.teamA?.toLowerCase().includes(cognome);
                   const inB = m.teamB?.toLowerCase().includes(cognome);
                   if (!inA && !inB) return;
                   const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
-                  bonuses.forEach(b => {
-                    const meta = BONUS_META[b];
-                    if (meta?.pts) {
-                      total += meta.pts * (activeEvent.weight||1);
-                      bonusDetails.push({...meta, code:b});
-                    }
+                  // Punti base (primo bonus = win/loss)
+                  const baseMeta = BONUS_META[bonuses[0]];
+                  const basePts = (baseMeta?.pts || 0) * (et.weight||1);
+                  // Bonus aggiuntivi (closeSet, coachWin, ecc. — tutto tranne il primo)
+                  const extraBonuses = bonuses.slice(1).filter(b => BONUS_META[b]);
+                  const extraPts = extraBonuses.reduce((s,b) => s + (BONUS_META[b]?.pts||0) * (et.weight||1), 0);
+                  const totalPts = basePts + extraPts;
+                  grandTotal += totalPts;
+                  matchResults.push({
+                    phase: m.phase,
+                    opponent: inA ? m.teamB : m.teamA,
+                    result: m.result,
+                    isBye: m.isBye,
+                    basePts,
+                    extraBonuses,
+                    extraPts,
+                    totalPts,
                   });
                 });
-                return {total, bonusDetails};
+                return {matchResults, grandTotal};
               };
 
+              const coachOnField = coachInField[leagueId];
+
               return (
-                <div style={{marginBottom:16}}>
-                  <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"10px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:16}}>🔴</span>
+                <div>
+                  {/* Header tappa — compatto, non ripetitivo */}
+                  <div style={{background:B.greenDark,borderRadius:12,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,color:B.white}}>
                     <div style={{flex:1}}>
-                      <div style={{fontSize:12,fontWeight:"bold",color:B.orange}}>Tappa in corso: {activeEvent.name}</div>
-                      <div style={{fontSize:10,color:B.gray}}>Mercato bloccato · Aggiorna per i punti live</div>
+                      <div style={{fontWeight:"bold",fontSize:15}}>🔴 {activeEvent.name}</div>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>Mercato bloccato durante la tappa</div>
                     </div>
-                    <span style={{fontSize:11,background:et.bg,color:et.color,padding:"2px 8px",borderRadius:8,fontWeight:"bold"}}>×{et.weight}</span>
+                    <div style={{background:et.bg,color:et.color,padding:"4px 10px",borderRadius:8,fontSize:12,fontWeight:"bold"}}>×{et.weight}</div>
+                  </div>
+
+                  {/* Formazione schierata */}
+                  <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
+                    <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>La tua formazione</div>
+                    <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                      {starters.map(a=>(
+                        <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                          <AthleteAvatar athlete={a} size={64} isStarter={true} isCaptain={isCaptain(a)}/>
+                          <div style={{fontSize:9,color:isCaptain(a)?B.orange:B.greenDark,fontWeight:"bold",textAlign:"center",maxWidth:64,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {isCaptain(a)&&"★ "}{a.name.split(" ")[0]}
+                          </div>
+                          <div style={{fontSize:8,color:B.gray}}>{getCategory(a.ranking).label}</div>
+                        </div>
+                      ))}
+                      {/* Coach alla stessa altezza dei titolari se schierato */}
+                      {currentCoach&&coachOnField&&(
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                          <div style={{width:64,height:64,borderRadius:"50%",background:B.yellowPale,border:`2px solid ${B.yellow}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🧢</div>
+                          <div style={{fontSize:9,color:"#7A4F00",fontWeight:"bold",textAlign:"center",maxWidth:64,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentCoach.name.split(" ")[0]}</div>
+                          <div style={{fontSize:8,color:B.gray}}>Coach</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* Panchina */}
+                    {(bench.length>0||(currentCoach&&!coachOnField))&&(
+                      <div>
+                        <div style={{fontSize:9,color:B.gray,textAlign:"center",marginBottom:8,letterSpacing:1}}>— PANCHINA —</div>
+                        <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+                          {bench.map(a=>(
+                            <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,opacity:0.6}}>
+                              <AthleteAvatar athlete={a} size={48} isStarter={false} isCaptain={false}/>
+                              <div style={{fontSize:9,color:B.gray,textAlign:"center",maxWidth:48,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name.split(" ")[0]}</div>
+                            </div>
+                          ))}
+                          {currentCoach&&!coachOnField&&(
+                            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,opacity:0.6}}>
+                              <div style={{width:48,height:48,borderRadius:"50%",background:B.grayPale,border:`2px dashed ${B.grayLight}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🧢</div>
+                              <div style={{fontSize:9,color:B.gray}}>{currentCoach.name.split(" ")[0]}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Legenda */}
-                  <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"8px 10px",marginBottom:10}}>
-                    <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>Legenda punti</div>
+                  <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:12}}>
+                    <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>Legenda bonus/malus</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {Object.entries(BONUS_META).map(([k,m])=>(
-                        <span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,background:m.bg,color:m.color,fontSize:9,padding:"1px 6px",borderRadius:20,border:`1px solid ${m.color}22`}}>
-                          {m.icon} {m.pts!==undefined?(m.pts>0?`+${m.pts}`:m.pts===0?"0":`${m.pts}`):`×${m.mult}`}
-                          <span style={{opacity:.7}}>{m.label}</span>
+                      {Object.entries(BONUS_META).filter(([k])=>k!=="win20"&&k!=="win21"&&k!=="loss02"&&k!=="loss12"&&k!=="bye").map(([k,m])=>(
+                        <span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,background:m.bg,color:m.color,fontSize:9,padding:"2px 7px",borderRadius:20,border:`1px solid ${m.color}22`}}>
+                          {m.icon} {m.pts!==undefined?(m.pts>0?`+${m.pts}`:`${m.pts}`):`×${m.mult}`} {m.label}
                         </span>
                       ))}
                     </div>
                   </div>
 
-                  {/* Punti per atleta */}
-                  <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>I miei punti</div>
-                  {[...starters, ...bench].map((a,i)=>{
-                    const {total, bonusDetails} = calcPlayerPts(a.name);
+                  {/* Partite per atleta */}
+                  {[...starters,...bench].map(a=>{
+                    const {matchResults, grandTotal} = calcPlayerMatches(a.name);
                     const isCapt = isCaptain(a);
                     const isStart = isStarter(a);
-                    const finalPts = isCapt ? total * 1.3 : total;
+                    const finalTotal = isCapt ? grandTotal * 1.3 : grandTotal;
+                    if (matchResults.length === 0) return (
+                      <div key={a.id} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:0.5}}>
+                        <div style={{fontSize:12,color:B.gray}}>{isCapt?"★ ":""}{a.name} — nessuna partita trovata</div>
+                      </div>
+                    );
                     return (
-                      <div key={a.id} style={{background:B.white,border:`1px solid ${isStart?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isStart?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:7,opacity:isStart?1:0.7}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:bonusDetails.length?8:0}}>
+                      <div key={a.id} style={{background:B.white,border:`1px solid ${isStart?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isStart?B.greenDark:B.sandDeep}`,borderRadius:10,marginBottom:10,overflow:"hidden",opacity:isStart?1:0.75}}>
+                        {/* Header atleta */}
+                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${B.creamDark}`}}>
                           <div style={{flex:1}}>
-                            <div style={{fontSize:13,fontWeight:"bold",color:B.dark,display:"flex",alignItems:"center",gap:5}}>
-                              {isCapt&&<span style={{color:B.yellow,fontSize:14}}>★</span>}
-                              {a.name}
-                              {!isStart&&<span style={{fontSize:9,color:B.gray,background:B.grayPale,padding:"1px 6px",borderRadius:8}}>Panchina</span>}
+                            <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                              {isCapt&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{a.name}
+                              {!isStart&&<span style={{fontSize:9,color:B.gray,background:B.grayPale,padding:"1px 6px",borderRadius:8,marginLeft:6}}>Panchina</span>}
                             </div>
-                            <div style={{fontSize:10,color:B.gray,marginTop:1}}>#{a.ranking} · {getCategory(a.ranking).label}</div>
+                            <div style={{fontSize:10,color:B.gray}}>#{a.ranking} · {getCategory(a.ranking).label}</div>
                           </div>
                           <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:18,fontWeight:"bold",color:finalPts>0?B.greenDark:B.gray}}>
-                              {finalPts>0?`+${finalPts.toFixed(1)}`:finalPts===0?"—":finalPts.toFixed(1)} pt
+                            <div style={{fontSize:18,fontWeight:"bold",color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
+                              {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
                             </div>
-                            {isCapt&&total>0&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3 cap</div>}
+                            {isCapt&&grandTotal>0&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3</div>}
                           </div>
                         </div>
-                        {bonusDetails.length>0&&(
-                          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                            {bonusDetails.map((bd,j)=>(
-                              <span key={j} style={{display:"inline-flex",alignItems:"center",gap:3,background:bd.bg,color:bd.color,fontSize:10,padding:"2px 8px",borderRadius:20,border:`1px solid ${bd.color}33`,fontWeight:"bold"}}>
-                                {bd.icon} {bd.pts>0?`+${bd.pts}`:bd.pts} <span style={{fontWeight:"normal",opacity:.8}}>· ×{activeEvent.weight}</span>
-                              </span>
-                            ))}
+                        {/* Partite */}
+                        {matchResults.map((mr,j)=>(
+                          <div key={j} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
+                            <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:60}}>{mr.phase}</div>
+                            <div style={{flex:1,fontSize:10,color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              vs {mr.isBye?"—":mr.opponent||"—"}
+                            </div>
+                            <div style={{fontSize:10,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0}}>
+                              {mr.basePts>0?`+${mr.basePts.toFixed(1)}`:mr.basePts.toFixed(1)}
+                            </div>
+                            {mr.extraBonuses.length>0&&(
+                              <div style={{display:"flex",gap:2,flexShrink:0}}>
+                                {mr.extraBonuses.map((b,bi)=>(
+                                  <span key={bi} title={`${BONUS_META[b]?.label}: ${BONUS_META[b]?.pts>0?"+":""}${BONUS_META[b]?.pts}`}
+                                    style={{fontSize:12}}>{BONUS_META[b]?.icon}</span>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{fontSize:11,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:36,textAlign:"right"}}>
+                              {mr.totalPts>0?`+${mr.totalPts.toFixed(1)}`:mr.totalPts===0?"0":mr.totalPts.toFixed(1)}
+                            </div>
                           </div>
-                        )}
+                        ))}
+                        {/* Totale atleta */}
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:B.sandDark,fontSize:11,fontWeight:"bold"}}>
+                          <span style={{color:B.gray}}>Totale {isCapt?"(cap ×1.3)":""}</span>
+                          <span style={{color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
+                            {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1239,17 +1327,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   {(()=>{
                     let tot = 0;
                     starters.forEach(a => {
-                      const {total} = calcPlayerPts(a.name);
-                      tot += isCaptain(a) ? total * 1.3 : total;
+                      const {grandTotal} = calcPlayerMatches(a.name);
+                      tot += isCaptain(a) ? grandTotal * 1.3 : grandTotal;
                     });
                     return (
-                      <div style={{background:B.greenDark,borderRadius:10,padding:"12px 14px",marginTop:4,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span style={{color:"rgba(255,255,255,.8)",fontSize:13}}>Totale titolari</span>
-                        <span style={{color:B.white,fontWeight:"bold",fontSize:20}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
+                      <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                        <div>
+                          <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
+                          <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>Solo titolari · ×{et.weight} {et.label}</div>
+                        </div>
+                        <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
                       </div>
                     );
                   })()}
-                  <div style={{height:12}}/>
                 </div>
               );
             })()}
@@ -2605,11 +2695,12 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
 
   // Grafico storico prezzi — responsivo con date reali
   const history = a.costHistory || [a.cost];
-  // Date mock — quando avremo dati reali, usare i nomi tappe
-  const EVENT_DATES = ["Falconara","Termoli","Ravenna","Modica","San Cataldo"];
-  const tLabels = history.map((_, i) =>
-    i === history.length - 1 ? "Ora" : (EVENT_DATES[i] || `T-${history.length-1-i}`)
-  );
+  const EVENT_DATES = ["Falconara","Termoli","Ravenna","Modica","San Cataldo","Montesilvano","Cordenons","Vasto","Caorle"];
+  const tLabels = history.length === 1
+    ? ["Ora"]
+    : history.map((_, i) =>
+        i === history.length - 1 ? "Ora" : (EVENT_DATES[i] || `Tappa ${i+1}`)
+      );
   const minV = Math.min(...history) * 0.88;
   const maxV = Math.max(...history) * 1.08;
   const range = maxV - minV || 1;
@@ -2796,7 +2887,9 @@ const MOCK_MATCHES_V2 = {
   {phase:"Pool 2",teamA:"Orciani S. - Pratesi A.",teamB:"Boscolo G. - Cicola L.",scoreA:"21-19 18-21 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
   {phase:"Pool 2",teamA:"Sanguigni C. - Balducci S.",teamB:"Puccinelli C. - Belliero P.",scoreA:"12-21 17-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
   {phase:"Pool 2",teamA:"Francesconi A. - Maestroni E.",teamB:"Barboni A. - Schwan C.",scoreA:"18-21 21-16 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
-  {phase:"BYE Pool",teamA:"Gradini A. - Frasca F.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
+  {phase:"Pool 1",teamA:"Mambriani E. - Resnati R.",teamB:"Gobbo I. - Arcaini S.",scoreA:"19-21 21-18 12-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
+  {phase:"Pool 2",teamA:"Gobbo I. - Arcaini S.",teamB:"Mambriani E. - Resnati R.",scoreA:"21-17 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Round of 12",teamA:"Gobbo I. - Arcaini S.",teamB:"Cimmino S. - Sarra A.",scoreA:"21-19 18-21 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
   {phase:"BYE Pool",teamA:"Rottoli S. - Shpuza O.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
   {phase:"BYE Pool",teamA:"Benazzi G. - Ditta E.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
   {phase:"BYE Pool",teamA:"Puccinelli C. - Belliero P.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
