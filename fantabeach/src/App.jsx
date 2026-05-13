@@ -721,7 +721,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         const newCaptains = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
         lineup_data.forEach(l => {
           if (newLineups[l.league_id] !== undefined) {
-            newLineups[l.league_id].push(l.player_id);
+            // Solo titolari e capitano vanno nella lineup (non riserve)
+            if (l.role === "titolare" || l.role === "capitano") {
+              newLineups[l.league_id].push(l.player_id);
+            }
             if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
           }
         });
@@ -2573,20 +2576,16 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
   const rankDelta = a.rankDelta || null;
   const photo = ATHLETE_PHOTOS[a.id];
 
-  // Grafico storico prezzi — usa larghezza fissa con padding simmetrico
+  // Grafico storico prezzi — responsivo con date reali
   const history = a.costHistory || [a.cost];
-  const W = 300, H = 90, PAD = 20;
-  const innerW = W - PAD * 2;
+  // Date mock — quando avremo dati reali, usare i nomi tappe
+  const EVENT_DATES = ["Falconara","Termoli","Ravenna","Modica","San Cataldo"];
+  const tLabels = history.map((_, i) =>
+    i === history.length - 1 ? "Ora" : (EVENT_DATES[i] || `T-${history.length-1-i}`)
+  );
   const minV = Math.min(...history) * 0.88;
   const maxV = Math.max(...history) * 1.08;
   const range = maxV - minV || 1;
-  const px = (i) => PAD + (i / Math.max(history.length - 1, 1)) * innerW;
-  const py = (v) => H - 18 - ((v - minV) / range) * (H - 36);
-  const points = history.map((v,i) => `${px(i)},${py(v)}`).join(" ");
-  const areaPoints = `${PAD},${H-18} ${points} ${px(history.length-1)},${H-18}`;
-  const tLabels = history.length === 5
-    ? ["T-4","T-3","T-2","T-1","Ora"]
-    : history.map((_,i) => i === history.length-1 ? "Ora" : `T-${history.length-1-i}`);
 
   // Risultati mock se vuoti
   const results = a.results?.length > 0 ? a.results : [
@@ -2659,29 +2658,40 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
       {/* GRAFICO STORICO PREZZI */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px",marginBottom:12}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>Andamento Prezzo</div>
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block"}}>
-          {/* Area */}
-          <polygon points={areaPoints} fill={B.greenDark} fillOpacity="0.08"/>
-          {/* Linea */}
-          <polyline points={points} fill="none" stroke={B.greenDark} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          {/* Punti con valore */}
-          {history.map((v,i)=>(
-            <g key={i}>
-              <circle cx={px(i)} cy={py(v)} r="5" fill={i===history.length-1?B.orange:B.greenDark}/>
-              <text x={px(i)} y={py(v)-10} textAnchor="middle" fontSize="10" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${v}</text>
-            </g>
-          ))}
-        </svg>
-        {/* Label date — allineate ai punti tramite flex con larghezze proporzionali */}
-        <div style={{display:"flex",marginTop:4,paddingLeft:`${(PAD/W*100).toFixed(1)}%`,paddingRight:`${(PAD/W*100).toFixed(1)}%`}}>
-          {tLabels.map((l,i)=>(
-            <div key={i} style={{flex:1,textAlign:i===0?"left":i===tLabels.length-1?"right":"center",
-              color:i===tLabels.length-1?B.orange:B.gray,
-              fontSize:10,fontWeight:i===tLabels.length-1?"bold":"normal"}}>
-              {l}
-            </div>
-          ))}
-        </div>
+        {(() => {
+          const W = 300, H = 110, PAD = 24;
+          const innerW = W - PAD * 2;
+          const px = (i) => PAD + (i / Math.max(history.length - 1, 1)) * innerW;
+          const py = (v) => H - 22 - ((v - minV) / range) * (H - 44);
+          const pts = history.map((v,i) => `${px(i)},${py(v)}`).join(" ");
+          const area = `${PAD},${H-22} ${pts} ${px(history.length-1)},${H-22}`;
+          return (
+            <>
+              <svg width="100%" height="auto" viewBox={`0 0 ${W} ${H}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{display:"block",maxHeight:"140px"}}>
+                <polygon points={area} fill={B.greenDark} fillOpacity="0.07"/>
+                <polyline points={pts} fill="none" stroke={B.greenDark} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                {history.map((v,i)=>(
+                  <g key={i}>
+                    <circle cx={px(i)} cy={py(v)} r="4" fill={i===history.length-1?B.orange:B.greenDark}/>
+                    <text x={px(i)} y={py(v)-8} textAnchor="middle" fontSize="9" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${v}</text>
+                  </g>
+                ))}
+              </svg>
+              <div style={{display:"flex",marginTop:6}}>
+                {tLabels.map((l,i)=>(
+                  <div key={i} style={{
+                    flex:1, textAlign: i===0?"left": i===tLabels.length-1?"right":"center",
+                    fontSize:10, fontWeight:i===tLabels.length-1?"bold":"normal",
+                    color:i===tLabels.length-1?B.orange:B.gray,
+                    paddingLeft: i===0?"4px":0, paddingRight: i===tLabels.length-1?"4px":0
+                  }}>{l}</div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* ULTIMI RISULTATI */}
@@ -2724,74 +2734,61 @@ const BONUS_META = {
 
 // Mock matches arricchiti con bonus/malus
 const MOCK_MATCHES_V2 = {
-  "E0001": [
-    {
-      phase:"Qualifiche 1",
-      teamA:"Gradini A. - Frasca F.", teamB:"Bianchi G. - Scampoli C.",
-      scoreA:"21-19 23-21", result:"2-0",
-      bonusA:["win20","closeSet","closeSet"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Qualifiche 1",
-      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Rottoli S. - Ditta E.",
-      scoreA:"21-14 21-17", result:"2-0",
-      bonusA:["win20"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Qualifiche 2",
-      teamA:"Gradini A. - Frasca F.", teamB:"Salvador E. - Piccoli A.",
-      scoreA:"21-15 21-18", result:"2-0",
-      bonusA:["win20"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Pool",
-      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Gradini A. - Frasca F.",
-      scoreA:"21-18 19-21 15-12", result:"2-1",
-      bonusA:["win21"], bonusB:["loss12"],
-      isBye:false
-    },
-    {
-      phase:"Pool",
-      teamA:"Bianchi G. - Scampoli C.", teamB:"Sanguigni C. - Benazzi G.",
-      scoreA:"21-16 21-19", result:"2-0",
-      bonusA:["win20"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Round of 8",
-      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Bianchi G. - Scampoli C.",
-      scoreA:null, result:"BYE",
-      bonusA:["bye"], bonusB:[],
-      isBye:true
-    },
-    {
-      phase:"Semifinale",
-      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Gradini A. - Frasca F.",
-      scoreA:"21-17 21-19", result:"2-0",
-      bonusA:["win20"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Finale 3° posto",
-      teamA:"Gradini A. - Frasca F.", teamB:"Bianchi G. - Scampoli C.",
-      scoreA:"21-18 21-16", result:"2-0",
-      bonusA:["win20"], bonusB:["loss02"],
-      isBye:false
-    },
-    {
-      phase:"Finale 1° posto",
-      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Breidenbach S. - Scampoli C.",
-      scoreA:"21-19 23-21", result:"2-0",
-      bonusA:["win20","closeSet","closeSet"], bonusB:["loss02"],
-      isBye:false
-    },
+  "E0003": [
+  {phase:"Qualifiche 1",teamA:"Cimmino S. - Sarra A.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Genovesi G. - Russo G.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Aime S. - Enzo I.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Zanon C. - Di Prima V.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Deizi N. - Toppetti L.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Foscari F. - Saccullo G.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Francesconi A. - Maestroni E.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Porporati I. - Cacco V.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Roscigno V. - Marchelli R.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Orciani S. - Pratesi A.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Bozzoli M. - Bina N.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 1",teamA:"Barboni A. - Schwan C.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
+  {phase:"Qualifiche 2",teamA:"Cimmino S. - Sarra A.",teamB:"Genovesi G. - Russo G.",scoreA:"22-20 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet","closeSet"],isBye:false},
+  {phase:"Qualifiche 2",teamA:"Aime S. - Enzo I.",teamB:"Zanon C. - Di Prima V.",scoreA:"21-19 20-22 10-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
+  {phase:"Qualifiche 2",teamA:"Deizi N. - Toppetti L.",teamB:"Foscari F. - Saccullo G.",scoreA:"21-15 21-10",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Qualifiche 2",teamA:"Francesconi A. - Maestroni E.",teamB:"Porporati I. - Cacco V.",scoreA:"21-16 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
+  {phase:"Qualifiche 2",teamA:"Roscigno V. - Marchelli R.",teamB:"Orciani S. - Pratesi A.",scoreA:"16-21 14-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Qualifiche 2",teamA:"Bozzoli M. - Bina N.",teamB:"Barboni A. - Schwan C.",scoreA:"18-21 7-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Pool 1",teamA:"Gradini A. - Frasca F.",teamB:"Zanon C. - Di Prima V.",scoreA:"21-8 21-12",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Pool 1",teamA:"Torrese V. - Biancini M.",teamB:"Salvador E. - Massi V.",scoreA:"14-21 5-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Pool 1",teamA:"Rottoli S. - Shpuza O.",teamB:"Deizi N. - Toppetti L.",scoreA:"21-17 21-14",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Pool 1",teamA:"Cimmino S. - Sarra A.",teamB:"Mancinelli M. - Sestini E.",scoreA:"16-21 21-10 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
+  {phase:"Pool 1",teamA:"Benazzi G. - Ditta E.",teamB:"Orciani S. - Pratesi A.",scoreA:"21-11 21-18",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Pool 1",teamA:"Boscolo G. - Cicola L.",teamB:"Annibalini E. - Toti G.",scoreA:"17-21 21-15 17-19",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
+  {phase:"Pool 1",teamA:"Sanguigni C. - Balducci S.",teamB:"Francesconi A. - Maestroni E.",scoreA:"21-14 21-12",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Pool 1",teamA:"Barboni A. - Schwan C.",teamB:"Puccinelli C. - Belliero P.",scoreA:"21-15 18-21 8-15",result:"1-2",bonusA:["loss12"],bonusB:["win21"],isBye:false},
+  {phase:"Pool 2",teamA:"Gradini A. - Frasca F.",teamB:"Salvador E. - Massi V.",scoreA:"21-16 20-22 15-9",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12"],isBye:false},
+  {phase:"Pool 2",teamA:"Zanon C. - Di Prima V.",teamB:"Torrese V. - Biancini M.",scoreA:"18-21 16-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Pool 2",teamA:"Rottoli S. - Shpuza O.",teamB:"Mancinelli M. - Sestini E.",scoreA:"21-14 21-15",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Pool 2",teamA:"Deizi N. - Toppetti L.",teamB:"Cimmino S. - Sarra A.",scoreA:"21-14 18-21 15-10",result:"2-1",bonusA:["win21"],bonusB:["loss12"],isBye:false},
+  {phase:"Pool 2",teamA:"Benazzi G. - Ditta E.",teamB:"Annibalini E. - Toti G.",scoreA:"22-20 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet","closeSet"],isBye:false},
+  {phase:"Pool 2",teamA:"Orciani S. - Pratesi A.",teamB:"Boscolo G. - Cicola L.",scoreA:"21-19 18-21 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
+  {phase:"Pool 2",teamA:"Sanguigni C. - Balducci S.",teamB:"Puccinelli C. - Belliero P.",scoreA:"12-21 17-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Pool 2",teamA:"Francesconi A. - Maestroni E.",teamB:"Barboni A. - Schwan C.",scoreA:"18-21 21-16 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
+  {phase:"BYE Pool",teamA:"Gradini A. - Frasca F.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
+  {phase:"BYE Pool",teamA:"Rottoli S. - Shpuza O.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
+  {phase:"BYE Pool",teamA:"Benazzi G. - Ditta E.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
+  {phase:"BYE Pool",teamA:"Puccinelli C. - Belliero P.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
+  {phase:"Round of 12",teamA:"Torrese V. - Biancini M.",teamB:"Sanguigni C. - Balducci S.",scoreA:"17-21 15-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Round of 12",teamA:"Annibalini E. - Toti G.",teamB:"Deizi N. - Toppetti L.",scoreA:"12-21 17-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
+  {phase:"Round of 12",teamA:"Barboni A. - Schwan C.",teamB:"Salvador E. - Massi V.",scoreA:"21-19 21-15",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
+  {phase:"Round of 12",teamA:"Mancinelli M. - Sestini E.",teamB:"Boscolo G. - Cicola L.",scoreA:"24-26 21-15 15-12",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12"],isBye:false},
+  {phase:"Quarti",teamA:"Benazzi G. - Ditta E.",teamB:"Sanguigni C. - Balducci S.",scoreA:"21-15 21-14",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
+  {phase:"Quarti",teamA:"Deizi N. - Toppetti L.",teamB:"Puccinelli C. - Belliero P.",scoreA:"22-20 16-21 6-15",result:"1-2",bonusA:["loss12"],bonusB:["win21","closeSet"],isBye:false},
+  {phase:"Quarti",teamA:"Rottoli S. - Shpuza O.",teamB:"Barboni A. - Schwan C.",scoreA:"22-24 16-21",result:"0-2",bonusA:["loss02","closeSet"],bonusB:["win20"],isBye:false},
+  {phase:"Quarti",teamA:"Mancinelli M. - Sestini E.",teamB:"Gradini A. - Frasca F.",scoreA:"23-21 12-21 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
+  {phase:"Semifinale",teamA:"Benazzi G. - Ditta E.",teamB:"Puccinelli C. - Belliero P.",scoreA:"23-21 20-22 17-15",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12","closeSet","closeSet"],isBye:false},
+  {phase:"Semifinale",teamA:"Barboni A. - Schwan C.",teamB:"Gradini A. - Frasca F.",scoreA:"25-23 19-21 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet","closeSet"],isBye:false},
+  {phase:"Finale 3° posto",teamA:"Puccinelli C. - Belliero P.",teamB:"Barboni A. - Schwan C.",scoreA:"21-15 19-21 15-17",result:"1-2",bonusA:["loss12","closeSet","closeSet"],bonusB:["win21"],isBye:false},
+  {phase:"Finale 1° posto",teamA:"Benazzi G. - Ditta E.",teamB:"Gradini A. - Frasca F.",scoreA:"21-13 23-21",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
   ],
 };
 
-const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool","Round of 8","Quarti","Semifinale","Finale 3° posto","Finale 1° posto"];
+const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool 1","Pool 2","BYE Pool","Round of 12","Round of 8","Quarti","Semifinale","Finale 3° posto","Finale 1° posto"];
 
 function EventDetail({event, onBack, myRoster}) {
   const matches = MOCK_MATCHES_V2[event.id] || [];
