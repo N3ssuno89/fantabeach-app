@@ -1403,6 +1403,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 {!EVENTS.some(e=>(e.status==="In corso"||e.status==="Completato")&&(e.gender||"").toUpperCase()===league.gender&&league.type==="classic") &&
                  !EVENTS.some(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender) && (
                 <div>
+                  {/* IN CAMPO */}
+                  <div style={{marginBottom:18}}>
                   <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12,textAlign:"center"}}>
                     ⚡ In Campo ({starters.length}/3) {captain&&"· ★ Cap: "+(roster.find(a=>a.id===captain)||{name:""}).name.split(" ")[0]}
                   </div>
@@ -1424,6 +1426,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     ))}
                   </div>
                 </div>
+
+                  </div>
+                </div> {/* fine IN CAMPO */}
 
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                   <div style={{flex:1,height:1,background:B.creamDark}}/>
