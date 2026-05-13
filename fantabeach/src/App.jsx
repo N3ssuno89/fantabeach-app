@@ -292,10 +292,10 @@ const PRIZES=[
 ];
 
 const PRICE_RANGES = [
-  {label:"Tutti",   filter:()=>true},
-  {label:"🔥 >100", filter:a=>a.cost>100},
-  {label:"$50–99",  filter:a=>a.cost>=50&&a.cost<=99},
-  {label:"<$50",    filter:a=>a.cost<50},
+  {label:"Tutti",      filter:()=>true,                    bg:B.grayPale,    color:B.gray,     activeBg:B.greenDark,  activeColor:B.white},
+  {label:"🔥 < $50",   filter:a=>a.cost<50,                bg:"#FFF7ED",     color:"#92400E",  activeBg:"#92400E",    activeColor:B.white},
+  {label:"💎 $50–99",  filter:a=>a.cost>=50&&a.cost<100,   bg:B.greenPale,   color:B.greenDark,activeBg:B.greenDark,  activeColor:B.white},
+  {label:"⭐ ≥ $100",  filter:a=>a.cost>=100,              bg:B.yellowPale,  color:"#7A4F00",  activeBg:"#7A4F00",    activeColor:B.white},
 ];
 
 const LogoBall = ({size=32}) => (
@@ -348,9 +348,8 @@ const TABS = [
   { id:0, emoji:"🏪", label:"Mercato"    },
   { id:1, emoji:"👕", label:"Squadra"    },
   { id:2, emoji:"🏆", label:"Classifica" },
-  { id:3, emoji:"🏐", label:"Atleta"     },
-  { id:4, emoji:"📅", label:"Calendario" },
-  { id:5, emoji:"⚙️", label:"Admin"      },
+  { id:3, emoji:"📅", label:"Calendario" },
+  { id:4, emoji:"⚙️", label:"Admin"      },
 ];
 const INIT_JOIN = {"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null};
 
@@ -1032,7 +1031,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                 <div style={{display:"flex",gap:5,marginBottom:12}}>
                   {PRICE_RANGES.map((pr,i)=>(
-                    <button key={i} onClick={()=>{setPriceFilter(i);setVisibleCount(30);}} style={{flex:1,padding:"5px 6px",borderRadius:8,border:"none",cursor:"pointer",fontSize:11,fontFamily:"Georgia,serif",background:priceFilter===i?B.greenDark:B.grayPale,color:priceFilter===i?B.white:B.gray,fontWeight:priceFilter===i?"bold":"normal"}}>{pr.label}</button>
+                    <button key={i} onClick={()=>{setPriceFilter(i);setVisibleCount(30);}} style={{flex:1,padding:"6px 4px",borderRadius:8,border:`1px solid ${priceFilter===i?pr.activeBg:B.creamDark}`,cursor:"pointer",fontSize:10,fontFamily:"Georgia,serif",background:priceFilter===i?pr.activeBg:pr.bg,color:priceFilter===i?pr.activeColor:pr.color,fontWeight:priceFilter===i?"bold":"normal",whiteSpace:"nowrap"}}>{pr.label}</button>
                   ))}
                 </div>
 
@@ -1045,7 +1044,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     const diff=a.cost-a.prevCost;
                     const canBuy=!owned&&budget>=a.cost&&roster.length<5&&canTrade();
                     return(
-                      <div key={a.id} style={{background:B.white,border:`1px solid ${owned?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${owned?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>{setSelectedAthlete(a);setTab(3);}}>
+                      <div key={a.id} style={{background:B.white,border:`1px solid ${owned?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${owned?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>{setSelectedAthlete(a);setTab(0);}}>
                         <div style={{width:34,height:34,borderRadius:8,flexShrink:0,overflow:"hidden",background:a.ranking<=3?B.yellow:a.ranking<=10?B.orange:B.greenPale,display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {ATHLETE_PHOTOS[a.id]
                             ?<img src={ATHLETE_PHOTOS[a.id]} alt={a.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}}/>
@@ -1253,72 +1252,69 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         )}
 
         {/* TAB 3: ATLETA */}
+        {/* TAB 3: CALENDARIO */}
         {tab===3&&(
           <div>
-            {!selectedAthlete?(
-              <div>
-                <div style={{color:B.gray,fontSize:12,textAlign:"center",marginBottom:12}}>Cerca un atleta o selezionalo dal Mercato</div>
-                <input placeholder="Cerca atleta..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:13,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {[...athletes_data.women,...athletes_data.men].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).slice(0,25).map(a=>(
-                    <div key={a.id} onClick={()=>setSelectedAthlete(a)} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:36,height:36,borderRadius:"50%",overflow:"hidden",flexShrink:0,background:B.grayPale}}>{ATHLETE_PHOTOS[a.id]?<img src={ATHLETE_PHOTOS[a.id]} alt={a.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}}/>:<LogoBall size={36}/>}</div>
-                      <div style={{flex:1,color:B.dark,fontSize:13,fontWeight:"bold"}}>{a.name}</div>
-                      <div style={{color:B.gray,fontSize:11}}>#{a.ranking}</div>
-                      <div style={{color:B.orange,fontWeight:"bold"}}>${a.cost}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ):(
-              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()}/>
-            )}
-          </div>
-        )}
-
-        {/* TAB 4: CALENDARIO */}
-        {tab===4&&(
-          <div>
             {selectedEvent?(
-              <EventDetail event={selectedEvent} onBack={()=>setSelectedEvent(null)}/>
+              <EventDetail event={selectedEvent} onBack={()=>setSelectedEvent(null)} myRoster={roster}/>
             ):(
               <div>
-                <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>Stagione 2026 — 9 Tappe</div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {EVENTS.map(e=>{
-                    const et = EVENT_TYPE_META[e.type]||EVENT_TYPE_META.Silver;
-                    return (
-                      <div key={e.id} onClick={()=>setSelectedEvent(e)}
-                        style={{background:B.cream,borderLeft:`4px solid ${et.color}`,
-                          border:`1px solid ${e.status==="In corso"?B.orange:B.creamDark}`,
-                          borderRadius:10,padding:"12px 14px",cursor:"pointer",
-                          display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{width:52,height:52,borderRadius:10,flexShrink:0,
-                          background:et.bg,display:"flex",flexDirection:"column",
-                          alignItems:"center",justifyContent:"center",gap:1}}>
-                          <span style={{fontSize:9,fontWeight:"bold",color:et.color,textAlign:"center",lineHeight:1.2}}>{et.label}</span>
-                          <span style={{fontSize:14,fontWeight:"900",color:et.color}}>x{et.weight}</span>
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{color:B.dark,fontWeight:"bold",fontSize:14}}>{e.name}</div>
-                          <div style={{color:B.gray,fontSize:11,marginTop:2}}>{e.date}</div>
-                        </div>
-                        <span style={{fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:"bold",flexShrink:0,
-                          background:e.status==="Completato"?B.greenPale:e.status==="In corso"?B.orangePale:B.sandDeep,
-                          color:e.status==="Completato"?B.greenDark:e.status==="In corso"?B.orange:B.gray}}>
-                          {e.status==="In corso"?"In corso":e.status==="Completato"?"Concluso":"Pianificato"}
-                        </span>
+                {/* Filtro genere automatico dalla lega selezionata */}
+                {(() => {
+                  const leagueGender = league.gender; // "F" o "M"
+                  const filteredEvents = EVENTS.filter(e => {
+                    const eg = (e.gender||"").toUpperCase();
+                    if (eg === "F" || eg === "FEMMINILE") return leagueGender === "F";
+                    if (eg === "M" || eg === "MASCHILE")  return leagueGender === "M";
+                    return true; // se non specificato mostra tutto
+                  });
+                  return (
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark}}>Stagione 2026</div>
+                        <span style={{fontSize:10,padding:"2px 8px",borderRadius:8,background:leagueGender==="F"?B.orangePale:B.greenPale,color:leagueGender==="F"?B.orange:B.greenDark,fontWeight:"bold"}}>{leagueGender==="F"?"♀ Femminile":"♂ Maschile"}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {filteredEvents.length===0
+                          ? <div style={{textAlign:"center",padding:30,color:B.gray}}>Nessuna tappa disponibile</div>
+                          : filteredEvents.map(e=>{
+                            const et = EVENT_TYPE_META[e.type]||EVENT_TYPE_META.Silver;
+                            return (
+                              <div key={e.id} onClick={()=>setSelectedEvent(e)}
+                                style={{background:B.cream,borderLeft:`4px solid ${et.color}`,
+                                  border:`1px solid ${e.status==="In corso"?B.orange:B.creamDark}`,
+                                  borderRadius:10,padding:"12px 14px",cursor:"pointer",
+                                  display:"flex",alignItems:"center",gap:12}}>
+                                <div style={{width:52,height:52,borderRadius:10,flexShrink:0,
+                                  background:et.bg,display:"flex",flexDirection:"column",
+                                  alignItems:"center",justifyContent:"center",gap:1}}>
+                                  <span style={{fontSize:9,fontWeight:"bold",color:et.color,textAlign:"center",lineHeight:1.2}}>{et.label}</span>
+                                  <span style={{fontSize:14,fontWeight:"900",color:et.color}}>×{et.weight}</span>
+                                </div>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{color:B.dark,fontWeight:"bold",fontSize:14}}>{e.name}</div>
+                                  <div style={{color:B.gray,fontSize:11,marginTop:2}}>{e.date}{e.location?` · ${e.location}`:""}</div>
+                                </div>
+                                <span style={{fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:"bold",flexShrink:0,
+                                  background:e.status==="Completato"?B.greenPale:e.status==="In corso"?B.orangePale:B.sandDeep,
+                                  color:e.status==="Completato"?B.greenDark:e.status==="In corso"?B.orange:B.gray}}>
+                                  {e.status==="In corso"?"🔴 In corso":e.status==="Completato"?"✓ Concluso":"Pianificato"}
+                                </span>
+                              </div>
+                            );
+                          })
+                        }
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
         )}
 
         {/* TAB 5: ADMIN */}
-        {tab===5&&isAdmin&&(
+        {tab===4&&isAdmin&&(
           <div>
             <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"9px 13px",marginBottom:14,fontSize:12,color:B.orange,textAlign:"center",fontWeight:"bold"}}>🔐 Pannello Admin</div>
 
@@ -1559,7 +1555,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   ]:[]),
                 ].map((item,i)=>(
                   <button key={i} onClick={()=>{
-                    if (item.sec==="cal") { setTab(4); setShowMenu(false); setHiddenPage(null); }
+                    if (item.sec==="cal") { setTab(3); setShowMenu(false); setHiddenPage(null); }
                     else { setHiddenPage(item.sec); setShowMenu(false); }
                   }}
                     style={{width:"100%",padding:"12px 16px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${B.sandDeep}`,textAlign:"left"}}>
@@ -1823,12 +1819,12 @@ function PageRegole({ onBack }) {
           Il prezzo di ogni atleta è determinato dal ranking FIPAV ufficiale. Più alto il ranking, maggiore il costo.
         </div>
         {[
-          {cat:"Top Player", range:"Ranking 1–5",   cost:"140–120 cr", color:"#7A4F00", bg:B.yellowPale},
-          {cat:"Elite",      range:"Ranking 6–15",  cost:"117–99 cr",  color:"#4C1D95", bg:"#F3E8FF"},
-          {cat:"Solid Pick", range:"Ranking 16–30", cost:"97–60 cr",   color:B.greenDark,bg:B.greenPale},
-          {cat:"Value Pick", range:"Ranking 31–50", cost:"58–30 cr",   color:B.orange,   bg:B.orangePale},
-          {cat:"Outsider",   range:"Ranking 51–70", cost:"28–10 cr",   color:B.gray,     bg:B.creamDark},
-          {cat:"Wild Card",  range:"Ranking 71+",   cost:"1 cr",       color:B.gray,     bg:B.grayPale},
+          {cat:"Top Player", range:"Ranking 1–5",   cost:"160–144 cr", color:"#7A4F00", bg:B.yellowPale},
+          {cat:"Elite",      range:"Ranking 6–15",  cost:"140–108 cr", color:"#4C1D95", bg:"#F3E8FF"},
+          {cat:"Solid Pick", range:"Ranking 16–30", cost:"105–72 cr",  color:B.greenDark,bg:B.greenPale},
+          {cat:"Value Pick", range:"Ranking 31–50", cost:"70–32 cr",   color:B.orange,   bg:B.orangePale},
+          {cat:"Outsider",   range:"Ranking 51–60", cost:"31–22 cr",   color:B.gray,     bg:B.creamDark},
+          {cat:"Wild Card",  range:"Ranking 61+",   cost:"20 cr fissi",color:B.gray,     bg:B.grayPale},
         ].map((c,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<5?`1px solid ${B.creamDark}`:"none"}}>
             <span style={{fontSize:10,fontWeight:"bold",padding:"2px 8px",borderRadius:10,background:c.bg,color:c.color,flexShrink:0,minWidth:72,textAlign:"center"}}>{c.cat}</span>
@@ -2461,18 +2457,17 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
   const rankDelta = a.rankDelta || null;
   const photo = ATHLETE_PHOTOS[a.id];
 
-  // Grafico storico prezzi
+  // Grafico storico prezzi — usa larghezza fissa con padding simmetrico
   const history = a.costHistory || [a.cost];
-  const W = 280, H = 80;
-  const minV = Math.min(...history) * 0.9;
-  const maxV = Math.max(...history) * 1.05;
+  const W = 300, H = 90, PAD = 20;
+  const innerW = W - PAD * 2;
+  const minV = Math.min(...history) * 0.88;
+  const maxV = Math.max(...history) * 1.08;
   const range = maxV - minV || 1;
-  const px = (i) => (i / (history.length - 1)) * (W - 24) + 12;
-  const py = (v) => H - 14 - ((v - minV) / range) * (H - 28);
+  const px = (i) => PAD + (i / Math.max(history.length - 1, 1)) * innerW;
+  const py = (v) => H - 18 - ((v - minV) / range) * (H - 36);
   const points = history.map((v,i) => `${px(i)},${py(v)}`).join(" ");
-  // Area sotto la curva
-  const areaPoints = `12,${H-14} ${points} ${px(history.length-1)},${H-14}`;
-  // Label date (nomi tappe mock per ora)
+  const areaPoints = `${PAD},${H-18} ${points} ${px(history.length-1)},${H-18}`;
   const tLabels = history.length === 5
     ? ["T-4","T-3","T-2","T-1","Ora"]
     : history.map((_,i) => i === history.length-1 ? "Ora" : `T-${history.length-1-i}`);
@@ -2548,7 +2543,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
       {/* GRAFICO STORICO PREZZI */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px",marginBottom:12}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>Andamento Prezzo</div>
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block"}}>
           {/* Area */}
           <polygon points={areaPoints} fill={B.greenDark} fillOpacity="0.08"/>
           {/* Linea */}
@@ -2561,10 +2556,14 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
             </g>
           ))}
         </svg>
-        {/* Label date */}
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+        {/* Label date — allineate ai punti tramite flex con larghezze proporzionali */}
+        <div style={{display:"flex",marginTop:4,paddingLeft:`${(PAD/W*100).toFixed(1)}%`,paddingRight:`${(PAD/W*100).toFixed(1)}%`}}>
           {tLabels.map((l,i)=>(
-            <span key={i} style={{color:i===tLabels.length-1?B.orange:B.gray,fontSize:10,fontWeight:i===tLabels.length-1?"bold":"normal",flex:1,textAlign:"center"}}>{l}</span>
+            <div key={i} style={{flex:1,textAlign:i===0?"left":i===tLabels.length-1?"right":"center",
+              color:i===tLabels.length-1?B.orange:B.gray,
+              fontSize:10,fontWeight:i===tLabels.length-1?"bold":"normal"}}>
+              {l}
+            </div>
           ))}
         </div>
       </div>
@@ -2591,38 +2590,257 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
   );
 }
 
-function EventDetail({event,onBack}) {
-  const matches=MOCK_MATCHES[event.id]||[];
-  const phases=[...new Set(matches.map(m=>m.phase))];
+// ─── BONUS/MALUS DEFINITIONS ────────────────────────────────
+const BONUS_META = {
+  win20:    { icon:"🏆", label:"Vittoria 2-0",        color:B.greenDark, bg:B.greenPale,    pts:+4    },
+  win21:    { icon:"🏅", label:"Vittoria 2-1",        color:B.greenDark, bg:B.greenPale,    pts:+3    },
+  loss12:   { icon:"💪", label:"Sconfitta 1-2",       color:B.orange,    bg:B.orangePale,   pts:+1    },
+  loss02:   { icon:"😔", label:"Sconfitta 0-2",       color:B.gray,      bg:B.grayPale,     pts:0     },
+  bye:      { icon:"⏭️", label:"BYE (tavolino)",      color:B.greenDark, bg:B.greenPale,    pts:+4    },
+  closeSet: { icon:"🎯", label:"Set perso di misura", color:"#7C3AED",   bg:"#F3E8FF",      pts:+0.5  },
+  captain:  { icon:"★",  label:"Capitano",            color:B.yellow,    bg:B.yellowPale,   mult:1.3  },
+  coachWin: { icon:"🧢", label:"Coach presente+vittoria", color:B.greenDark, bg:B.greenPale, pts:+0.5 },
+  coachAbs: { icon:"🚫", label:"Coach assente tappa", color:"#DC2626",   bg:"#FEE2E2",      pts:-2    },
+  coachNoBench: { icon:"⚠️", label:"Coach non in panchina", color:B.orange, bg:B.orangePale, pts:-1  },
+  forfait:  { icon:"🤕", label:"Forfait partita",     color:B.orange,    bg:B.orangePale,   pts:-1    },
+  absEvent: { icon:"❌", label:"Assente alla tappa",  color:"#DC2626",   bg:"#FEE2E2",      pts:-3    },
+};
+
+// Mock matches arricchiti con bonus/malus
+const MOCK_MATCHES_V2 = {
+  "E0001": [
+    {
+      phase:"Qualifiche 1",
+      teamA:"Gradini A. - Frasca F.", teamB:"Bianchi G. - Scampoli C.",
+      scoreA:"21-19 23-21", result:"2-0",
+      bonusA:["win20","closeSet","closeSet"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Qualifiche 1",
+      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Rottoli S. - Ditta E.",
+      scoreA:"21-14 21-17", result:"2-0",
+      bonusA:["win20"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Qualifiche 2",
+      teamA:"Gradini A. - Frasca F.", teamB:"Salvador E. - Piccoli A.",
+      scoreA:"21-15 21-18", result:"2-0",
+      bonusA:["win20"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Pool",
+      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Gradini A. - Frasca F.",
+      scoreA:"21-18 19-21 15-12", result:"2-1",
+      bonusA:["win21"], bonusB:["loss12"],
+      isBye:false
+    },
+    {
+      phase:"Pool",
+      teamA:"Bianchi G. - Scampoli C.", teamB:"Sanguigni C. - Benazzi G.",
+      scoreA:"21-16 21-19", result:"2-0",
+      bonusA:["win20"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Round of 8",
+      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Bianchi G. - Scampoli C.",
+      scoreA:null, result:"BYE",
+      bonusA:["bye"], bonusB:[],
+      isBye:true
+    },
+    {
+      phase:"Semifinale",
+      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Gradini A. - Frasca F.",
+      scoreA:"21-17 21-19", result:"2-0",
+      bonusA:["win20"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Finale 3° posto",
+      teamA:"Gradini A. - Frasca F.", teamB:"Bianchi G. - Scampoli C.",
+      scoreA:"21-18 21-16", result:"2-0",
+      bonusA:["win20"], bonusB:["loss02"],
+      isBye:false
+    },
+    {
+      phase:"Finale 1° posto",
+      teamA:"Gottardi V. - Orsi Toth R.", teamB:"Breidenbach S. - Scampoli C.",
+      scoreA:"21-19 23-21", result:"2-0",
+      bonusA:["win20","closeSet","closeSet"], bonusB:["loss02"],
+      isBye:false
+    },
+  ],
+};
+
+const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool","Round of 8","Quarti","Semifinale","Finale 3° posto","Finale 1° posto"];
+
+function EventDetail({event, onBack, myRoster}) {
+  const matches = MOCK_MATCHES_V2[event.id] || [];
+  const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
+
+  // Fasi ordinate
+  const phases = PHASE_ORDER.filter(p => matches.some(m => m.phase === p));
+
+  // Controlla se una squadra ha giocatori nel mio roster
+  const isMyTeam = (teamStr) => {
+    if (!myRoster || !teamStr) return false;
+    return myRoster.some(a => {
+      const parts = a.name.split(" ");
+      const cognome = parts[0];
+      return teamStr.includes(cognome);
+    });
+  };
+
+  // Calcola punti base da bonus
+  const calcPts = (bonuses) => bonuses.reduce((sum, b) => {
+    const meta = BONUS_META[b];
+    return sum + (meta?.pts || 0);
+  }, 0);
+
+  const BonusPill = ({code}) => {
+    const meta = BONUS_META[code];
+    if (!meta) return null;
+    return (
+      <span title={meta.label} style={{
+        display:"inline-flex",alignItems:"center",gap:3,
+        background:meta.bg, color:meta.color,
+        fontSize:10, fontWeight:"bold",
+        padding:"2px 7px", borderRadius:20,
+        border:`1px solid ${meta.color}33`,
+        whiteSpace:"nowrap"
+      }}>
+        {meta.icon} {meta.pts !== undefined ? (meta.pts > 0 ? `+${meta.pts}` : meta.pts === 0 ? "0" : meta.pts) : `×${meta.mult}`}
+      </span>
+    );
+  };
+
   return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Tornei</button>
+      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+
+      {/* HEADER TAPPA */}
       <div style={{background:B.greenDark,borderRadius:12,padding:"14px 16px",marginBottom:14,color:B.white}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div><div style={{fontWeight:"bold",fontSize:18}}>{event.name}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>{event.date}</div></div>
-          <div style={{background:event.type==="Gold"?B.yellow:B.greenPale,color:event.type==="Gold"?"#7A4F00":B.greenDark,padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:"bold"}}>{event.type} ×{event.weight}</div>
+          <div>
+            <div style={{fontWeight:"bold",fontSize:18}}>{event.name}</div>
+            <div style={{color:"rgba(255,255,255,.7)",fontSize:12,marginTop:2}}>{event.date}{event.location?` · ${event.location}`:""}</div>
+          </div>
+          <div style={{background:et.bg,color:et.color,padding:"4px 10px",borderRadius:8,fontSize:11,fontWeight:"bold",textAlign:"center"}}>
+            <div>{et.label}</div>
+            <div style={{fontSize:14,fontWeight:"900"}}>×{et.weight}</div>
+          </div>
         </div>
       </div>
-      {matches.length===0?(<div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}><div style={{fontSize:40,marginBottom:10}}>📋</div><div>Risultati non ancora disponibili</div></div>):(
-        phases.map(phase=>(
+
+      {/* LEGENDA BONUS */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>Legenda punti</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {Object.entries(BONUS_META).map(([k,m]) => (
+            <span key={k} title={m.label} style={{
+              display:"inline-flex",alignItems:"center",gap:4,
+              background:m.bg, color:m.color,
+              fontSize:10, padding:"2px 8px", borderRadius:20,
+              border:`1px solid ${m.color}33`
+            }}>
+              {m.icon} {m.label}
+              <strong>{m.pts !== undefined ? (m.pts > 0 ? ` +${m.pts}` : ` ${m.pts}`) : ` ×${m.mult}`}</strong>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {matches.length === 0 ? (
+        <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
+          <div style={{fontSize:40,marginBottom:10}}>📋</div>
+          <div>Risultati non ancora disponibili</div>
+        </div>
+      ) : (
+        phases.map(phase => (
           <div key={phase} style={{marginBottom:16}}>
-            <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
-              <div style={{flex:1,height:1,background:B.creamDark}}/>{phase}<div style={{flex:1,height:1,background:B.creamDark}}/>
+            {/* Header fase */}
+            <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",
+              color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+              <div style={{flex:1,height:1,background:B.creamDark}}/>
+              {phase}
+              <div style={{flex:1,height:1,background:B.creamDark}}/>
             </div>
-            {matches.filter(m=>m.phase===phase).map((m,i)=>(
-              <div key={i} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px",marginBottom:7}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <div style={{flex:1,fontSize:12,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.teamA}</div>
-                  <div style={{flexShrink:0,background:B.greenDark,color:B.white,padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:"bold"}}>{m.result}</div>
-                  <div style={{flex:1,fontSize:12,color:B.gray,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.teamB||"BYE"}</div>
+
+            {matches.filter(m => m.phase === phase).map((m, i) => {
+              const myA = isMyTeam(m.teamA);
+              const myB = isMyTeam(m.teamB);
+              const ptsA = calcPts(m.bonusA || []) * (event.weight || 1);
+              const ptsB = calcPts(m.bonusB || []) * (event.weight || 1);
+
+              return (
+                <div key={i} style={{
+                  background:B.white,
+                  border:`1px solid ${myA||myB?B.greenDark:B.creamDark}`,
+                  borderLeft:`4px solid ${myA||myB?B.greenDark:B.creamDark}`,
+                  borderRadius:10, padding:"11px 13px", marginBottom:7
+                }}>
+                  {/* Riga squadre + risultato */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <div style={{flex:1,fontSize:12,fontWeight:"bold",
+                      color:myA?B.greenDark:B.dark,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {myA&&<span style={{marginRight:4}}>★</span>}{m.teamA}
+                    </div>
+                    <div style={{flexShrink:0,background:m.isBye?B.grayPale:B.greenDark,
+                      color:m.isBye?B.gray:B.white,
+                      padding:"3px 10px",borderRadius:6,fontSize:12,fontWeight:"bold"}}>
+                      {m.result}
+                    </div>
+                    <div style={{flex:1,fontSize:12,color:myB?B.greenDark:B.gray,
+                      fontWeight:myB?"bold":"normal",
+                      textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {m.teamB||"BYE"}{myB&&<span style={{marginLeft:4}}>★</span>}
+                    </div>
+                  </div>
+
+                  {/* Set */}
+                  {m.scoreA && (
+                    <div style={{fontSize:11,color:B.gray,marginBottom:8,textAlign:"center"}}>
+                      Set: <strong style={{color:B.dark}}>{m.scoreA}</strong>
+                    </div>
+                  )}
+
+                  {/* Bonus/malus */}
+                  <div style={{display:"flex",gap:8,borderTop:`1px solid ${B.creamDark}`,paddingTop:8}}>
+                    {/* Squadra A */}
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>
+                        {(m.bonusA||[]).map((b,j)=><BonusPill key={j} code={b}/>)}
+                      </div>
+                      {(myA||(m.bonusA||[]).length>0) && (
+                        <div style={{fontSize:12,fontWeight:"bold",color:ptsA>0?B.greenDark:B.orange}}>
+                          Totale: {ptsA > 0 ? `+${ptsA.toFixed(1)}` : ptsA.toFixed(1)} pt
+                        </div>
+                      )}
+                    </div>
+                    {/* Peso tappa */}
+                    <div style={{flexShrink:0,textAlign:"center",padding:"0 8px",borderLeft:`1px solid ${B.creamDark}`,borderRight:`1px solid ${B.creamDark}`}}>
+                      <div style={{fontSize:9,color:B.gray}}>Peso</div>
+                      <div style={{fontSize:14,fontWeight:"bold",color:et.color}}>×{event.weight||1}</div>
+                    </div>
+                    {/* Squadra B */}
+                    <div style={{flex:1,textAlign:"right"}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4,justifyContent:"flex-end",marginBottom:4}}>
+                        {(m.bonusB||[]).map((b,j)=><BonusPill key={j} code={b}/>)}
+                      </div>
+                      {(myB||(m.bonusB||[]).length>0) && (
+                        <div style={{fontSize:12,fontWeight:"bold",color:ptsB>0?B.greenDark:B.orange}}>
+                          Totale: {ptsB > 0 ? `+${ptsB.toFixed(1)}` : ptsB.toFixed(1)} pt
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:`1px solid ${B.creamDark}`,fontSize:11}}>
-                  <div><div style={{color:B.gray,fontSize:10}}>Set</div><div style={{color:B.dark,fontWeight:"bold"}}>{m.scoreA}</div></div>
-                  <div style={{textAlign:"center"}}><div style={{color:B.gray,fontSize:10}}>Punti fantasy</div><div style={{display:"flex",gap:16,marginTop:2}}><span style={{color:m.ptsA>m.ptsB?B.orange:B.gray,fontWeight:"bold",fontSize:14}}>+{m.ptsA}</span><span style={{color:m.ptsB>m.ptsA?B.orange:B.gray,fontWeight:"bold",fontSize:14}}>{m.teamB?"+":""}{m.teamB?m.ptsB:"—"}</span></div></div>
-                  <div style={{textAlign:"right"}}><div style={{color:B.gray,fontSize:10}}>Peso</div><div style={{color:B.greenDark,fontWeight:"bold"}}>×{event.weight}</div></div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))
       )}
