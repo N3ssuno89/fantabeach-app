@@ -246,12 +246,24 @@ const EVENT_TYPE_META = {
   Finale:      { label:"Finale",       weight:1.7, color:"#7C3AED", bg:"#F3E8FF" },
 };
 const EVENTS = [
-  { id:"E0001",name:"Falconara F",type:"Silver",weight:1.0,date:"12-14 giu",gender:"F",status:"Completato" },
-  { id:"E0002",name:"Falconara M",type:"Silver",weight:1.0,date:"12-14 giu",gender:"M",status:"Completato" },
-  { id:"E0003",name:"Termoli F",  type:"Gold",  weight:1.3,date:"19-21 giu",gender:"F",status:"In corso"   },
-  { id:"E0004",name:"Termoli M",  type:"Gold",  weight:1.3,date:"19-21 giu",gender:"M",status:"Planned"    },
-  { id:"E0005",name:"Marina di Ravenna F",type:"Silver",weight:1.0,date:"3-5 lug",gender:"F",status:"Planned"},
-  { id:"E0006",name:"Marina di Ravenna M",type:"Silver",weight:1.0,date:"3-5 lug",gender:"M",status:"Planned"},
+  { id:"E0001",name:"Falconara M",      type:"Silver",weight:1.0, date:"12-14 giu",gender:"M",status:"Completato" },
+  { id:"E0002",name:"Falconara F",      type:"Silver",weight:1.0, date:"12-14 giu",gender:"F",status:"Completato" },
+  { id:"E0003",name:"Termoli M",        type:"Gold",  weight:1.3, date:"19-21 giu",gender:"M",status:"Planned"    },
+  { id:"E0004",name:"Termoli F",        type:"Gold",  weight:1.3, date:"19-21 giu",gender:"F",status:"In corso"   },
+  { id:"E0005",name:"Marina di Ravenna M",type:"Silver",weight:1.0,date:"3-5 lug", gender:"M",status:"Planned"   },
+  { id:"E0006",name:"Marina di Ravenna F",type:"Silver",weight:1.0,date:"3-5 lug", gender:"F",status:"Planned"   },
+  { id:"E0007",name:"Marina di Modica M", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"M",status:"Planned"  },
+  { id:"E0008",name:"Marina di Modica F", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"F",status:"Planned"  },
+  { id:"E0009",name:"San Cataldo M",    type:"Silver",weight:1.0, date:"17-19 lug",gender:"M",status:"Planned"   },
+  { id:"E0010",name:"San Cataldo F",    type:"Silver",weight:1.0, date:"17-19 lug",gender:"F",status:"Planned"   },
+  { id:"E0011",name:"Montesilvano M",   type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"M",status:"Planned"},
+  { id:"E0012",name:"Montesilvano F",   type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"F",status:"Planned"},
+  { id:"E0013",name:"Cordenons M",      type:"Silver",weight:1.0, date:"7-9 ago",  gender:"M",status:"Planned"   },
+  { id:"E0014",name:"Cordenons F",      type:"Silver",weight:1.0, date:"7-9 ago",  gender:"F",status:"Planned"   },
+  { id:"E0015",name:"Vasto M",          type:"Silver",weight:1.0, date:"21-23 ago",gender:"M",status:"Planned"   },
+  { id:"E0016",name:"Vasto F",          type:"Silver",weight:1.0, date:"21-23 ago",gender:"F",status:"Planned"   },
+  { id:"E0017",name:"Caorle M",         type:"Gold",  weight:2.0, date:"4-6 set",  gender:"M",status:"Planned"   },
+  { id:"E0018",name:"Caorle F",         type:"Gold",  weight:2.0, date:"4-6 set",  gender:"F",status:"Planned"   },
   { id:"E0007",name:"Marina di Modica M", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"M",status:"Planned"},
 ];
 
@@ -2897,7 +2909,7 @@ const BONUS_META = {
 
 // Mock matches arricchiti con bonus/malus
 const MOCK_MATCHES_V2 = {
-  "E0003": [
+  "E0004": [
   {phase:"Qualifiche 1",teamA:"Cimmino S. - Sarra A.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
   {phase:"Qualifiche 1",teamA:"Genovesi G. - Russo G.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
   {phase:"Qualifiche 1",teamA:"Aime S. - Enzo I.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
