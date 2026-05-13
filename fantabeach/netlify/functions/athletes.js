@@ -5,7 +5,8 @@ const { google } = require("googleapis");
 
 const SHEET_ID    = process.env.GOOGLE_SHEETS_ID;
 const CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
-const PRIVATE_KEY  = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "")
+  .split("\\n").join("\n");
 
 // RANKING_PRICE_TABLE reale da FANTABEACH 2 2026
 const PRICE_TABLE = [
