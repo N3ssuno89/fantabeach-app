@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 
 // ─── SUPABASE CLIENT ───────────────────────────────────────────
 // Le chiavi vengono iniettate da Netlify come variabili ambiente
@@ -1183,24 +1183,25 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               const calcPlayerMatches = (athleteName) => {
                 const cognome = athleteName.split(" ")[0].toLowerCase();
                 const matchResults = [];
-                let grandTotal = 0;
+                let grandTotal = 0; // senza moltiplicatore
                 eventMatches.forEach(m => {
                   const inA = m.teamA?.toLowerCase().includes(cognome);
                   const inB = m.teamB?.toLowerCase().includes(cognome);
                   if (!inA && !inB) return;
                   const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
-                  // Punti base (primo bonus = win/loss)
+                  // Punti BASE senza moltiplicatore
                   const baseMeta = BONUS_META[bonuses[0]];
-                  const basePts = (baseMeta?.pts || 0) * (et.weight||1);
-                  // Bonus aggiuntivi (closeSet, coachWin, ecc. — tutto tranne il primo)
+                  const basePts = baseMeta?.pts || 0;
+                  // Bonus extra senza moltiplicatore
                   const extraBonuses = bonuses.slice(1).filter(b => BONUS_META[b]);
-                  const extraPts = extraBonuses.reduce((s,b) => s + (BONUS_META[b]?.pts||0) * (et.weight||1), 0);
-                  const totalPts = basePts + extraPts;
+                  const extraPts = extraBonuses.reduce((s,b) => s + (BONUS_META[b]?.pts||0), 0);
+                  const totalPts = basePts + extraPts; // totale partita senza mult
                   grandTotal += totalPts;
                   matchResults.push({
                     phase: m.phase,
                     opponent: inA ? m.teamB : m.teamA,
                     result: m.result,
+                    scoreA: m.scoreA || "",
                     isBye: m.isBye,
                     basePts,
                     extraBonuses,
@@ -1208,6 +1209,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     totalPts,
                   });
                 });
+                // Totale tappa = grandTotal * moltiplicatore (* 1.3 se capitano, applicato fuori)
                 return {matchResults, grandTotal};
               };
 
@@ -1287,88 +1289,96 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   </div>
 
                   {/* Partite per atleta */}
-                  {[...starters,...bench].map(a=>{
+                  {[...starters.map(a=>({...a,_isStart:true})),...bench.map(a=>({...a,_isStart:false}))].map((a,idx,arr)=>{
+                    const isStart = a._isStart;
+                    const showStarterLabel = isStart && idx===0;
+                    const showBenchLabel = !isStart && (idx===0 || arr[idx-1]._isStart);
                     const {matchResults, grandTotal} = calcPlayerMatches(a.name);
                     const isCapt = isCaptain(a);
-                    const isStart = isStarter(a);
-                    const finalTotal = isCapt ? grandTotal * 1.3 : grandTotal;
-                    if (matchResults.length === 0) return (
-                      <div key={a.id} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:0.5}}>
-                        <div style={{fontSize:12,color:B.gray}}>{isCapt?"★ ":""}{a.name} — nessuna partita trovata</div>
-                      </div>
-                    );
+                    const totalTappa = (grandTotal * (et.weight||1) * (isCapt ? 1.3 : 1));
                     return (
-                      <div key={a.id} style={{background:B.white,border:`1px solid ${isStart?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isStart?B.greenDark:B.sandDeep}`,borderRadius:10,marginBottom:10,overflow:"hidden",opacity:isStart?1:0.75}}>
-                        {/* Header atleta */}
-                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${B.creamDark}`}}>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
-                              {isCapt&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{a.name}
-                              {!isStart&&<span style={{fontSize:9,color:B.gray,background:B.grayPale,padding:"1px 6px",borderRadius:8,marginLeft:6}}>Panchina</span>}
+                      <React.Fragment key={a.id}>
+                        {showStarterLabel&&<div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>⚡ Titolari</div>}
+                        {showBenchLabel&&<div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.gray,marginTop:10,marginBottom:6}}>⏸ Panchina</div>}
+                        {matchResults.length===0
+                          ? <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:0.5}}>
+                              <div style={{fontSize:12,color:B.gray}}>{isCapt?"★ ":""}{a.name} — nessuna partita trovata</div>
                             </div>
-                            <div style={{fontSize:10,color:B.gray}}>#{a.ranking} · {getCategory(a.ranking).label}</div>
-                          </div>
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:18,fontWeight:"bold",color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
-                              {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
-                            </div>
-                            {isCapt&&grandTotal>0&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3</div>}
-                          </div>
-                        </div>
-                        {/* Partite */}
-                        {matchResults.map((mr,j)=>(
-                          <div key={j} style={{padding:"8px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                              <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:60}}>{mr.phase}</div>
-                              {/* Punteggio partita grosso */}
-                              {mr.isBye
-                                ? <span style={{fontSize:13,fontWeight:"bold",color:B.greenDark,background:B.greenPale,padding:"1px 8px",borderRadius:6,flexShrink:0}}>BYE</span>
-                                : <span style={{fontSize:13,fontWeight:"bold",color:mr.result.startsWith("2")?"#065F46":"#DC2626",background:mr.result.startsWith("2")?"#D1FAE5":"#FEE2E2",padding:"1px 8px",borderRadius:6,flexShrink:0}}>{mr.result}</span>
-                              }
-                              <div style={{flex:1,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                vs {mr.isBye?"—":mr.opponent||"—"}
-                              </div>
-                              {/* Punti base */}
-                              <div style={{fontSize:13,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0}}>
-                                {mr.basePts>0?`+${mr.basePts.toFixed(1)}`:mr.basePts.toFixed(1)}
-                              </div>
-                              {/* Emoji bonus */}
-                              {mr.extraBonuses.length>0&&(
-                                <div style={{display:"flex",gap:2,flexShrink:0}}>
-                                  {mr.extraBonuses.map((b,bi)=>(
-                                    <span key={bi} title={`${BONUS_META[b]?.label}: ${BONUS_META[b]?.pts>0?"+":""}${BONUS_META[b]?.pts}`} style={{fontSize:14}}>{BONUS_META[b]?.icon}</span>
-                                  ))}
+                          : <div style={{background:B.white,border:`1px solid ${isStart?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isStart?B.greenDark:B.sandDeep}`,borderRadius:10,marginBottom:10,overflow:"hidden",opacity:isStart?1:0.75}}>
+                              {/* Header atleta */}
+                              <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${B.creamDark}`}}>
+                                <div style={{flex:1}}>
+                                  <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                                    {isCapt&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{a.name}
+                                  </div>
+                                  <div style={{fontSize:10,color:B.gray}}>#{a.ranking} · {getCategory(a.ranking).label}</div>
                                 </div>
-                              )}
-                              {/* Totale partita (senza moltiplicatore qui) */}
-                              <div style={{fontSize:12,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:36,textAlign:"right",borderLeft:`1px solid ${B.creamDark}`,paddingLeft:8}}>
-                                {mr.totalPts>0?`+${mr.totalPts.toFixed(1)}`:mr.totalPts===0?"0":mr.totalPts.toFixed(1)}
+                                <div style={{textAlign:"right"}}>
+                                  <div style={{fontSize:18,fontWeight:"bold",color:totalTappa>0?B.greenDark:totalTappa<0?B.orange:B.gray}}>
+                                    {totalTappa>0?`+${totalTappa.toFixed(1)}`:totalTappa===0?"—":totalTappa.toFixed(1)} pt
+                                  </div>
+                                  {isCapt&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3 cap</div>}
+                                </div>
+                              </div>
+                              {/* Righe partite */}
+                              {matchResults.map((mr,j)=>(
+                                <div key={j} style={{padding:"8px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                                    <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:55}}>{mr.phase}</div>
+                                    {/* Badge risultato */}
+                                    {mr.isBye
+                                      ? <span style={{fontSize:12,fontWeight:"bold",color:B.greenDark,background:B.greenPale,padding:"1px 7px",borderRadius:5,flexShrink:0}}>BYE</span>
+                                      : <span style={{fontSize:12,fontWeight:"bold",color:mr.result.startsWith("2")?"#065F46":"#DC2626",background:mr.result.startsWith("2")?"#D1FAE5":"#FEE2E2",padding:"1px 7px",borderRadius:5,flexShrink:0}}>{mr.result}</span>
+                                    }
+                                    {/* Avversario */}
+                                    <div style={{flex:1,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                      {mr.isBye?"—":mr.opponent||"—"}
+                                    </div>
+                                    {/* Set score */}
+                                    {mr.scoreA&&<div style={{fontSize:9,color:B.gray,flexShrink:0,whiteSpace:"nowrap"}}>{mr.scoreA}</div>}
+                                    {/* Punti base */}
+                                    <div style={{fontSize:13,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0,minWidth:24,textAlign:"right"}}>
+                                      {mr.basePts>0?`+${mr.basePts}`:mr.basePts}
+                                    </div>
+                                    {/* Emoji bonus */}
+                                    {mr.extraBonuses.length>0&&(
+                                      <div style={{display:"flex",gap:2,flexShrink:0}}>
+                                        {mr.extraBonuses.map((b,bi)=>(
+                                          <span key={bi} title={`${BONUS_META[b]?.label} (${BONUS_META[b]?.pts>0?"+":""}${BONUS_META[b]?.pts})`} style={{fontSize:13}}>{BONUS_META[b]?.icon}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {/* Totale partita */}
+                                    <div style={{fontSize:12,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:30,textAlign:"right",borderLeft:`1px solid ${B.creamDark}`,paddingLeft:7}}>
+                                      {mr.totalPts>0?`+${mr.totalPts}`:mr.totalPts===0?"—":mr.totalPts}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {/* Footer: totale partite → moltiplicatore → totale tappa */}
+                              <div style={{background:B.sandDark,padding:"8px 12px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:B.gray,marginBottom:2}}>
+                                  <span>Totale partite</span>
+                                  <span style={{color:B.dark,fontWeight:"bold"}}>{grandTotal>0?`+${grandTotal}`:grandTotal} pt</span>
+                                </div>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:B.gray,marginBottom:2}}>
+                                  <span>{et.label} ×{et.weight}</span>
+                                  <span style={{color:et.color,fontWeight:"bold"}}>{(grandTotal*(et.weight||1))>0?`+${(grandTotal*(et.weight||1)).toFixed(1)}`:(grandTotal*(et.weight||1)).toFixed(1)} pt</span>
+                                </div>
+                                {isCapt&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:B.gray,marginBottom:2}}>
+                                  <span>★ Capitano ×1.3</span>
+                                  <span style={{color:B.yellow,fontWeight:"bold"}}>+{((grandTotal*(et.weight||1))*0.3).toFixed(1)} pt</span>
+                                </div>}
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:"bold",paddingTop:6,borderTop:`1px solid ${B.sandDeep}`,marginTop:2}}>
+                                  <span style={{color:B.dark}}>Totale tappa</span>
+                                  <span style={{color:totalTappa>0?B.greenDark:totalTappa<0?B.orange:B.gray}}>
+                                    {totalTappa>0?`+${totalTappa.toFixed(1)}`:totalTappa===0?"—":totalTappa.toFixed(1)} pt
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                        {/* Totale atleta con moltiplicatore */}
-                        <div style={{background:B.sandDark,padding:"8px 12px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
-                            <span>Totale partite</span>
-                            <span style={{color:B.dark,fontWeight:"bold"}}>{grandTotal>0?`+${grandTotal.toFixed(1)}`:grandTotal.toFixed(1)} pt</span>
-                          </div>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
-                            <span>Moltiplicatore {et.label}</span>
-                            <span style={{color:et.color,fontWeight:"bold"}}>×{et.weight}</span>
-                          </div>
-                          {isCapt&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
-                            <span>★ Capitano</span>
-                            <span style={{color:B.yellow,fontWeight:"bold"}}>×1.3</span>
-                          </div>}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,fontWeight:"bold",paddingTop:6,borderTop:`1px solid ${B.sandDeep}`,marginTop:2}}>
-                            <span style={{color:B.dark}}>Totale tappa</span>
-                            <span style={{color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
-                              {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                        }
+                      </React.Fragment>
                     );
                   })}
 
@@ -1377,7 +1387,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     let tot = 0;
                     starters.forEach(a => {
                       const {grandTotal} = calcPlayerMatches(a.name);
-                      tot += isCaptain(a) ? grandTotal * 1.3 : grandTotal;
+                      tot += grandTotal * (et.weight||1) * (isCaptain(a) ? 1.3 : 1);
                     });
                     return (
                       <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
