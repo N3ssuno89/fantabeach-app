@@ -6,7 +6,8 @@ const { google } = require("googleapis");
 
 const SHEET_ID     = process.env.GOOGLE_SHEETS_ID;
 const CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
-const PRIVATE_KEY  = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "")
+  .split("\\n").join("\n");
 
 const PRICE_TABLE = [
   160,156,152,148,144,140,136,132,128,124,
