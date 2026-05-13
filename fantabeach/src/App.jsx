@@ -1010,6 +1010,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {selectedAthlete?(
               <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()}/>
             ):(
+            <div>
             {/* Market sub-tabs */}
             <div style={{display:"flex",gap:6,marginBottom:12}}>
               {[{id:"athletes",label:"🏐 Atleti"},{id:"coaches",label:"🧢 Coach"}].map(mt=>(
@@ -1124,7 +1125,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 </div>
               </div>
             )}
-            )} {/* fine !selectedAthlete */}
+            </div>)} {/* fine !selectedAthlete */}
           </div>
           )
         )}
