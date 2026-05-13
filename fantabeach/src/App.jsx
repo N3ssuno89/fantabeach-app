@@ -140,75 +140,54 @@ const COACHES = [
   { id:"C005", name:"Roberto Damiani",     athletes:["M0003","M0004"], cost:5 },
 ];
 
-const WOMEN_NAMES = [
+// ─── DATI ATLETI — caricati da API (fallback mock) ────────────
+const ATHLETES_API = "/.netlify/functions/athletes";
+
+// Aggiunge i campi mock necessari all'app (costHistory, results)
+const enrichAthlete = (a) => ({
+  ...a,
+  costHistory: Array.from({length:5}, (_,j) => getPrice(Math.max(1, a.ranking + (2-j)))),
+  results: [],
+});
+
+// Fallback mock — usato solo se l'API non risponde
+const WOMEN_NAMES_FALLBACK = [
   "Valentina Gottardi","Orsi Toth Reka","Sara Breidenbach","Claudia Scampoli",
   "Gradini Alice","Bianchi Giada","Frasca Federica","Chiara They",
   "Rottoli Sharin","Ditta Erika","Sanguigni Camilla","Benazzi Giada",
   "Di Prima Valentina","Massi Viola","Shpuza Oriola","Belliero Piccinin Jessica",
   "Balducci Sofia","Biancini Martina","Annibalini Eleonora","Piccoli Anna",
-  "Salvador Elisa","Tega Margherita","Mattavelli Aurora","Barboni Arianna",
-  "Mancinelli Maria Rachele","Torrese Valentina","Puccinelli Claudia","Montedoro Martina",
-  "Concetti Giulia","Cimmino Serena","Giacosa Silvia","Guglielmo Samantha",
-  "Franzoni Sara","Foresti Martina","Sestini Eleonora","Tonello Elisa",
-  "Sarra Anna Maria","Tallevi Diotallevi Valeria","Pastorino Monica","Cicola Luna",
-  "Orciani Sofia","Noveri Marta","Quagliotti Vittoria","Fezzi Cindy Lee",
-  "Zanon Chiara","Toti Giulia","Dalmazzo Anna","Pratesi Alice",
-  "Fragonas Elisa","Pastore Francesca","Ujka Alessia","Enzo Irene",
-  "Gili Eleonora","Poggio Denise","Maestroni Ester","Balestra Camilla",
-  "Boscolo Gloria","Gulisano Giada","Bonacina Giorgia","Verrigni Stefania",
-  "Allegretti Jessica","Roscigno Vittoria","Bonfatti Sara","Calì Valentina",
-  "Gorla Giulia","Tagliapietra Martina","Barbieri Carolina","Lucania Beatrice",
-  "Nika Deizi","Francesconi Andrea Luna","Valdora Elisa","Antonioli Chiara",
-  "Bonansea Elisa","Cantamessa Angelica","Cantamessa Nicole","Frumento Gloria",
-  "Arcaini Sofia","Sacco Noemi","Tartaglia Alice","Beretta Rebecca",
-  "Marchelli Roberta","Molino Silvia","Bertozzi Nicol","Mazzotti Bianca",
-  "Lorandi Justine","Monaco Isabella","Iob Asia","Toppetti Laura",
-  "Cacco Veronica","Guidi Elena","Resnati Roberta","Fiocco Marianna",
-  "Rastelli Giulia","Zuccarelli Agata","Serafini Alessandra","Fasano Federica",
-  "Peretti Francesca","Pavanati Daniela","Clarizio Chiara","Scalari Marta",
 ];
-const MEN_NAMES = [
+const MEN_NAMES_FALLBACK = [
   "Dal Corso Gianluca","Podestà Simone","Acerbi Raoul","Ranghieri Alex",
   "Cottafava Samuele","Alfieri Manuel","Andreatta Tiziano","Martino Matteo",
   "Spadoni Giacomo","Mussa Fabrizio","Lupo Daniele","Marchetto Tobia",
   "Titta Giacomo","Carucci Alessandro","Luisetto Michele","Sacripanti Mauro",
   "Borraccino Davide","Dal Molin Davide","Benzi Davide","Ceccoli Edgardo",
-  "Camozzi Matteo","Bonifazi Carlo","Peri Francesco","Bigarelli Luca",
-  "Ulisse Marco","Arezzo di Trifiletti Franco","Viscovich Marco","Rossi Enrico",
-  "Geromin Federico","Iervolino Riccardo","Marchesan Matteo","Cravera Luca",
-  "Camerani Matteo","Bolognesi Giacomo","Krumins Davis","Caminati Marco",
-  "Burgmann Michael","Bernardi Matteo","Cerri Daniel","Cerri Fabio",
-  "Alfieri Giovanni","Pizzileo Filippo","Beltrame Benedetto","Siccardi Nicolò",
-  "Terzi Alessio","Bellucci Matteo","Robustelli Alberto","Paglia Dario",
-  "Ingrosso Paolo","Furgani Simone","Pantalei Edoardo","Lascari Alessandro",
-  "Lupo Andrea","Pizzileo Tommaso","Marini Matteo","Mancin Nicolò",
-  "Canegallo Matteo","Mencaroni Kevin","Preti Alessandro","Castanò Francesco",
-  "Colosimo Riccardo","Taramasco Andrea","Rudino Manuel","Colombo Simone",
-  "Fioretta Samuele","Frinolli Andrea","Litrico Sebastiano","Leonelli Dennis",
-  "Grosso Laerte","Michieli Francesco","Tascone Marco","Lucca Davide",
-  "Amaro Giuseppe","Ciamarra Davide","Mannella Daniele","Windisch Jakob",
-  "Manni Fabrizio","Marini Da Costa Gabriel","Manetta Giuliano","Drago Guglielmo",
-  "Falzaresi Mattia","Bellosta Lorenzo","Zoli Marco","Dall\'Orto Michele",
-  "Orto Simone","Rizzato Alessandro","Viale Vittorio","Milani Leonardo",
-  "Galiazzo Gian Marco","Iurisci Matteo","Crusca Michele","Trono Gabriele",
-  "Govoni Filippo","Andreello Tommaso","Margaritelli Francesco","Marta Alessandro",
-  "Delforno Nicholas","Brofiga Franchi Fabio","Cocchia Davide","Drago Alessandro",
 ];
+const makeFallback = (names, gender) => names.map((name,i) => enrichAthlete({
+  id:`${gender}${String(i+1).padStart(4,"0")}`,
+  name, gender, ranking:i+1, cost:getPrice(i+1), prevCost:getPrice(i+1),
+}));
 
-const makeAthletes = (names, gender) =>
-  names.map((name,i) => ({
-    id:`${gender}${String(i+1).padStart(4,"0")}`,
-    name, ranking:i+1, cost:getPrice(i+1), gender,
-    prevCost:getPrice(Math.max(1,i+1+(i%3===0?2:i%3===1?-1:0))),
-    costHistory:Array.from({length:5},(_,j)=>getPrice(Math.max(1,i+1+(2-j)))),
-    results:[
-      {event:"Falconara",phase:"Semifinale",pts:+(Math.random()*20+5).toFixed(1)},
-      {event:"Termoli",  phase:"Quarti",    pts:+(Math.random()*15+3).toFixed(1)},
-    ],
-  }));
+// Stato globale atleti — viene aggiornato al mount dell'app
+let WOMEN = makeFallback(WOMEN_NAMES_FALLBACK, "W");
+let MEN   = makeFallback(MEN_NAMES_FALLBACK,   "M");
 
-const WOMEN = makeAthletes(WOMEN_NAMES,"W");
-const MEN   = makeAthletes(MEN_NAMES,"M");
+// Carica atleti reali dall'API
+async function loadAthletesFromAPI() {
+  try {
+    const res = await fetch(ATHLETES_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.women?.length > 0) WOMEN = data.women.map(enrichAthlete);
+    if (data.men?.length   > 0) MEN   = data.men.map(enrichAthlete);
+    return true;
+  } catch(e) {
+    console.warn("Athletes API non disponibile, uso fallback mock:", e.message);
+    return false;
+  }
+}
 
 const MOCK_MATCHES = {
   "E0001":[
@@ -474,6 +453,12 @@ export default function FantaBeachApp() {
   const [accessToken, setAccessToken] = useState(null);
   const [authUser, setAuthUser]       = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [athletesReady, setAthletesReady] = useState(false);
+
+  // Carica atleti reali dall'API al mount
+  useEffect(() => {
+    loadAthletesFromAPI().finally(() => setAthletesReady(true));
+  }, []);
 
   // Ripristina sessione da localStorage al mount
   useEffect(() => {
@@ -536,7 +521,7 @@ export default function FantaBeachApp() {
     return () => clearInterval(interval);
   }, []);
 
-  if (authLoading) return (
+  if (authLoading || !athletesReady) return (
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:B.sand,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center"}}>
         <LogoBall size={48}/>
@@ -552,7 +537,8 @@ export default function FantaBeachApp() {
 // ─── COMPONENTE PRINCIPALE ─────────────────────────────────────
 function FantaBeach({ accessToken, authUser, onLogout }) {
   const [tab, setTab]             = useState(0);
-  const [hiddenPage, setHiddenPage] = useState(null); // 'stats-atleti'|'stats-utenti'|'stats-awards'|'profile'|'prizes'|'rules'|'terms'
+  const [hiddenPage, setHiddenPage] = useState(null);
+  const [athletes_data, setAthletesData] = useState({ women: WOMEN, men: MEN }); // 'stats-atleti'|'stats-utenti'|'stats-awards'|'profile'|'prizes'|'rules'|'terms'
   const [leagueId, setLeagueId]   = useState("L001-F");
   const [budgets, setBudgets]     = useState({"L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400});
   const [rosters, setRosters]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
@@ -690,8 +676,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         const newRosters = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         roster_data.forEach(r => {
           const athlete = r.gender === "W"
-            ? WOMEN.find(a => a.id === r.player_id)
-            : MEN.find(a => a.id === r.player_id);
+            ? athletes_data.women.find(a => a.id === r.player_id)
+            : athletes_data.men.find(a => a.id === r.player_id);
           if (athlete && newRosters[r.league_id] !== undefined)
             newRosters[r.league_id].push(athlete);
         });
@@ -716,7 +702,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   };
 
   const league   = leagues.find(l => l.id === leagueId);
-  const athletes = league.gender === "F" ? WOMEN : MEN;
+  const athletes = league.gender === "F" ? athletes_data.women : athletes_data.men;
   const budget   = budgets[leagueId];
   const roster   = rosters[leagueId];
   const lineup   = lineups[leagueId];
@@ -1242,7 +1228,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 <div style={{color:B.gray,fontSize:12,textAlign:"center",marginBottom:12}}>Cerca un atleta o selezionalo dal Mercato</div>
                 <input placeholder="Cerca atleta..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:13,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:10}}/>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {[...WOMEN,...MEN].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).slice(0,25).map(a=>(
+                  {[...athletes_data.women,...athletes_data.men].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).slice(0,25).map(a=>(
                     <div key={a.id} onClick={()=>setSelectedAthlete(a)} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
                       <div style={{width:36,height:36,borderRadius:"50%",overflow:"hidden",flexShrink:0,background:B.grayPale}}>{ATHLETE_PHOTOS[a.id]?<img src={ATHLETE_PHOTOS[a.id]} alt={a.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}}/>:<LogoBall size={36}/>}</div>
                       <div style={{flex:1,color:B.dark,fontSize:13,fontWeight:"bold"}}>{a.name}</div>
