@@ -2456,14 +2456,38 @@ function StatsAwards({ onBack }) {
 }
 
 function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
-  const cat=getCategory(a.ranking);
-  const diff=a.cost-a.prevCost;
-  const maxH=Math.max(...a.costHistory);
-  const W=240,H=64;
-  const photo=ATHLETE_PHOTOS[a.id];
+  const cat  = getCategory(a.ranking);
+  const diff = a.cost - (a.prevCost || a.cost);
+  const rankDelta = a.rankDelta || null;
+  const photo = ATHLETE_PHOTOS[a.id];
+
+  // Grafico storico prezzi
+  const history = a.costHistory || [a.cost];
+  const W = 280, H = 80;
+  const minV = Math.min(...history) * 0.9;
+  const maxV = Math.max(...history) * 1.05;
+  const range = maxV - minV || 1;
+  const px = (i) => (i / (history.length - 1)) * (W - 24) + 12;
+  const py = (v) => H - 14 - ((v - minV) / range) * (H - 28);
+  const points = history.map((v,i) => `${px(i)},${py(v)}`).join(" ");
+  // Area sotto la curva
+  const areaPoints = `12,${H-14} ${points} ${px(history.length-1)},${H-14}`;
+  // Label date (nomi tappe mock per ora)
+  const tLabels = history.length === 5
+    ? ["T-4","T-3","T-2","T-1","Ora"]
+    : history.map((_,i) => i === history.length-1 ? "Ora" : `T-${history.length-1-i}`);
+
+  // Risultati mock se vuoti
+  const results = a.results?.length > 0 ? a.results : [
+    {event:"Falconara",   phase:"Qualifiche",  pts:4.0},
+    {event:"Termoli",     phase:"Pool",        pts:3.0},
+  ];
+
   return (
     <div>
       <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Indietro</button>
+
+      {/* HEADER ATLETA */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:14,padding:"18px 16px",marginBottom:12,textAlign:"center"}}>
         <div style={{width:80,height:80,borderRadius:"50%",margin:"0 auto 10px",overflow:"hidden",background:photo?"#000":cat.bg,border:`2px solid ${cat.text}44`,display:"flex",alignItems:"center",justifyContent:"center"}}>
           {photo?<img src={photo} alt={a.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}}/>:<LogoBall size={48}/>}
@@ -2471,32 +2495,97 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
         <div style={{color:B.dark,fontWeight:"bold",fontSize:19}}>{a.name}</div>
         <div style={{display:"flex",justifyContent:"center",gap:8,margin:"8px 0 12px"}}>
           <span style={{fontSize:11,padding:"2px 10px",borderRadius:8,background:cat.bg,color:cat.text,fontWeight:"bold"}}>{cat.label}</span>
-          <span style={{fontSize:11,padding:"2px 10px",borderRadius:8,background:B.grayPale,color:B.gray}}>{a.gender==="F"?"♀":"♂"}</span>
+          <span style={{fontSize:11,padding:"2px 10px",borderRadius:8,background:B.grayPale,color:B.gray}}>{a.gender==="F"?"♀ Femminile":"♂ Maschile"}</span>
         </div>
-        <div style={{display:"flex",justifyContent:"center"}}>
-          {[{label:"Ranking",value:`#${a.ranking}`,color:B.orange},{label:"Costo",value:`$${a.cost}`,color:B.greenDark},{label:"Var.",value:diff===0?"—":diff>0?`+${diff}`:`${diff}`,color:diff>0?B.greenDark:diff<0?B.orange:B.gray}].map((s,i)=>(
+
+        {/* STATS: ranking, costo, delta */}
+        <div style={{display:"flex",justifyContent:"center",borderTop:`1px solid ${B.creamDark}`,paddingTop:12}}>
+          {[
+            {
+              label:"Ranking",
+              value:`#${a.ranking}`,
+              color:B.orange,
+              sub: rankDelta !== null && rankDelta !== 0
+                ? <span style={{fontSize:11,color:rankDelta>0?B.greenDark:B.orange,fontWeight:"bold"}}>{rankDelta>0?`▲${rankDelta}`:`▼${Math.abs(rankDelta)}`} pos</span>
+                : <span style={{fontSize:11,color:B.grayLight}}>—</span>
+            },
+            {
+              label:"Costo",
+              value:`$${a.cost}`,
+              color:B.greenDark,
+              sub: diff !== 0
+                ? <span style={{fontSize:11,color:diff>0?B.greenDark:B.orange,fontWeight:"bold"}}>{diff>0?`▲$${diff}`:`▼$${Math.abs(diff)}`}</span>
+                : <span style={{fontSize:11,color:B.grayLight}}>stabile</span>
+            },
+            {
+              label:"Variazione",
+              value: diff===0 ? "—" : diff>0 ? `+$${diff}` : `-$${Math.abs(diff)}`,
+              color: diff>0?B.greenDark:diff<0?B.orange:B.gray,
+              sub: <span style={{fontSize:11,color:B.grayLight}}>{diff===0?"nessuna":"vs. tappa prec."}</span>
+            },
+          ].map((s,i)=>(
             <div key={i} style={{flex:1,padding:"8px 4px",borderRight:i<2?`1px solid ${B.creamDark}`:"none"}}>
-              <div style={{color:s.color,fontWeight:"bold",fontSize:20}}>{s.value}</div>
-              <div style={{color:B.gray,fontSize:10}}>{s.label}</div>
+              <div style={{color:s.color,fontWeight:"bold",fontSize:18}}>{s.value}</div>
+              <div style={{color:B.gray,fontSize:10,marginBottom:2}}>{s.label}</div>
+              {s.sub}
             </div>
           ))}
         </div>
+
+        {/* BOTTONE ACQUISTA/VENDI */}
         <div style={{marginTop:14}}>
-          {isOwned?(<button onClick={onSell} style={{padding:"10px 24px",borderRadius:10,border:`1px solid ${canTrade?B.orange:B.grayLight}`,background:canTrade?B.orangePale:B.grayPale,color:canTrade?B.orange:B.gray,fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>{canTrade?`Vendi ($${a.cost})`:"Vendita bloccata"}</button>)
-          :(<button onClick={onBuy} style={{padding:"10px 24px",borderRadius:10,border:"none",background:budget>=a.cost&&canTrade?B.greenDark:B.grayPale,color:budget>=a.cost&&canTrade?B.white:B.gray,fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>{!canTrade?"Mercato chiuso":budget>=a.cost?`Acquista ($${a.cost})`:"Crediti insufficienti"}</button>)}
+          {isOwned
+            ? <button onClick={onSell} style={{padding:"10px 24px",borderRadius:10,border:`1px solid ${canTrade?B.orange:B.grayLight}`,background:canTrade?B.orangePale:B.grayPale,color:canTrade?B.orange:B.gray,fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                {canTrade?`Vendi ($${a.cost})`:"Vendita bloccata"}
+              </button>
+            : <button onClick={onBuy} style={{padding:"10px 24px",borderRadius:10,border:"none",background:budget>=a.cost&&canTrade?B.greenDark:B.grayPale,color:budget>=a.cost&&canTrade?B.white:B.gray,fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                {!canTrade?"Mercato chiuso":budget>=a.cost?`Acquista ($${a.cost})`:"Crediti insufficienti"}
+              </button>
+          }
         </div>
       </div>
-      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"13px",marginBottom:12}}>
-        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Andamento Prezzo</div>
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-          <polyline points={a.costHistory.map((v,i)=>`${(i/(a.costHistory.length-1))*(W-20)+10},${H-10-((v/maxH)*(H-20))}`).join(" ")} fill="none" stroke={B.greenDark} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          {a.costHistory.map((v,i)=>(<circle key={i} cx={(i/(a.costHistory.length-1))*(W-20)+10} cy={H-10-((v/maxH)*(H-20))} r="4" fill={B.orange}/>))}
+
+      {/* GRAFICO STORICO PREZZI */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px",marginBottom:12}}>
+        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>Andamento Prezzo</div>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{overflow:"visible"}}>
+          {/* Area */}
+          <polygon points={areaPoints} fill={B.greenDark} fillOpacity="0.08"/>
+          {/* Linea */}
+          <polyline points={points} fill="none" stroke={B.greenDark} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          {/* Punti con valore */}
+          {history.map((v,i)=>(
+            <g key={i}>
+              <circle cx={px(i)} cy={py(v)} r="5" fill={i===history.length-1?B.orange:B.greenDark}/>
+              <text x={px(i)} y={py(v)-10} textAnchor="middle" fontSize="10" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${v}</text>
+            </g>
+          ))}
         </svg>
-        <div style={{display:"flex",justifyContent:"space-between"}}>{["T-4","T-3","T-2","T-1","Ora"].map(l=>(<span key={l} style={{color:B.grayLight,fontSize:9}}>{l}</span>))}</div>
+        {/* Label date */}
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+          {tLabels.map((l,i)=>(
+            <span key={i} style={{color:i===tLabels.length-1?B.orange:B.gray,fontSize:10,fontWeight:i===tLabels.length-1?"bold":"normal",flex:1,textAlign:"center"}}>{l}</span>
+          ))}
+        </div>
       </div>
-      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"13px"}}>
+
+      {/* ULTIMI RISULTATI */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px"}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Ultimi Risultati</div>
-        {a.results.map((r,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<a.results.length-1?`1px solid ${B.creamDark}`:"none"}}><div><div style={{color:B.dark,fontSize:13,fontWeight:"bold"}}>{r.event}</div><div style={{color:B.gray,fontSize:11}}>{r.phase}</div></div><div style={{color:B.orange,fontWeight:"bold",fontSize:16}}>+{r.pts} pt</div></div>))}
+        {results.length === 0
+          ? <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>Nessun risultato disponibile</div>
+          : results.map((r,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<results.length-1?`1px solid ${B.creamDark}`:"none"}}>
+              <div>
+                <div style={{color:B.dark,fontSize:13,fontWeight:"bold"}}>{r.event}</div>
+                <div style={{color:B.gray,fontSize:11,marginTop:2}}>{r.phase}</div>
+              </div>
+              <div style={{background:B.greenPale,borderRadius:8,padding:"4px 12px",textAlign:"center"}}>
+                <div style={{color:B.greenDark,fontWeight:"bold",fontSize:16}}>+{r.pts} pt</div>
+              </div>
+            </div>
+          ))
+        }
       </div>
     </div>
   );
