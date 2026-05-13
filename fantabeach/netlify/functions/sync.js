@@ -67,11 +67,12 @@ exports.handler = async (event) => {
       }
     });
 
-    // ── Legge storico precedente da Supabase (ultimo snapshot per atleta) ──
-    const prevMap = {}; // player_id → {ranking, cost}
+    // ── Legge storico precedente da Supabase (snapshot di giorno diverso da oggi) ──
+    const prevMap = {};
     try {
+      const today = new Date().toISOString().slice(0, 10);
       const prevRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost&order=synced_at.desc`,
+        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost,synced_at&order=synced_at.desc&limit=2000`,
         { headers: {
           "apikey": SUPABASE_KEY,
           "Authorization": `Bearer ${SUPABASE_KEY}`,
@@ -79,9 +80,12 @@ exports.handler = async (event) => {
       );
       const prevData = await prevRes.json();
       if (Array.isArray(prevData)) {
-        // Prende solo il valore più recente per ogni atleta
         prevData.forEach(r => {
-          if (!prevMap[r.player_id]) prevMap[r.player_id] = { ranking: r.ranking, cost: r.cost };
+          const rDay = (r.synced_at || "").slice(0, 10);
+          // Prende solo snapshot di un giorno precedente (non oggi)
+          if (!prevMap[r.player_id] && rDay !== today) {
+            prevMap[r.player_id] = { ranking: r.ranking, cost: r.cost };
+          }
         });
       }
     } catch(e) { console.warn("Errore lettura storico:", e.message); }
