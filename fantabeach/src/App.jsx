@@ -574,6 +574,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [lineups, setLineups]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [captains, setCaptains]   = useState({"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null});
   const [coaches, setCoaches]     = useState({"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null});
+  const [coachInField, setCoachInField] = useState({"L001-F":true,"L001-M":true,"L002-F":true,"L002-M":true});
   const [joinStatus, setJoinStatus] = useState(INIT_JOIN);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [joinTeamName, setJoinTeamName] = useState("");
@@ -745,7 +746,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const showNotif = (msg, type="success") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),2800); };
   const canTrade = () => {
-    if (league.status !== "OPEN") return false; // iscrizioni chiuse su tutte
+    if (league.status !== "OPEN") return false;
+    // Blocca se c'è una tappa in corso per questo genere
+    const activeTappa = EVENTS.find(e =>
+      e.status === "In corso" &&
+      (e.gender||"").toUpperCase() === league.gender
+    );
+    if (activeTappa) return false;
     return league.type==="classic" ? true : league.marketOpen;
   };
   const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
@@ -1149,10 +1156,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               const calcPlayerPts = (athleteName) => {
                 let total = 0;
                 const bonusDetails = [];
-                const cognome = athleteName.split(" ")[0];
+                const cognome = athleteName.split(" ")[0].toLowerCase();
                 eventMatches.forEach(m => {
-                  const inA = m.teamA?.includes(cognome);
-                  const inB = m.teamB?.includes(cognome);
+                  const inA = m.teamA?.toLowerCase().includes(cognome);
+                  const inB = m.teamB?.toLowerCase().includes(cognome);
                   if (!inA && !inB) return;
                   const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
                   bonuses.forEach(b => {
@@ -1248,6 +1255,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             })()}
 
             <div style={{fontSize:11,color:B.gray,textAlign:"center",marginBottom:6}}>{league.name} · Deadline: giovedì 23:00</div>
+            {!canTrade()&&EVENTS.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)&&(
+              <div style={{background:"#FEE2E2",border:"1px solid #DC262644",borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:12,color:"#DC2626",display:"flex",alignItems:"center",gap:8}}>
+                <span>🔴</span><b>Tappa in corso — formazione bloccata</b>
+              </div>
+            )}
             <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"8px 12px",marginBottom:14,fontSize:12,color:B.orange,textAlign:"center"}}>
               Scegli 3 titolari + 1 capitano unico (×1.3 punti)
             </div>
@@ -1302,12 +1314,26 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                 {/* Coach */}
                 {currentCoach&&(
-                  <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}44`,borderRadius:10,padding:"10px 13px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:20}}>🧢</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>Coach: {currentCoach.name}</div>
-                      <div style={{fontSize:10,color:B.gray}}>+0.5 pt per ogni vittoria della sua coppia</div>
+                  <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}44`,borderRadius:10,padding:"10px 13px",marginBottom:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:20}}>🧢</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>Coach: {currentCoach.name}</div>
+                        <div style={{fontSize:10,color:B.gray}}>+0.5 pt per ogni vittoria se schierato</div>
+                      </div>
+                      {/* Toggle schierato/panchina */}
+                      <button onClick={()=>canTrade()&&setCoachInField(cf=>({...cf,[leagueId]:!cf[leagueId]}))}
+                        style={{padding:"5px 10px",borderRadius:8,border:"none",cursor:canTrade()?"pointer":"default",fontFamily:"Georgia,serif",fontSize:10,fontWeight:"bold",
+                          background:coachInField[leagueId]?B.greenDark:B.grayPale,
+                          color:coachInField[leagueId]?B.white:B.gray}}>
+                        {coachInField[leagueId]?"✓ Schierato":"⏸ Panchina"}
+                      </button>
                     </div>
+                    {!coachInField[leagueId]&&(
+                      <div style={{fontSize:10,color:B.orange,marginTop:6,paddingTop:6,borderTop:`1px solid ${B.yellow}44`}}>
+                        ⚠️ Coach in panchina — nessun bonus, ma anche nessun malus se assente
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1318,8 +1344,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   Salva entro giovedì 23:00.
                 </div>
 
-                <button onClick={handleSaveFormation} style={{width:"100%",padding:"13px",background:roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                  {roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
+                <button onClick={canTrade()?handleSaveFormation:()=>showNotif("Tappa in corso — formazione bloccata","error")}
+                  style={{width:"100%",padding:"13px",background:!canTrade()?"#DC2626":roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:!canTrade()||roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  {!canTrade()&&EVENTS.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)?"🔴 Tappa in corso":roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
                 </button>
               </div>
             )}
@@ -2796,8 +2823,13 @@ function EventDetail({event, onBack, myRoster}) {
   const phases = PHASE_ORDER.filter(p => matches.some(m => m.phase === p));
 
   const isMyTeam = (teamStr) => {
-    if (!myRoster || !teamStr) return false;
-    return myRoster.some(a => teamStr.includes(a.name.split(" ")[0]));
+    if (!myRoster || myRoster.length === 0 || !teamStr) return false;
+    return myRoster.some(a => {
+      // Il nome atleta è "Cognome Nome" — prendiamo il cognome (prima parola)
+      // Il team string è "Cognome I. - Cognome I." — confrontiamo solo il cognome
+      const cognome = a.name.split(" ")[0].toLowerCase();
+      return teamStr.toLowerCase().includes(cognome);
+    });
   };
 
   return (
@@ -2820,7 +2852,7 @@ function EventDetail({event, onBack, myRoster}) {
         </div>
       ) : phases.map(phase => {
         const phaseMatches = matches.filter(m => m.phase === phase);
-        const isGrid = phase.includes("Qualifiche");
+        const isGrid = phase.includes("Qualifiche") || phase.includes("Pool") || phase.includes("Round");
         return (
           <div key={phase} style={{marginBottom:14}}>
             <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
