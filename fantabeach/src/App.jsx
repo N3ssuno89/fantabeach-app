@@ -747,13 +747,21 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const showNotif = (msg, type="success") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),2800); };
   const canTrade = () => {
     if (league.status !== "OPEN") return false;
-    // Blocca se c'è una tappa in corso per questo genere
+    // Classic: bloccato se la stagione è iniziata (almeno una tappa completata o in corso)
+    if (league.type === "classic") {
+      const stagionIniziata = EVENTS.some(e =>
+        (e.gender||"").toUpperCase() === league.gender &&
+        (e.status === "In corso" || e.status === "Completato")
+      );
+      return !stagionIniziata;
+    }
+    // Market: bloccato solo durante tappa in corso per questo genere
     const activeTappa = EVENTS.find(e =>
       e.status === "In corso" &&
       (e.gender||"").toUpperCase() === league.gender
     );
     if (activeTappa) return false;
-    return league.type==="classic" ? true : league.marketOpen;
+    return league.marketOpen;
   };
   const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
   const isStarter = (a) => lineup.includes(a.id);
@@ -1222,7 +1230,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
                           <div style={{width:64,height:64,borderRadius:"50%",background:B.yellowPale,border:`2px solid ${B.yellow}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🧢</div>
                           <div style={{fontSize:9,color:"#7A4F00",fontWeight:"bold",textAlign:"center",maxWidth:64,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentCoach.name.split(" ")[0]}</div>
-                          <div style={{fontSize:8,color:B.gray}}>Coach</div>
+                          <div style={{fontSize:8,color:B.greenDark,fontWeight:"bold"}}>Schierato</div>
+                        </div>
+                      )}
+                      {!currentCoach&&(
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,opacity:0.4}}>
+                          <div style={{width:64,height:64,borderRadius:"50%",background:B.grayPale,border:`2px dashed ${B.grayLight}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🧢</div>
+                          <div style={{fontSize:8,color:B.gray}}>Nessun coach</div>
                         </div>
                       )}
                     </div>
@@ -1291,33 +1305,56 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         </div>
                         {/* Partite */}
                         {matchResults.map((mr,j)=>(
-                          <div key={j} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
-                            <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:60}}>{mr.phase}</div>
-                            <div style={{flex:1,fontSize:10,color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                              vs {mr.isBye?"—":mr.opponent||"—"}
-                            </div>
-                            <div style={{fontSize:10,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0}}>
-                              {mr.basePts>0?`+${mr.basePts.toFixed(1)}`:mr.basePts.toFixed(1)}
-                            </div>
-                            {mr.extraBonuses.length>0&&(
-                              <div style={{display:"flex",gap:2,flexShrink:0}}>
-                                {mr.extraBonuses.map((b,bi)=>(
-                                  <span key={bi} title={`${BONUS_META[b]?.label}: ${BONUS_META[b]?.pts>0?"+":""}${BONUS_META[b]?.pts}`}
-                                    style={{fontSize:12}}>{BONUS_META[b]?.icon}</span>
-                                ))}
+                          <div key={j} style={{padding:"8px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                              <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:60}}>{mr.phase}</div>
+                              {/* Punteggio partita grosso */}
+                              {mr.isBye
+                                ? <span style={{fontSize:13,fontWeight:"bold",color:B.greenDark,background:B.greenPale,padding:"1px 8px",borderRadius:6,flexShrink:0}}>BYE</span>
+                                : <span style={{fontSize:13,fontWeight:"bold",color:mr.result.startsWith("2")?"#065F46":"#DC2626",background:mr.result.startsWith("2")?"#D1FAE5":"#FEE2E2",padding:"1px 8px",borderRadius:6,flexShrink:0}}>{mr.result}</span>
+                              }
+                              <div style={{flex:1,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                vs {mr.isBye?"—":mr.opponent||"—"}
                               </div>
-                            )}
-                            <div style={{fontSize:11,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:36,textAlign:"right"}}>
-                              {mr.totalPts>0?`+${mr.totalPts.toFixed(1)}`:mr.totalPts===0?"0":mr.totalPts.toFixed(1)}
+                              {/* Punti base */}
+                              <div style={{fontSize:13,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0}}>
+                                {mr.basePts>0?`+${mr.basePts.toFixed(1)}`:mr.basePts.toFixed(1)}
+                              </div>
+                              {/* Emoji bonus */}
+                              {mr.extraBonuses.length>0&&(
+                                <div style={{display:"flex",gap:2,flexShrink:0}}>
+                                  {mr.extraBonuses.map((b,bi)=>(
+                                    <span key={bi} title={`${BONUS_META[b]?.label}: ${BONUS_META[b]?.pts>0?"+":""}${BONUS_META[b]?.pts}`} style={{fontSize:14}}>{BONUS_META[b]?.icon}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Totale partita (senza moltiplicatore qui) */}
+                              <div style={{fontSize:12,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:36,textAlign:"right",borderLeft:`1px solid ${B.creamDark}`,paddingLeft:8}}>
+                                {mr.totalPts>0?`+${mr.totalPts.toFixed(1)}`:mr.totalPts===0?"0":mr.totalPts.toFixed(1)}
+                              </div>
                             </div>
                           </div>
                         ))}
-                        {/* Totale atleta */}
-                        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:B.sandDark,fontSize:11,fontWeight:"bold"}}>
-                          <span style={{color:B.gray}}>Totale {isCapt?"(cap ×1.3)":""}</span>
-                          <span style={{color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
-                            {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
-                          </span>
+                        {/* Totale atleta con moltiplicatore */}
+                        <div style={{background:B.sandDark,padding:"8px 12px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
+                            <span>Totale partite</span>
+                            <span style={{color:B.dark,fontWeight:"bold"}}>{grandTotal>0?`+${grandTotal.toFixed(1)}`:grandTotal.toFixed(1)} pt</span>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
+                            <span>Moltiplicatore {et.label}</span>
+                            <span style={{color:et.color,fontWeight:"bold"}}>×{et.weight}</span>
+                          </div>
+                          {isCapt&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:B.gray,marginBottom:2}}>
+                            <span>★ Capitano</span>
+                            <span style={{color:B.yellow,fontWeight:"bold"}}>×1.3</span>
+                          </div>}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,fontWeight:"bold",paddingTop:6,borderTop:`1px solid ${B.sandDeep}`,marginTop:2}}>
+                            <span style={{color:B.dark}}>Totale tappa</span>
+                            <span style={{color:finalTotal>0?B.greenDark:finalTotal<0?B.orange:B.gray}}>
+                              {finalTotal>0?`+${finalTotal.toFixed(1)}`:finalTotal===0?"—":finalTotal.toFixed(1)} pt
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1362,8 +1399,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               </div>
             ):(
               <div>
-                {/* IN CAMPO */}
-                <div style={{marginBottom:18}}>
+                {/* Formazione modificabile — solo senza tappa in corso */}
+                {!EVENTS.some(e=>(e.status==="In corso"||e.status==="Completato")&&(e.gender||"").toUpperCase()===league.gender&&league.type==="classic") &&
+                 !EVENTS.some(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender) && (
+                <div>
                   <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12,textAlign:"center"}}>
                     ⚡ In Campo ({starters.length}/3) {captain&&"· ★ Cap: "+(roster.find(a=>a.id===captain)||{name:""}).name.split(" ")[0]}
                   </div>
@@ -1438,6 +1477,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   style={{width:"100%",padding:"13px",background:!canTrade()?"#DC2626":roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:!canTrade()||roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
                   {!canTrade()&&EVENTS.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)?"🔴 Tappa in corso":roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
                 </button>
+                </div>)} {/* fine formazione modificabile */}
               </div>
             )}
           </div>
