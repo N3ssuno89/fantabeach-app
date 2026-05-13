@@ -292,10 +292,10 @@ const PRIZES=[
 ];
 
 const PRICE_RANGES = [
-  {label:"Tutti",      filter:()=>true,                    bg:B.grayPale,    color:B.gray,     activeBg:B.greenDark,  activeColor:B.white},
-  {label:"🔥 < $50",   filter:a=>a.cost<50,                bg:"#FFF7ED",     color:"#92400E",  activeBg:"#92400E",    activeColor:B.white},
-  {label:"💎 $50–99",  filter:a=>a.cost>=50&&a.cost<100,   bg:B.greenPale,   color:B.greenDark,activeBg:B.greenDark,  activeColor:B.white},
-  {label:"⭐ ≥ $100",  filter:a=>a.cost>=100,              bg:B.yellowPale,  color:"#7A4F00",  activeBg:"#7A4F00",    activeColor:B.white},
+  {label:"Tutti",          filter:()=>true,                    bg:B.grayPale,    color:B.gray,     activeBg:B.greenDark,  activeColor:B.white},
+  {label:"< 50 $",         filter:a=>a.cost<50,                bg:"#FFF7ED",     color:"#92400E",  activeBg:"#92400E",    activeColor:B.white},
+  {label:"50 $ - 99 $",    filter:a=>a.cost>=50&&a.cost<100,   bg:B.greenPale,   color:B.greenDark,activeBg:B.greenDark,  activeColor:B.white},
+  {label:"> 100 $",        filter:a=>a.cost>=100,              bg:B.yellowPale,  color:"#7A4F00",  activeBg:"#7A4F00",    activeColor:B.white},
 ];
 
 const LogoBall = ({size=32}) => (
@@ -663,7 +663,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         if (Array.isArray(allRosters)) {
           const countF = {}, countM = {};
           allRosters.forEach(r => {
-            if (r.gender === "W") countF[r.player_id] = { name: r.player_name, count: (countF[r.player_id]?.count||0)+1 };
+            if (r.gender === "F") countF[r.player_id] = { name: r.player_name, count: (countF[r.player_id]?.count||0)+1 };
             else countM[r.player_id] = { name: r.player_name, count: (countM[r.player_id]?.count||0)+1 };
           });
           setTopF(Object.values(countF).sort((a,b)=>b.count-a.count).slice(0,3));
@@ -705,7 +705,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       if (Array.isArray(roster_data)) {
         const newRosters = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         roster_data.forEach(r => {
-          const athlete = r.gender === "W"
+          const athlete = r.gender === "F"
             ? athletes_data.women.find(a => a.id === r.player_id)
             : athletes_data.men.find(a => a.id === r.player_id);
           if (athlete && newRosters[r.league_id] !== undefined)
@@ -1006,6 +1006,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===0&&(
           myJoin!=="APPROVED"?<JoinGate myJoin={myJoin} league={league} showJoinForm={showJoinForm} setShowJoinForm={setShowJoinForm} joinTeamName={joinTeamName} setJoinTeamName={setJoinTeamName} onJoinRequest={handleJoinRequest}/>:(
           <div>
+            {/* Profilo atleta inline nel mercato */}
+            {selectedAthlete?(
+              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()}/>
+            ):(
             {/* Market sub-tabs */}
             <div style={{display:"flex",gap:6,marginBottom:12}}>
               {[{id:"athletes",label:"🏐 Atleti"},{id:"coaches",label:"🧢 Coach"}].map(mt=>(
@@ -1031,7 +1035,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                 <div style={{display:"flex",gap:5,marginBottom:12}}>
                   {PRICE_RANGES.map((pr,i)=>(
-                    <button key={i} onClick={()=>{setPriceFilter(i);setVisibleCount(30);}} style={{flex:1,padding:"6px 4px",borderRadius:8,border:`1px solid ${priceFilter===i?pr.activeBg:B.creamDark}`,cursor:"pointer",fontSize:10,fontFamily:"Georgia,serif",background:priceFilter===i?pr.activeBg:pr.bg,color:priceFilter===i?pr.activeColor:pr.color,fontWeight:priceFilter===i?"bold":"normal",whiteSpace:"nowrap"}}>{pr.label}</button>
+                    <button key={i} onClick={()=>{setPriceFilter(i);setVisibleCount(30);}} style={{flex:1,padding:"7px 4px",borderRadius:8,border:`1px solid ${priceFilter===i?pr.activeBg:B.creamDark}`,cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif",background:priceFilter===i?pr.activeBg:pr.bg,color:priceFilter===i?pr.activeColor:pr.color,fontWeight:priceFilter===i?"bold":"normal",whiteSpace:"nowrap"}}>{pr.label}</button>
                   ))}
                 </div>
 
@@ -1120,6 +1124,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 </div>
               </div>
             )}
+            )} {/* fine !selectedAthlete */}
           </div>
           )
         )}
@@ -1128,6 +1133,116 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===1&&(
           myJoin!=="APPROVED"?<JoinGate myJoin={myJoin} league={league} showJoinForm={showJoinForm} setShowJoinForm={setShowJoinForm} joinTeamName={joinTeamName} setJoinTeamName={setJoinTeamName} onJoinRequest={handleJoinRequest}/>:(
           <div>
+            {/* Vista punti durante tappa in corso */}
+            {(()=>{
+              const activeEvent = EVENTS.find(e => e.status==="In corso" && (e.gender||"").toUpperCase()===league.gender);
+              const isLocked = !canTrade() && activeEvent;
+              if (!isLocked || roster.length===0) return null;
+              const eventMatches = MOCK_MATCHES_V2[activeEvent.id] || [];
+              const et = EVENT_TYPE_META[activeEvent.type]||EVENT_TYPE_META.Silver;
+
+              // Calcola punti per ogni mio atleta
+              const calcPlayerPts = (athleteName) => {
+                let total = 0;
+                const bonusDetails = [];
+                const cognome = athleteName.split(" ")[0];
+                eventMatches.forEach(m => {
+                  const inA = m.teamA?.includes(cognome);
+                  const inB = m.teamB?.includes(cognome);
+                  if (!inA && !inB) return;
+                  const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
+                  bonuses.forEach(b => {
+                    const meta = BONUS_META[b];
+                    if (meta?.pts) {
+                      total += meta.pts * (activeEvent.weight||1);
+                      bonusDetails.push({...meta, code:b});
+                    }
+                  });
+                });
+                return {total, bonusDetails};
+              };
+
+              return (
+                <div style={{marginBottom:16}}>
+                  <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"10px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:16}}>🔴</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:"bold",color:B.orange}}>Tappa in corso: {activeEvent.name}</div>
+                      <div style={{fontSize:10,color:B.gray}}>Mercato bloccato · Aggiorna per i punti live</div>
+                    </div>
+                    <span style={{fontSize:11,background:et.bg,color:et.color,padding:"2px 8px",borderRadius:8,fontWeight:"bold"}}>×{et.weight}</span>
+                  </div>
+
+                  {/* Legenda */}
+                  <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"8px 10px",marginBottom:10}}>
+                    <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>Legenda punti</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {Object.entries(BONUS_META).map(([k,m])=>(
+                        <span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,background:m.bg,color:m.color,fontSize:9,padding:"1px 6px",borderRadius:20,border:`1px solid ${m.color}22`}}>
+                          {m.icon} {m.pts!==undefined?(m.pts>0?`+${m.pts}`:m.pts===0?"0":`${m.pts}`):`×${m.mult}`}
+                          <span style={{opacity:.7}}>{m.label}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Punti per atleta */}
+                  <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>I miei punti</div>
+                  {[...starters, ...bench].map((a,i)=>{
+                    const {total, bonusDetails} = calcPlayerPts(a.name);
+                    const isCapt = isCaptain(a);
+                    const isStart = isStarter(a);
+                    const finalPts = isCapt ? total * 1.3 : total;
+                    return (
+                      <div key={a.id} style={{background:B.white,border:`1px solid ${isStart?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isStart?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:7,opacity:isStart?1:0.7}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:bonusDetails.length?8:0}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,fontWeight:"bold",color:B.dark,display:"flex",alignItems:"center",gap:5}}>
+                              {isCapt&&<span style={{color:B.yellow,fontSize:14}}>★</span>}
+                              {a.name}
+                              {!isStart&&<span style={{fontSize:9,color:B.gray,background:B.grayPale,padding:"1px 6px",borderRadius:8}}>Panchina</span>}
+                            </div>
+                            <div style={{fontSize:10,color:B.gray,marginTop:1}}>#{a.ranking} · {getCategory(a.ranking).label}</div>
+                          </div>
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontSize:18,fontWeight:"bold",color:finalPts>0?B.greenDark:B.gray}}>
+                              {finalPts>0?`+${finalPts.toFixed(1)}`:finalPts===0?"—":finalPts.toFixed(1)} pt
+                            </div>
+                            {isCapt&&total>0&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3 cap</div>}
+                          </div>
+                        </div>
+                        {bonusDetails.length>0&&(
+                          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                            {bonusDetails.map((bd,j)=>(
+                              <span key={j} style={{display:"inline-flex",alignItems:"center",gap:3,background:bd.bg,color:bd.color,fontSize:10,padding:"2px 8px",borderRadius:20,border:`1px solid ${bd.color}33`,fontWeight:"bold"}}>
+                                {bd.icon} {bd.pts>0?`+${bd.pts}`:bd.pts} <span style={{fontWeight:"normal",opacity:.8}}>· ×{activeEvent.weight}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Totale squadra */}
+                  {(()=>{
+                    let tot = 0;
+                    starters.forEach(a => {
+                      const {total} = calcPlayerPts(a.name);
+                      tot += isCaptain(a) ? total * 1.3 : total;
+                    });
+                    return (
+                      <div style={{background:B.greenDark,borderRadius:10,padding:"12px 14px",marginTop:4,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{color:"rgba(255,255,255,.8)",fontSize:13}}>Totale titolari</span>
+                        <span style={{color:B.white,fontWeight:"bold",fontSize:20}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
+                      </div>
+                    );
+                  })()}
+                  <div style={{height:12}}/>
+                </div>
+              );
+            })()}
+
             <div style={{fontSize:11,color:B.gray,textAlign:"center",marginBottom:6}}>{league.name} · Deadline: giovedì 23:00</div>
             <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"8px 12px",marginBottom:14,fontSize:12,color:B.orange,textAlign:"center"}}>
               Scegli 3 titolari + 1 capitano unico (×1.3 punti)
@@ -2680,76 +2795,23 @@ const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool","Round of 8","Quarti",
 function EventDetail({event, onBack, myRoster}) {
   const matches = MOCK_MATCHES_V2[event.id] || [];
   const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
-
-  // Fasi ordinate
   const phases = PHASE_ORDER.filter(p => matches.some(m => m.phase === p));
 
-  // Controlla se una squadra ha giocatori nel mio roster
   const isMyTeam = (teamStr) => {
     if (!myRoster || !teamStr) return false;
-    return myRoster.some(a => {
-      const parts = a.name.split(" ");
-      const cognome = parts[0];
-      return teamStr.includes(cognome);
-    });
-  };
-
-  // Calcola punti base da bonus
-  const calcPts = (bonuses) => bonuses.reduce((sum, b) => {
-    const meta = BONUS_META[b];
-    return sum + (meta?.pts || 0);
-  }, 0);
-
-  const BonusPill = ({code}) => {
-    const meta = BONUS_META[code];
-    if (!meta) return null;
-    return (
-      <span title={meta.label} style={{
-        display:"inline-flex",alignItems:"center",gap:3,
-        background:meta.bg, color:meta.color,
-        fontSize:10, fontWeight:"bold",
-        padding:"2px 7px", borderRadius:20,
-        border:`1px solid ${meta.color}33`,
-        whiteSpace:"nowrap"
-      }}>
-        {meta.icon} {meta.pts !== undefined ? (meta.pts > 0 ? `+${meta.pts}` : meta.pts === 0 ? "0" : meta.pts) : `×${meta.mult}`}
-      </span>
-    );
+    return myRoster.some(a => teamStr.includes(a.name.split(" ")[0]));
   };
 
   return (
     <div>
       <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
-
-      {/* HEADER TAPPA */}
       <div style={{background:B.greenDark,borderRadius:12,padding:"14px 16px",marginBottom:14,color:B.white}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontWeight:"bold",fontSize:18}}>{event.name}</div>
-            <div style={{color:"rgba(255,255,255,.7)",fontSize:12,marginTop:2}}>{event.date}{event.location?` · ${event.location}`:""}</div>
+            <div style={{fontWeight:"bold",fontSize:17}}>{event.name}</div>
+            <div style={{color:"rgba(255,255,255,.7)",fontSize:11,marginTop:2}}>{event.date}{event.location?` · ${event.location}`:""}</div>
           </div>
-          <div style={{background:et.bg,color:et.color,padding:"4px 10px",borderRadius:8,fontSize:11,fontWeight:"bold",textAlign:"center"}}>
-            <div>{et.label}</div>
-            <div style={{fontSize:14,fontWeight:"900"}}>×{et.weight}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* LEGENDA BONUS */}
-      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>Legenda punti</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {Object.entries(BONUS_META).map(([k,m]) => (
-            <span key={k} title={m.label} style={{
-              display:"inline-flex",alignItems:"center",gap:4,
-              background:m.bg, color:m.color,
-              fontSize:10, padding:"2px 8px", borderRadius:20,
-              border:`1px solid ${m.color}33`
-            }}>
-              {m.icon} {m.label}
-              <strong>{m.pts !== undefined ? (m.pts > 0 ? ` +${m.pts}` : ` ${m.pts}`) : ` ×${m.mult}`}</strong>
-            </span>
-          ))}
+          <div style={{background:et.bg,color:et.color,padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:"bold"}}>{et.label} ×{et.weight}</div>
         </div>
       </div>
 
@@ -2758,92 +2820,40 @@ function EventDetail({event, onBack, myRoster}) {
           <div style={{fontSize:40,marginBottom:10}}>📋</div>
           <div>Risultati non ancora disponibili</div>
         </div>
-      ) : (
-        phases.map(phase => (
-          <div key={phase} style={{marginBottom:16}}>
-            {/* Header fase */}
-            <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",
-              color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
-              <div style={{flex:1,height:1,background:B.creamDark}}/>
-              {phase}
-              <div style={{flex:1,height:1,background:B.creamDark}}/>
+      ) : phases.map(phase => {
+        const phaseMatches = matches.filter(m => m.phase === phase);
+        const isGrid = phase.includes("Qualifiche");
+        return (
+          <div key={phase} style={{marginBottom:14}}>
+            <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+              <div style={{flex:1,height:1,background:B.creamDark}}/>{phase} ({phaseMatches.length})<div style={{flex:1,height:1,background:B.creamDark}}/>
             </div>
-
-            {matches.filter(m => m.phase === phase).map((m, i) => {
-              const myA = isMyTeam(m.teamA);
-              const myB = isMyTeam(m.teamB);
-              const ptsA = calcPts(m.bonusA || []) * (event.weight || 1);
-              const ptsB = calcPts(m.bonusB || []) * (event.weight || 1);
-
-              return (
-                <div key={i} style={{
-                  background:B.white,
-                  border:`1px solid ${myA||myB?B.greenDark:B.creamDark}`,
-                  borderLeft:`4px solid ${myA||myB?B.greenDark:B.creamDark}`,
-                  borderRadius:10, padding:"11px 13px", marginBottom:7
-                }}>
-                  {/* Riga squadre + risultato */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                    <div style={{flex:1,fontSize:12,fontWeight:"bold",
-                      color:myA?B.greenDark:B.dark,
-                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      {myA&&<span style={{marginRight:4}}>★</span>}{m.teamA}
+            <div style={{display:"grid",gridTemplateColumns:isGrid?"repeat(auto-fill, minmax(min(100%, 48%), 1fr))":"1fr",gap:6}}>
+              {phaseMatches.map((m, i) => {
+                const myA = isMyTeam(m.teamA);
+                const myB = isMyTeam(m.teamB);
+                const winA = m.result==="2-0"||m.result==="2-1";
+                const winB = m.result==="0-2"||m.result==="1-2";
+                return (
+                  <div key={i} style={{background:B.white,border:`1px solid ${myA||myB?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${myA||myB?B.greenDark:B.creamDark}`,borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontSize:11,fontWeight:winA?"bold":"normal",color:myA?B.greenDark:winA?B.dark:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>
+                      {myA&&"★ "}{m.teamA}
                     </div>
-                    <div style={{flexShrink:0,background:m.isBye?B.grayPale:B.greenDark,
-                      color:m.isBye?B.gray:B.white,
-                      padding:"3px 10px",borderRadius:6,fontSize:12,fontWeight:"bold"}}>
-                      {m.result}
+                    <div style={{display:"flex",alignItems:"center",gap:5,margin:"3px 0"}}>
+                      <span style={{fontSize:11,fontWeight:"bold",background:m.isBye?B.grayPale:B.greenDark,color:m.isBye?B.gray:B.white,padding:"1px 7px",borderRadius:4,flexShrink:0}}>{m.result}</span>
+                      {m.scoreA&&<span style={{fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.scoreA}</span>}
                     </div>
-                    <div style={{flex:1,fontSize:12,color:myB?B.greenDark:B.gray,
-                      fontWeight:myB?"bold":"normal",
-                      textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      {m.teamB||"BYE"}{myB&&<span style={{marginLeft:4}}>★</span>}
+                    <div style={{fontSize:11,fontWeight:winB?"bold":"normal",color:myB?B.greenDark:winB?B.dark:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:m.coach!==undefined?3:0}}>
+                      {myB&&"★ "}{m.teamB||"BYE"}
                     </div>
+                    {m.coach!==undefined&&<div style={{fontSize:9,color:m.coach?B.greenDark:B.gray}}>🧢 {m.coach?"Coach in campo":"Nessun coach"}</div>}
                   </div>
-
-                  {/* Set */}
-                  {m.scoreA && (
-                    <div style={{fontSize:11,color:B.gray,marginBottom:8,textAlign:"center"}}>
-                      Set: <strong style={{color:B.dark}}>{m.scoreA}</strong>
-                    </div>
-                  )}
-
-                  {/* Bonus/malus */}
-                  <div style={{display:"flex",gap:8,borderTop:`1px solid ${B.creamDark}`,paddingTop:8}}>
-                    {/* Squadra A */}
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>
-                        {(m.bonusA||[]).map((b,j)=><BonusPill key={j} code={b}/>)}
-                      </div>
-                      {(myA||(m.bonusA||[]).length>0) && (
-                        <div style={{fontSize:12,fontWeight:"bold",color:ptsA>0?B.greenDark:B.orange}}>
-                          Totale: {ptsA > 0 ? `+${ptsA.toFixed(1)}` : ptsA.toFixed(1)} pt
-                        </div>
-                      )}
-                    </div>
-                    {/* Peso tappa */}
-                    <div style={{flexShrink:0,textAlign:"center",padding:"0 8px",borderLeft:`1px solid ${B.creamDark}`,borderRight:`1px solid ${B.creamDark}`}}>
-                      <div style={{fontSize:9,color:B.gray}}>Peso</div>
-                      <div style={{fontSize:14,fontWeight:"bold",color:et.color}}>×{event.weight||1}</div>
-                    </div>
-                    {/* Squadra B */}
-                    <div style={{flex:1,textAlign:"right"}}>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4,justifyContent:"flex-end",marginBottom:4}}>
-                        {(m.bonusB||[]).map((b,j)=><BonusPill key={j} code={b}/>)}
-                      </div>
-                      {(myB||(m.bonusB||[]).length>0) && (
-                        <div style={{fontSize:12,fontWeight:"bold",color:ptsB>0?B.greenDark:B.orange}}>
-                          Totale: {ptsB > 0 ? `+${ptsB.toFixed(1)}` : ptsB.toFixed(1)} pt
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        ))
-      )}
+        );
+      })}
     </div>
   );
 }
