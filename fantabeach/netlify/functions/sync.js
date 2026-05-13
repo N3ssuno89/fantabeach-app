@@ -1,14 +1,17 @@
 // netlify/functions/sync.js
-// Sincronizzazione completa — solo admin
-// Legge PLAYER_MAPPING + EVENTS_DB + COACHES_DB in parallelo
+// Legge RANKING_IMPORT_M/W (ordine reale = ranking)
+// Fa match nome→ID tramite PLAYER_MAPPING
+// Salva snapshot su Supabase player_history
 
 const { google } = require("googleapis");
 
-const SHEET_ID     = process.env.GOOGLE_SHEETS_ID;
-const CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
-const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "")
-  .split("\\n").join("\n");
+const SHEET_ID      = process.env.GOOGLE_SHEETS_ID;
+const CLIENT_EMAIL  = process.env.GOOGLE_CLIENT_EMAIL;
+const PRIVATE_KEY   = (process.env.GOOGLE_PRIVATE_KEY || "").split("\\n").join("\n");
+const SUPABASE_URL  = process.env.VITE_SUPABASE_URL  || process.env.NEXT_PUBLIC_SUPABASE_URL  || "";
+const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
+// RANKING_PRICE_TABLE reale
 const PRICE_TABLE = [
   160,156,152,148,144,140,136,132,128,124,
   120,117,114,111,108,105,102,99,96,93,
@@ -16,17 +19,20 @@ const PRICE_TABLE = [
   70,68,66,64,62,60,58,56,54,52,
   50,48,46,44,42,40,38,36,34,32,
   31,30,29,28,27,26,25,24,23,22,
-  21,20,20,20,20,20,20,20,20,20,
-  20,20,20,20,20,20,20,20,20,20,
-  20,20,20,20,20,20,20,20,20,20,
-  20,20,20,20,20,20,20,20,20,20,
 ];
-const getPrice = (r) => r >= 1 && r <= PRICE_TABLE.length ? PRICE_TABLE[r - 1] : 20;
+const getPrice = (r) => r >= 1 && r <= 60 ? PRICE_TABLE[r - 1] : 20;
+
+// Normalizza nome per il match (rimuove accenti, apostrofi, spazi doppi)
+const normalizeName = (s) => (s || "")
+  .toUpperCase()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[''`]/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
 
 exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json",
   };
 
@@ -41,36 +47,118 @@ exports.handler = async (event) => {
     );
     const sheets = google.sheets({ version: "v4", auth });
 
-    // Legge tutti i fogli in parallelo
-    const [playersRes, eventsRes, coachesRes] = await Promise.all([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "PLAYER_MAPPING!A:J" }),
+    // Legge tutto in parallelo
+    const [mappingRes, rankMRes, rankWRes, eventsRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "PLAYER_MAPPING!A:C" }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_M!A:D" }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_W!A:D" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "EVENTS_DB!A:I" })
-        .catch(() => ({ data: { values: [] } })),
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "COACHES_DB!A:F" })
         .catch(() => ({ data: { values: [] } })),
     ]);
 
-    // ── Atleti ──
-    const playerRows = (playersRes.data.values || []).slice(1)
-      .filter(row => row[0]?.match(/^[WM]\d+$/));
+    // ── Costruisce mappa nome → {id, gender} da PLAYER_MAPPING ──
+    const nameToPlayer = {};
+    (mappingRes.data.values || []).slice(1).forEach(row => {
+      const id     = row[0]?.trim();
+      const name   = row[1]?.trim();
+      const gender = row[2]?.trim();
+      if (id && name) {
+        nameToPlayer[normalizeName(name)] = { id, gender };
+      }
+    });
 
-    const allAthletes = playerRows.map(row => ({
-      id:     row[0].trim(),
-      name:   (row[1] || "").split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" "),
-      gender: (row[2] || "").trim(),
-    }));
+    // ── Legge storico precedente da Supabase (ultimo snapshot per atleta) ──
+    const prevMap = {}; // player_id → {ranking, cost}
+    try {
+      const prevRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost&order=synced_at.desc`,
+        { headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+        }}
+      );
+      const prevData = await prevRes.json();
+      if (Array.isArray(prevData)) {
+        // Prende solo il valore più recente per ogni atleta
+        prevData.forEach(r => {
+          if (!prevMap[r.player_id]) prevMap[r.player_id] = { ranking: r.ranking, cost: r.cost };
+        });
+      }
+    } catch(e) { console.warn("Errore lettura storico:", e.message); }
 
-    const women = allAthletes.filter(a => a.gender === "F")
-      .map((a, i) => ({ ...a, ranking: i+1, cost: getPrice(i+1), prevCost: getPrice(i+1) }));
-    const men   = allAthletes.filter(a => a.gender === "M")
-      .map((a, i) => ({ ...a, ranking: i+1, cost: getPrice(i+1), prevCost: getPrice(i+1) }));
+    // ── Processa i ranking ──
+    const processRanking = (rows, gender) => {
+      // Salta la riga header (cerca la prima con dati numerici in colonna A)
+      return rows
+        .filter(row => row[0] && !isNaN(parseInt(row[0])))
+        .map(row => {
+          const ranking = parseInt(row[0]);
+          const fedName = (row[1] || "").trim();
+          const normName = normalizeName(fedName);
+
+          // Match con PLAYER_MAPPING
+          const player = nameToPlayer[normName];
+          const id = player?.id || null;
+
+          const cost = getPrice(ranking);
+          const prev = id ? prevMap[id] : null;
+
+          return {
+            player_id:    id,
+            player_name:  fedName.split(" ").map(w =>
+              w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+            ).join(" "),
+            gender,
+            ranking,
+            cost,
+            ranking_prev: prev?.ranking || null,
+            cost_prev:    prev?.cost    || null,
+          };
+        })
+        .filter(a => a.player_id); // solo atleti con ID trovato
+    };
+
+    const men   = processRanking((rankMRes.data.values || []).slice(1), "M");
+    const women = processRanking((rankWRes.data.values || []).slice(1), "F");
+    const allAthletes = [...women, ...men];
+
+    // ── Salva snapshot su Supabase ──
+    let savedCount = 0;
+    if (allAthletes.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+      const snapshot = allAthletes.map(a => ({
+        player_id:    a.player_id,
+        player_name:  a.player_name,
+        gender:       a.gender,
+        ranking:      a.ranking,
+        cost:         a.cost,
+        ranking_prev: a.ranking_prev,
+        cost_prev:    a.cost_prev,
+        synced_at:    new Date().toISOString(),
+      }));
+
+      // Inserisce in batch da 100
+      for (let i = 0; i < snapshot.length; i += 100) {
+        const batch = snapshot.slice(i, i + 100);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/player_history`, {
+          method: "POST",
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+          },
+          body: JSON.stringify(batch),
+        });
+        if (res.ok) savedCount += batch.length;
+        else console.error("Batch error:", await res.text());
+      }
+    }
 
     // ── Tappe ──
     const eventRows = eventsRes.data.values || [];
-    const eHeaders  = (eventRows[0] || []).map(h => h?.trim().toLowerCase());
-    const ec = (name) => { const i = eHeaders.indexOf(name); return i >= 0 ? i : null; };
-
-    const events = eventRows.slice(1).filter(row => row[0]).map(row => ({
+    const eH = (eventRows[0] || []).map(h => h?.trim().toLowerCase());
+    const ec = n => { const i = eH.indexOf(n); return i >= 0 ? i : null; };
+    const events = eventRows.slice(1).filter(r => r[0]).map(row => ({
       id:       row[ec("event_id") ?? 0] || row[0],
       name:     row[ec("name")     ?? 1] || row[1] || "",
       type:     row[ec("type")     ?? 2] || "Silver",
@@ -81,19 +169,16 @@ exports.handler = async (event) => {
       status:   row[ec("status")   ?? 8] || "Planned",
     }));
 
-    // ── Coach ──
-    const coaches = (coachesRes.data.values || []).slice(1)
-      .filter(r => r[0])
-      .map(row => ({
-        id:     row[0]?.trim(),
-        name:   row[1]?.trim(),
-        gender: row[2]?.trim() || "M",
-      }));
-
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ women, men, events, coaches, updatedAt: new Date().toISOString() }),
+      body: JSON.stringify({
+        women,
+        men,
+        events,
+        savedCount,
+        updatedAt: new Date().toISOString(),
+      }),
     };
 
   } catch (err) {
