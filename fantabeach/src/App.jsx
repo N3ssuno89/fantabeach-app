@@ -571,6 +571,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [leagueUserCounts, setLeagueUserCounts] = useState({});
   const [lastSyncFipav, setLastSyncFipav] = useState(null);
   const [lastSyncFipavOk, setLastSyncFipavOk] = useState(null);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [lastSyncResults, setLastSyncResults] = useState(null);
   const [lastSyncResultsOk, setLastSyncResultsOk] = useState(null);
 
@@ -1420,9 +1421,39 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               {
                 icon:"🔄",
                 title:"Ranking FIPAV",
-                desc:`Ultimo aggiornamento: ${lastSyncFipav||"mai"} ${lastSyncFipavOk===true?"✓":lastSyncFipavOk===false?"✗":""}`,
+                desc: syncLoading
+                  ? "⏳ Sincronizzazione in corso..."
+                  : `Ultimo aggiornamento: ${lastSyncFipav||"mai"} ${lastSyncFipavOk===true?"✓":lastSyncFipavOk===false?"✗ Errore":""}`,
                 isOpen: null,
-                action:()=>showNotif("In sviluppo — richiede Google Sheets API")
+                action: async () => {
+                  if (syncLoading) return;
+                  setSyncLoading(true);
+                  try {
+                    const res = await fetch("/.netlify/functions/sync");
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    if (data.women?.length > 0) {
+                      WOMEN = data.women.map(enrichAthlete);
+                      setAthletesData({ women: WOMEN, men: MEN });
+                    }
+                    if (data.men?.length > 0) {
+                      MEN = data.men.map(enrichAthlete);
+                      setAthletesData({ women: WOMEN, men: MEN });
+                    }
+                    const now = new Date().toLocaleString("it-IT", {
+                      day:"2-digit", month:"2-digit",
+                      hour:"2-digit", minute:"2-digit"
+                    });
+                    setLastSyncFipav(now);
+                    setLastSyncFipavOk(true);
+                    showNotif(`✓ Ranking aggiornato! ${data.women?.length||0}F + ${data.men?.length||0}M atleti`);
+                  } catch(e) {
+                    console.error("Sync error:", e);
+                    setLastSyncFipavOk(false);
+                    showNotif("Errore sincronizzazione — riprova", "error");
+                  }
+                  setSyncLoading(false);
+                }
               },
               {
                 icon:"🏆",
@@ -1446,7 +1477,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     {item.isOpen?"Chiudi":"Apri"}
                   </button>
                 ):(
-                  <button onClick={item.action} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${B.grayLight}`,background:B.grayPale,color:B.gray,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif",flexShrink:0}}>Sync</button>
+                  <button onClick={item.action} disabled={syncLoading} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${B.grayLight}`,background:syncLoading?B.grayPale:B.greenPale,color:syncLoading?B.gray:B.greenDark,fontSize:11,fontWeight:"bold",cursor:syncLoading?"not-allowed":"pointer",fontFamily:"Georgia,serif",flexShrink:0}}>
+                    {syncLoading?"...":"Sync"}
+                  </button>
                 )}
               </div>
             ))}
