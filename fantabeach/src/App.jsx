@@ -44,6 +44,7 @@ const supabase = {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { ...this._headers, "Authorization": `Bearer ${accessToken}` }
     });
+    if (r.status === 403 || r.status === 401) return null;
     return r.json();
   },
   _auth(accessToken) {
@@ -144,11 +145,18 @@ const COACHES = [
 const ATHLETES_API = "/.netlify/functions/athletes";
 
 // Aggiunge i campi mock necessari all'app (costHistory, results)
-const enrichAthlete = (a) => ({
-  ...a,
-  costHistory: Array.from({length:5}, (_,j) => getPrice(Math.max(1, a.ranking + (2-j)))),
-  results: [],
-});
+const enrichAthlete = (a) => {
+  const ranking = parseInt(a.ranking) || 1;
+  const cost    = parseInt(a.cost)    || getPrice(ranking);
+  return {
+    ...a,
+    ranking,
+    cost,
+    prevCost:    parseInt(a.cost_prev) || parseInt(a.prevCost) || cost,
+    costHistory: Array.from({length:5}, (_,j) => getPrice(Math.max(1, ranking + (2-j)))),
+    results:     a.results || [],
+  };
+};
 
 // Fallback mock — usato solo se l'API non risponde
 const WOMEN_NAMES_FALLBACK = [
@@ -469,24 +477,25 @@ export default function FantaBeachApp() {
         if (user && user.id) {
           setAccessToken(token);
           setAuthUser(user);
+          setAuthLoading(false);
         } else if (rt) {
-          // Token scaduto — prova il refresh
-          supabase.refreshToken(rt).then(data => {
+          // Token scaduto o 403 — prova il refresh
+          supabase.refreshToken(rt).then(async data => {
             if (data.access_token) {
               saveToken(data.access_token, data.refresh_token || rt);
               setAccessToken(data.access_token);
-              return supabase.getUser(data.access_token);
+              const refreshedUser = await supabase.getUser(data.access_token);
+              if (refreshedUser?.id) setAuthUser(refreshedUser);
+              else clearToken();
+            } else {
+              clearToken();
             }
-          }).then(user => {
-            if (user?.id) setAuthUser(user);
-            else clearToken();
             setAuthLoading(false);
           }).catch(() => { clearToken(); setAuthLoading(false); });
-          return;
         } else {
           clearToken();
+          setAuthLoading(false);
         }
-        setAuthLoading(false);
       }).catch(() => { clearToken(); setAuthLoading(false); });
     } else {
       setAuthLoading(false);
@@ -1432,25 +1441,25 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     const res = await fetch("/.netlify/functions/sync");
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const data = await res.json();
-                    if (data.women?.length > 0) {
-                      WOMEN = data.women.map(enrichAthlete);
-                      setAthletesData({ women: WOMEN, men: MEN });
-                    }
-                    if (data.men?.length > 0) {
-                      MEN = data.men.map(enrichAthlete);
-                      setAthletesData({ women: WOMEN, men: MEN });
-                    }
+                    if (data.error) throw new Error(data.error);
+
+                    const newWomen = data.women?.length > 0 ? data.women.map(enrichAthlete) : athletes_data.women;
+                    const newMen   = data.men?.length   > 0 ? data.men.map(enrichAthlete)   : athletes_data.men;
+
+                    // Aggiorna state in un colpo solo
+                    setAthletesData({ women: newWomen, men: newMen });
+
                     const now = new Date().toLocaleString("it-IT", {
                       day:"2-digit", month:"2-digit",
                       hour:"2-digit", minute:"2-digit"
                     });
                     setLastSyncFipav(now);
                     setLastSyncFipavOk(true);
-                    showNotif(`✓ Ranking aggiornato! ${data.women?.length||0}F + ${data.men?.length||0}M atleti`);
+                    showNotif(`✓ Ranking aggiornato! ${newWomen.length}F + ${newMen.length}M atleti`);
                   } catch(e) {
                     console.error("Sync error:", e);
                     setLastSyncFipavOk(false);
-                    showNotif("Errore sincronizzazione — riprova", "error");
+                    showNotif("Errore sincronizzazione: " + e.message, "error");
                   }
                   setSyncLoading(false);
                 }
