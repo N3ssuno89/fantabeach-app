@@ -142,59 +142,78 @@ const COACHES = [
 ];
 
 // ─── DATI ATLETI — caricati da API (fallback mock) ────────────
-const ATHLETES_API = "/.netlify/functions/athletes";
-
-// Aggiunge i campi mock necessari all'app (costHistory, results)
+// Aggiunge i campi necessari all'app (normalizza player_name→name, ecc.)
 const enrichAthlete = (a) => {
-  const ranking = parseInt(a.ranking) || 1;
-  const cost    = parseInt(a.cost)    || getPrice(ranking);
+  const ranking  = parseInt(a.ranking)  || 1;
+  const cost     = parseInt(a.cost)     || getPrice(ranking);
+  const prevCost = parseInt(a.cost_prev) || parseInt(a.prevCost) || cost;
+  const rankPrev = parseInt(a.ranking_prev) || ranking;
   return {
     ...a,
-    id:          a.id       || a.player_id,
+    id:          a.id       || a.player_id  || "",
     name:        a.name     || a.player_name || "—",
     ranking,
     cost,
-    prevCost:    parseInt(a.cost_prev) || parseInt(a.prevCost) || cost,
+    prevCost,
+    rankingPrev: rankPrev,
+    rankDelta:   rankPrev !== ranking ? rankPrev - ranking : null, // positivo = salito
     costHistory: Array.from({length:5}, (_,j) => getPrice(Math.max(1, ranking + (2-j)))),
     results:     a.results || [],
   };
 };
 
-// Fallback mock — usato solo se l'API non risponde
-const WOMEN_NAMES_FALLBACK = [
-  "Valentina Gottardi","Orsi Toth Reka","Sara Breidenbach","Claudia Scampoli",
-  "Gradini Alice","Bianchi Giada","Frasca Federica","Chiara They",
-  "Rottoli Sharin","Ditta Erika","Sanguigni Camilla","Benazzi Giada",
-  "Di Prima Valentina","Massi Viola","Shpuza Oriola","Belliero Piccinin Jessica",
-  "Balducci Sofia","Biancini Martina","Annibalini Eleonora","Piccoli Anna",
-];
-const MEN_NAMES_FALLBACK = [
-  "Dal Corso Gianluca","Podestà Simone","Acerbi Raoul","Ranghieri Alex",
-  "Cottafava Samuele","Alfieri Manuel","Andreatta Tiziano","Martino Matteo",
-  "Spadoni Giacomo","Mussa Fabrizio","Lupo Daniele","Marchetto Tobia",
-  "Titta Giacomo","Carucci Alessandro","Luisetto Michele","Sacripanti Mauro",
-  "Borraccino Davide","Dal Molin Davide","Benzi Davide","Ceccoli Edgardo",
-];
-const makeFallback = (names, gender) => names.map((name,i) => enrichAthlete({
-  id:`${gender}${String(i+1).padStart(4,"0")}`,
-  name, gender, ranking:i+1, cost:getPrice(i+1), prevCost:getPrice(i+1),
-}));
+// Fallback minimale — solo se tutto fallisce
+let WOMEN = [];
+let MEN   = [];
 
-// Stato globale atleti — viene aggiornato al mount dell'app
-let WOMEN = makeFallback(WOMEN_NAMES_FALLBACK, "W");
-let MEN   = makeFallback(MEN_NAMES_FALLBACK,   "M");
+const ATHLETES_CACHE_KEY = "fb_athletes_cache";
 
-// Carica atleti reali dall'API
-async function loadAthletesFromAPI() {
+// Salva atleti in sessionStorage
+const cacheAthletes = (women, men) => {
   try {
-    const res = await fetch(ATHLETES_API);
+    sessionStorage.setItem(ATHLETES_CACHE_KEY, JSON.stringify({
+      women, men, cachedAt: new Date().toISOString()
+    }));
+  } catch(e) {}
+};
+
+// Carica atleti da sessionStorage se presenti
+const loadCachedAthletes = () => {
+  try {
+    const raw = sessionStorage.getItem(ATHLETES_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.women?.length > 0 && data.men?.length > 0) return data;
+  } catch(e) {}
+  return null;
+};
+
+// Carica atleti reali dall'API sync (ordine ranking reale)
+async function loadAthletesFromAPI() {
+  // Prima controlla la cache sessionStorage
+  const cached = loadCachedAthletes();
+  if (cached) {
+    WOMEN = cached.women.map(enrichAthlete);
+    MEN   = cached.men.map(enrichAthlete);
+    return true;
+  }
+  // Altrimenti chiama la function sync
+  try {
+    const res = await fetch("/.netlify/functions/sync");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (data.women?.length > 0) WOMEN = data.women.map(enrichAthlete);
-    if (data.men?.length   > 0) MEN   = data.men.map(enrichAthlete);
+    if (data.error) throw new Error(data.error);
+    if (data.women?.length > 0) {
+      WOMEN = data.women.map(enrichAthlete);
+    }
+    if (data.men?.length > 0) {
+      MEN = data.men.map(enrichAthlete);
+    }
+    // Salva in cache
+    cacheAthletes(data.women || [], data.men || []);
     return true;
   } catch(e) {
-    console.warn("Athletes API non disponibile, uso fallback mock:", e.message);
+    console.warn("Sync API non disponibile, uso fallback:", e.message);
     return false;
   }
 }
@@ -1037,7 +1056,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                           <div style={{color:B.dark,fontWeight:"bold",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
                           <div style={{display:"flex",gap:5,marginTop:3,alignItems:"center"}}>
                             <span style={{fontSize:10,padding:"1px 7px",borderRadius:8,background:cat.bg,color:cat.text,fontWeight:"bold"}}>{cat.label}</span>
-                            {diff!==0&&<span style={{fontSize:10,color:diff>0?B.greenDark:B.orange,fontWeight:"bold"}}>{diff>0?"▲":"▼"}{Math.abs(diff)}</span>}
+                            {diff!==0&&<span style={{fontSize:10,color:diff>0?B.greenDark:B.orange,fontWeight:"bold"}}>{diff>0?"▲":"▼"}${Math.abs(diff)}</span>}
+                            {a.rankDelta!==null&&a.rankDelta!==0&&<span style={{fontSize:10,color:a.rankDelta>0?B.greenDark:B.orange,fontWeight:"bold"}}>{a.rankDelta>0?"▲":"▼"}{Math.abs(a.rankDelta)} pos</span>}
                             {owned&&<span style={{fontSize:10,color:B.greenDark}}>● Roster</span>}
                           </div>
                         </div>
@@ -1448,7 +1468,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     const newWomen = data.women?.length > 0 ? data.women.map(enrichAthlete) : athletes_data.women;
                     const newMen   = data.men?.length   > 0 ? data.men.map(enrichAthlete)   : athletes_data.men;
 
-                    // Aggiorna state in un colpo solo
+                    // Salva in cache e aggiorna state
+                    cacheAthletes(data.women || [], data.men || []);
                     setAthletesData({ women: newWomen, men: newMen });
 
                     const now = new Date().toLocaleString("it-IT", {
