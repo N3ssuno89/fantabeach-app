@@ -107,23 +107,22 @@ const B = {
 };
 
 const PRICE_TABLE = [
-  140,135,130,125,120,117,114,112,111,109,
-  107,105,103,101,99,97,94,91,88,85,
-  82,79,76,73,70,68,66,64,62,60,
-  58,56,54,52,50,48,46,44,42,40,
-  38,36,34,32,30,28,26,24,22,20,
-  19,18,17,16,15,14,13,12,11,10,
-  9,8,7,6,5,4,3,2,1,1,
+  160,156,152,148,144,140,136,132,128,124,
+  120,117,114,111,108,105,102,99,96,93,
+  90,88,86,84,82,80,78,76,74,72,
+  70,68,66,64,62,60,58,56,54,52,
+  50,48,46,44,42,40,38,36,34,32,
+  31,30,29,28,27,26,25,24,23,22,
 ];
-const getPrice = (r) => r <= 70 ? PRICE_TABLE[r-1] : 1;
+const getPrice = (r) => r >= 1 && r <= 60 ? PRICE_TABLE[r - 1] : 20;
 
 const CATEGORIES = [
   { label:"Top Player", bg:B.yellow,    text:"#7A4F00", range:[1,5]   },
   { label:"Elite",      bg:"#C084FC",   text:"#4C1D95", range:[6,15]  },
   { label:"Solid Pick", bg:B.greenPale, text:B.greenDark,range:[16,30]},
   { label:"Value Pick", bg:B.orangePale,text:B.orange,  range:[31,50] },
-  { label:"Outsider",   bg:B.creamDark, text:B.gray,    range:[51,70] },
-  { label:"Wild Card",  bg:B.grayPale,  text:B.gray,    range:[71,999]},
+  { label:"Outsider",   bg:B.creamDark, text:B.gray,    range:[51,60] },
+  { label:"Wild Card",  bg:B.grayPale,  text:B.gray,    range:[61,999]},
 ];
 const getCategory = (r) => CATEGORIES.find(c => r>=c.range[0] && r<=c.range[1]) || CATEGORIES[5];
 
@@ -134,11 +133,11 @@ const ATHLETE_PHOTOS = {
 };
 
 const COACHES = [
-  { id:"C001", name:"Ettore Marcovecchio", athletes:["W0001","W0002"], cost:1 },
-  { id:"C002", name:"Alessandro Martino",  athletes:["W0003","W0004"], cost:1 },
-  { id:"C003", name:"Marco Solustri",      athletes:["W0005","W0006"], cost:1 },
-  { id:"C004", name:"Andrea Lupo",         athletes:["M0001","M0002"], cost:1 },
-  { id:"C005", name:"Roberto Damiani",     athletes:["M0003","M0004"], cost:1 },
+  { id:"C001", name:"Ettore Marcovecchio", athletes:["W0001","W0002"], cost:5 },
+  { id:"C002", name:"Alessandro Martino",  athletes:["W0003","W0004"], cost:5 },
+  { id:"C003", name:"Marco Solustri",      athletes:["W0005","W0006"], cost:5 },
+  { id:"C004", name:"Andrea Lupo",         athletes:["M0001","M0002"], cost:5 },
+  { id:"C005", name:"Roberto Damiani",     athletes:["M0003","M0004"], cost:5 },
 ];
 
 const WOMEN_NAMES = [
@@ -1063,7 +1062,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {marketTab==="coaches"&&(
               <div>
                 <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:10,padding:"10px 13px",marginBottom:12,fontSize:12,color:B.greenDark}}>
-                  Il coach è opzionale (${1} credito). Se la sua coppia vince ottieni +0.5 pt per partita.
+                  Il coach è opzionale (${5} crediti). Se la sua coppia vince ottieni +0.5 pt per partita.
                 </div>
 
                 {currentCoach&&(
@@ -1725,7 +1724,7 @@ function PageRegole({ onBack }) {
           {l:"Atleti nel roster",v:"5 esatti"},
           {l:"Titolari",         v:"3 per tappa"},
           {l:"Capitano",         v:"1 tra i titolari"},
-          {l:"Coach",            v:"Opzionale — 1 credito"},
+          {l:"Coach",            v:"Opzionale — 5 crediti"},
           {l:"Deadline formazione",v:"Giovedì ore 23:00"},
         ].map((r,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${B.creamDark}`}}>
@@ -1753,7 +1752,7 @@ function PageRegole({ onBack }) {
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="🧢 Coach"/>
         <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:10}}>
-          Il coach è <b>opzionale</b> e costa 1 credito. Se presente fisicamente alla tappa e la sua coppia vince, ottieni punti bonus. Se non presente, si applicano i malus.
+          Il coach è <b>opzionale</b> e costa 5 crediti. Se presente fisicamente alla tappa e la sua coppia vince, ottieni punti bonus. Se non presente, si applicano i malus.
         </div>
         <Row label="Vittoria della sua coppia"     value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
         <Row label="Presente ma non in panchina"   value="-1 pt"   color={B.orange}    bg={B.orangePale}/>
