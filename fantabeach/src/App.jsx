@@ -265,7 +265,6 @@ const EVENTS = [
   { id:"E0017",name:"Caorle M",           type:"Gold",  weight:2.0, date:"4-6 set",  gender:"M",status:"Planned"    },
   { id:"E0018",name:"Caorle F",           type:"Gold",  weight:2.0, date:"4-6 set",  gender:"F",status:"Planned"    },
 ];
-];
 
 const STANDINGS = {
   "L001-F":[
