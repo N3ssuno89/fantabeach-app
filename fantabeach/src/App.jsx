@@ -626,6 +626,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [lastSyncFipav, setLastSyncFipav] = useState(null);
   const [lastSyncFipavOk, setLastSyncFipavOk] = useState(null);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResultsLoading, setSyncResultsLoading] = useState(false);
   const [lastSyncResults, setLastSyncResults] = useState(null);
   const [lastSyncResultsOk, setLastSyncResultsOk] = useState(null);
 
@@ -1815,9 +1816,53 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               {
                 icon:"🏆",
                 title:"Risultati Tappa",
-                desc:`Ultimo caricamento: ${lastSyncResults||"mai"} ${lastSyncResultsOk===true?"✓":lastSyncResultsOk===false?"✗":""}`,
+                desc: syncResultsLoading
+                  ? "⏳ Calcolo punti in corso..."
+                  : `Ultimo caricamento: ${lastSyncResults||"mai"} ${lastSyncResultsOk===true?"✓":lastSyncResultsOk===false?"✗ Errore":""}`,
                 isOpen: null,
-                action:()=>showNotif("In sviluppo — prossimamente")
+                action: async () => {
+                  if (syncResultsLoading) return;
+                  // Chiede quale evento sincronizzare
+                  const eventsInCorso = EVENTS.filter(e => e.status === "In corso" || e.status === "Completato");
+                  const eventId = window.prompt(
+                    `Quale evento sincronizzare?\n\n` +
+                    eventsInCorso.map(e => `${e.id} — ${e.name} (${e.status})`).join("\n") +
+                    "\n\nScrivi l'Event ID (es. E0004) oppure lascia vuoto per tutti:"
+                  );
+                  if (eventId === null) return; // ha premuto Annulla
+                  setSyncResultsLoading(true);
+                  try {
+                    const body = eventId.trim() ? { event_id: eventId.trim() } : {};
+                    const res = await fetch("/.netlify/functions/sync-results", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+
+                    const now = new Date().toLocaleString("it-IT", {
+                      day:"2-digit", month:"2-digit",
+                      hour:"2-digit", minute:"2-digit"
+                    });
+                    setLastSyncResults(now);
+                    setLastSyncResultsOk(true);
+
+                    // Mostra risultato + eventuali warning
+                    const msg = `✓ ${data.resultsGenerated} risultati salvati (${data.matchesProcessed} partite)`;
+                    showNotif(msg);
+                    if (data.warnings && data.warnings.length > 0) {
+                      console.warn("Sync warnings:", data.warnings);
+                      setTimeout(() => showNotif(`⚠️ ${data.warnings.length} warning — vedi console`, "error"), 2000);
+                    }
+                  } catch(e) {
+                    console.error("Sync results error:", e);
+                    setLastSyncResultsOk(false);
+                    showNotif("Errore sync risultati: " + e.message, "error");
+                  }
+                  setSyncResultsLoading(false);
+                }
               },
             ].map((item,i)=>(
               <div key={i} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
@@ -1834,11 +1879,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     {item.isOpen?"Chiudi":"Apri"}
                   </button>
                 ):(
-                  <button onClick={item.action} disabled={item.title==="Ranking FIPAV"?syncLoading:false}
+                  <button onClick={item.action} disabled={item.title==="Ranking FIPAV"?syncLoading:item.title==="Risultati Tappa"?syncResultsLoading:false}
                     style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${B.grayLight}`,
                     background:B.greenPale,color:B.greenDark,
                     fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif",flexShrink:0}}>
-                    {item.title==="Ranking FIPAV" && syncLoading ? "..." : "Sync"}
+                    {item.title==="Ranking FIPAV" && syncLoading ? "..." : item.title==="Risultati Tappa" && syncResultsLoading ? "..." : "Sync"}
                   </button>
                 )}
               </div>
