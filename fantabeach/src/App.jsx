@@ -480,7 +480,19 @@ function AuthScreen({ onAuth }) {
           {loading?"Attendere...":(mode==="login"?"Accedi":"Crea Account")}
         </button>
 
-        <div style={{textAlign:"center",marginTop:16,fontSize:11,color:B.gray}}>
+        {mode==="signup" && (
+          <div style={{textAlign:"center",marginTop:10,fontSize:11,color:B.gray,lineHeight:1.5}}>
+            Continuando la registrazione, dichiari di aver letto e accettato i{" "}
+            <a href="https://docs.google.com/document/d/1hc6oN_0z3hKbD4wPMnAOg5ybgMSWHSXW/edit?usp=sharing&ouid=116340837676230201307&rtpof=true&sd=true"
+              target="_blank" rel="noopener noreferrer"
+              style={{color:B.greenDark,fontWeight:"bold",textDecoration:"underline"}}>
+              Termini e Condizioni
+            </a>
+            {" "}di FantaBeach.
+          </div>
+        )}
+
+        <div style={{textAlign:"center",marginTop:10,fontSize:11,color:B.gray}}>
           Fantasy game non ufficiale · Solo scopo ludico
         </div>
       </div>
@@ -1181,21 +1193,44 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
               // Calcola partite di un atleta con punti per partita
               const calcPlayerMatches = (athleteName) => {
-                const cognome = athleteName.split(" ")[0].toLowerCase();
+                // Estrai cognome: per "De Milito Francesca" prendiamo "De Milito"
+                // Il nome nell'app è "Cognome Nome" dove il cognome può essere composto
+                // Nei match i nomi sono "Cognome I." quindi cerchiamo il primo token seguito da spazio+iniziale
+                // Strategia: cerca tutti i prefissi del nome finché trova match preciso
+                const tokens = athleteName.split(" ");
+                // Genera candidati cognome: "De", "De Milito", "Belliero", "Belliero Piccinin", ecc.
+                // Nei match il formato è "Cognome I." — il cognome è tutto prima dell'iniziale puntata
+                // Usiamo regex: word boundary per evitare "De" che matcha "Deizi"
                 const matchResults = [];
-                let grandTotal = 0; // senza moltiplicatore
+                let grandTotal = 0;
                 eventMatches.forEach(m => {
-                  const inA = m.teamA?.toLowerCase().includes(cognome);
-                  const inB = m.teamB?.toLowerCase().includes(cognome);
+                  // Cerca il cognome nel teamA/B con word boundary
+                  // Il cognome nei match può essere 1 o 2 parole seguito da " X."
+                  const teamA = m.teamA || "";
+                  const teamB = m.teamB || "";
+                  // Prova con il cognome completo progressivo: "De Milito", "Belliero Piccinin", ecc.
+                  let inA = false, inB = false;
+                  for (let len = tokens.length - 1; len >= 1; len--) {
+                    const surname = tokens.slice(0, len).join(" ");
+                    if (surname.length < 3) continue; // evita "De", "Di", "Lo" da soli
+                    const re = new RegExp(`\\b${surname}\\b`, "i");
+                    if (re.test(teamA)) { inA = true; break; }
+                    if (re.test(teamB)) { inB = true; break; }
+                  }
+                  // Fallback: se cognome corto (< 3 token) usa match preciso "Cognome I."
+                  if (!inA && !inB) {
+                    const surname = tokens[0];
+                    const re = new RegExp(`\\b${surname}\\s+[A-Z]\\.`, "i");
+                    if (re.test(teamA)) inA = true;
+                    else if (re.test(teamB)) inB = true;
+                  }
                   if (!inA && !inB) return;
                   const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
-                  // Punti BASE senza moltiplicatore
                   const baseMeta = BONUS_META[bonuses[0]];
                   const basePts = baseMeta?.pts || 0;
-                  // Bonus extra senza moltiplicatore
                   const extraBonuses = bonuses.slice(1).filter(b => BONUS_META[b]);
                   const extraPts = extraBonuses.reduce((s,b) => s + (BONUS_META[b]?.pts||0), 0);
-                  const totalPts = basePts + extraPts; // totale partita senza mult
+                  const totalPts = basePts + extraPts;
                   grandTotal += totalPts;
                   matchResults.push({
                     phase: m.phase,
@@ -1203,13 +1238,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     result: m.result,
                     scoreA: m.scoreA || "",
                     isBye: m.isBye,
-                    basePts,
-                    extraBonuses,
-                    extraPts,
-                    totalPts,
+                    basePts, extraBonuses, extraPts, totalPts,
                   });
                 });
-                // Totale tappa = grandTotal * moltiplicatore (* 1.3 se capitano, applicato fuori)
                 return {matchResults, grandTotal};
               };
 
@@ -1323,24 +1354,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                               {/* Righe partite */}
                               {matchResults.map((mr,j)=>(
                                 <div key={j} style={{padding:"8px 12px",borderBottom:j<matchResults.length-1?`1px solid ${B.creamDark}`:"none"}}>
+                                  {/* Riga principale: fase | risultato | avversario | punti */}
                                   <div style={{display:"flex",alignItems:"center",gap:7}}>
                                     <div style={{fontSize:9,color:B.gray,flexShrink:0,minWidth:55}}>{mr.phase}</div>
-                                    {/* Badge risultato */}
                                     {mr.isBye
                                       ? <span style={{fontSize:12,fontWeight:"bold",color:B.greenDark,background:B.greenPale,padding:"1px 7px",borderRadius:5,flexShrink:0}}>BYE</span>
                                       : <span style={{fontSize:12,fontWeight:"bold",color:mr.result.startsWith("2")?"#065F46":"#DC2626",background:mr.result.startsWith("2")?"#D1FAE5":"#FEE2E2",padding:"1px 7px",borderRadius:5,flexShrink:0}}>{mr.result}</span>
                                     }
-                                    {/* Avversario */}
                                     <div style={{flex:1,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                                       {mr.isBye?"—":mr.opponent||"—"}
                                     </div>
-                                    {/* Set score */}
-                                    {mr.scoreA&&<div style={{fontSize:9,color:B.gray,flexShrink:0,whiteSpace:"nowrap"}}>{mr.scoreA}</div>}
-                                    {/* Punti base */}
                                     <div style={{fontSize:13,fontWeight:"bold",color:mr.basePts>0?B.greenDark:mr.basePts===0?B.gray:B.orange,flexShrink:0,minWidth:24,textAlign:"right"}}>
-                                      {mr.basePts>0?`+${mr.basePts}`:mr.basePts}
+                                      {mr.basePts>0?`+${mr.basePts}`:mr.basePts===0?"0":mr.basePts}
                                     </div>
-                                    {/* Emoji bonus */}
                                     {mr.extraBonuses.length>0&&(
                                       <div style={{display:"flex",gap:2,flexShrink:0}}>
                                         {mr.extraBonuses.map((b,bi)=>(
@@ -1348,11 +1374,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                                         ))}
                                       </div>
                                     )}
-                                    {/* Totale partita */}
                                     <div style={{fontSize:12,fontWeight:"bold",color:mr.totalPts>0?B.greenDark:mr.totalPts<0?B.orange:B.gray,flexShrink:0,minWidth:30,textAlign:"right",borderLeft:`1px solid ${B.creamDark}`,paddingLeft:7}}>
-                                      {mr.totalPts>0?`+${mr.totalPts}`:mr.totalPts===0?"—":mr.totalPts}
+                                      {mr.totalPts>0?`+${mr.totalPts}`:mr.totalPts===0?"0":mr.totalPts}
                                     </div>
                                   </div>
+                                  {/* Set score — grande, su riga separata */}
+                                  {mr.scoreA&&!mr.isBye&&(
+                                    <div style={{fontSize:14,fontWeight:"bold",color:B.dark,marginTop:4,marginLeft:62}}>{mr.scoreA}</div>
+                                  )}
                                 </div>
                               ))}
                               {/* Footer: totale partite → moltiplicatore → totale tappa */}
@@ -2982,10 +3011,13 @@ function EventDetail({event, onBack, myRoster}) {
   const isMyTeam = (teamStr) => {
     if (!myRoster || myRoster.length === 0 || !teamStr) return false;
     return myRoster.some(a => {
-      // Il nome atleta è "Cognome Nome" — prendiamo il cognome (prima parola)
-      // Il team string è "Cognome I. - Cognome I." — confrontiamo solo il cognome
-      const cognome = a.name.split(" ")[0].toLowerCase();
-      return teamStr.toLowerCase().includes(cognome);
+      const tokens = a.name.split(" ");
+      for (let len = tokens.length - 1; len >= 1; len--) {
+        const surname = tokens.slice(0, len).join(" ");
+        if (surname.length < 3) continue;
+        if (new RegExp(`\\b${surname}\\b`, "i").test(teamStr)) return true;
+      }
+      return new RegExp(`\\b${tokens[0]}\\s+[A-Z]\\.`, "i").test(teamStr);
     });
   };
 
