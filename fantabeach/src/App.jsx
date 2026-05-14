@@ -246,25 +246,25 @@ const EVENT_TYPE_META = {
   Finale:      { label:"Finale",       weight:1.7, color:"#7C3AED", bg:"#F3E8FF" },
 };
 const EVENTS = [
-  { id:"E0001",name:"Falconara M",      type:"Silver",weight:1.0, date:"12-14 giu",gender:"M",status:"Completato" },
-  { id:"E0002",name:"Falconara F",      type:"Silver",weight:1.0, date:"12-14 giu",gender:"F",status:"Completato" },
-  { id:"E0003",name:"Termoli M",        type:"Gold",  weight:1.3, date:"19-21 giu",gender:"M",status:"Planned"    },
-  { id:"E0004",name:"Termoli F",        type:"Gold",  weight:1.3, date:"19-21 giu",gender:"F",status:"In corso"   },
-  { id:"E0005",name:"Marina di Ravenna M",type:"Silver",weight:1.0,date:"3-5 lug", gender:"M",status:"Planned"   },
-  { id:"E0006",name:"Marina di Ravenna F",type:"Silver",weight:1.0,date:"3-5 lug", gender:"F",status:"Planned"   },
-  { id:"E0007",name:"Marina di Modica M", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"M",status:"Planned"  },
-  { id:"E0008",name:"Marina di Modica F", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"F",status:"Planned"  },
-  { id:"E0009",name:"San Cataldo M",    type:"Silver",weight:1.0, date:"17-19 lug",gender:"M",status:"Planned"   },
-  { id:"E0010",name:"San Cataldo F",    type:"Silver",weight:1.0, date:"17-19 lug",gender:"F",status:"Planned"   },
-  { id:"E0011",name:"Montesilvano M",   type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"M",status:"Planned"},
-  { id:"E0012",name:"Montesilvano F",   type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"F",status:"Planned"},
-  { id:"E0013",name:"Cordenons M",      type:"Silver",weight:1.0, date:"7-9 ago",  gender:"M",status:"Planned"   },
-  { id:"E0014",name:"Cordenons F",      type:"Silver",weight:1.0, date:"7-9 ago",  gender:"F",status:"Planned"   },
-  { id:"E0015",name:"Vasto M",          type:"Silver",weight:1.0, date:"21-23 ago",gender:"M",status:"Planned"   },
-  { id:"E0016",name:"Vasto F",          type:"Silver",weight:1.0, date:"21-23 ago",gender:"F",status:"Planned"   },
-  { id:"E0017",name:"Caorle M",         type:"Gold",  weight:2.0, date:"4-6 set",  gender:"M",status:"Planned"   },
-  { id:"E0018",name:"Caorle F",         type:"Gold",  weight:2.0, date:"4-6 set",  gender:"F",status:"Planned"   },
-  { id:"E0007",name:"Marina di Modica M", type:"Gold",  weight:1.5,date:"10-12 lug",gender:"M",status:"Planned"},
+  { id:"E0001",name:"Falconara M",        type:"Silver",weight:1.0, date:"12-14 giu",gender:"M",status:"Completato" },
+  { id:"E0002",name:"Falconara F",        type:"Silver",weight:1.0, date:"12-14 giu",gender:"F",status:"Completato" },
+  { id:"E0003",name:"Termoli M",          type:"Gold",  weight:1.3, date:"19-21 giu",gender:"M",status:"Planned"    },
+  { id:"E0004",name:"Termoli F",          type:"Gold",  weight:1.3, date:"19-21 giu",gender:"F",status:"Planned"    },
+  { id:"E0005",name:"Marina di Ravenna M",type:"Silver",weight:1.0, date:"3-5 lug",  gender:"M",status:"Planned"    },
+  { id:"E0006",name:"Marina di Ravenna F",type:"Silver",weight:1.0, date:"3-5 lug",  gender:"F",status:"Planned"    },
+  { id:"E0007",name:"Marina di Modica M", type:"Gold",  weight:1.5, date:"10-12 lug",gender:"M",status:"Planned"   },
+  { id:"E0008",name:"Marina di Modica F", type:"Gold",  weight:1.5, date:"10-12 lug",gender:"F",status:"Planned"   },
+  { id:"E0009",name:"San Cataldo M",      type:"Silver",weight:1.0, date:"17-19 lug",gender:"M",status:"Planned"    },
+  { id:"E0010",name:"San Cataldo F",      type:"Silver",weight:1.0, date:"17-19 lug",gender:"F",status:"Planned"    },
+  { id:"E0011",name:"Montesilvano M",     type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"M",status:"Planned" },
+  { id:"E0012",name:"Montesilvano F",     type:"Gold",  weight:1.7, date:"31 lug-2 ago",gender:"F",status:"Planned" },
+  { id:"E0013",name:"Cordenons M",        type:"Silver",weight:1.0, date:"7-9 ago",  gender:"M",status:"Planned"    },
+  { id:"E0014",name:"Cordenons F",        type:"Silver",weight:1.0, date:"7-9 ago",  gender:"F",status:"Planned"    },
+  { id:"E0015",name:"Vasto M",            type:"Silver",weight:1.0, date:"21-23 ago",gender:"M",status:"Planned"    },
+  { id:"E0016",name:"Vasto F",            type:"Silver",weight:1.0, date:"21-23 ago",gender:"F",status:"Planned"    },
+  { id:"E0017",name:"Caorle M",           type:"Gold",  weight:2.0, date:"4-6 set",  gender:"M",status:"Planned"    },
+  { id:"E0018",name:"Caorle F",           type:"Gold",  weight:2.0, date:"4-6 set",  gender:"F",status:"Planned"    },
+];
 ];
 
 const STANDINGS = {
@@ -593,6 +593,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [hiddenPage, setHiddenPage] = useState(null);
   const [athletes_data, setAthletesData] = useState({ women: WOMEN, men: MEN }); // 'stats-atleti'|'stats-utenti'|'stats-awards'|'profile'|'prizes'|'rules'|'terms'
   const [leagueId, setLeagueId]   = useState("L001-F");
+  const [teamNames, setTeamNames] = useState({});
   const [budgets, setBudgets]     = useState({"L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400});
   const [rosters, setRosters]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [lineups, setLineups]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
@@ -714,9 +715,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       if (Array.isArray(leagues_data)) {
         const newJoin = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
         const newBudgets = { "L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400 };
+        const newTeamNames = {};
         leagues_data.forEach(ul => {
           newJoin[ul.league_id] = ul.status === "approved" ? "APPROVED" : ul.status === "pending" ? "PENDING" : null;
           if (ul.budget !== undefined) newBudgets[ul.league_id] = ul.budget;
+          if (ul.team_name) newTeamNames[ul.league_id] = ul.team_name;
         });
 
         // ── Auto-join admin su tutte le leghe ──
@@ -737,6 +740,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
         setJoinStatus(newJoin);
         setBudgets(newBudgets);
+        setTeamNames(newTeamNames);
       }
 
       const rdb = await supabase.from("rosters", token);
@@ -1004,7 +1008,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           {leagues.map(l=>{
             const js=joinStatus[l.id];
             return(
-              <button key={l.id} onClick={()=>{setLeagueId(l.id);setVisibleCount(30);}} style={{flexShrink:0,padding:"6px 12px",borderRadius:20,border:`1px solid ${leagueId===l.id?B.orange:B.creamDark}`,cursor:"pointer",fontSize:11,fontFamily:"Georgia,serif",background:leagueId===l.id?B.orange:B.white,color:leagueId===l.id?B.white:"#333333",fontWeight:leagueId===l.id?"bold":"normal",display:"flex",alignItems:"center",gap:5}}>
+              <button key={l.id} onClick={()=>{setLeagueId(l.id);setVisibleCount(30);setSelectedEvent(null);}} style={{flexShrink:0,padding:"6px 12px",borderRadius:20,border:`1px solid ${leagueId===l.id?B.orange:B.creamDark}`,cursor:"pointer",fontSize:11,fontFamily:"Georgia,serif",background:leagueId===l.id?B.orange:B.white,color:leagueId===l.id?B.white:"#333333",fontWeight:leagueId===l.id?"bold":"normal",display:"flex",alignItems:"center",gap:5}}>
                 {l.name}
                 <span style={{width:6,height:6,borderRadius:"50%",display:"inline-block",background:js==="APPROVED"?"#4ADE80":js==="PENDING"?B.yellow:"#F87171"}}/>
               </button>
@@ -1049,7 +1053,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
@@ -1538,11 +1542,12 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"12px 14px",marginBottom:14}}>
               <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>🏆 Premi {league.name}</div>
               {PRIZES.map((p,i)=>{
-                const unlocked=mockUsers>=p.threshold;
+                const leagueCount = leagueUserCounts[league.id] || 0;
+                const unlocked = leagueCount >= p.threshold;
                 return(<div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",opacity:unlocked?1:0.45,borderBottom:i<PRIZES.length-1?`1px solid ${B.creamDark}`:"none"}}>
                   <span style={{fontSize:20}}>{p.icon}</span>
                   <div style={{flex:1}}><div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>{p.name}</div><div style={{fontSize:10,color:B.gray}}>{p.pos} posto · {p.threshold}+ utenti</div></div>
-                  {unlocked?<span style={{fontSize:10,padding:"2px 8px",borderRadius:8,background:B.greenPale,color:B.greenDark,fontWeight:"bold"}}>✓</span>:<span style={{fontSize:10,color:B.gray}}>{mockUsers}/{p.threshold}</span>}
+                  {unlocked?<span style={{fontSize:10,padding:"2px 8px",borderRadius:8,background:B.greenPale,color:B.greenDark,fontWeight:"bold"}}>✓</span>:<span style={{fontSize:10,color:B.gray}}>{leagueCount}/{p.threshold}</span>}
                 </div>);
               })}
             </div>
@@ -1979,7 +1984,7 @@ function MenuPage({ title, emoji, onBack, children }) {
 }
 
 // ─── PAGINA PROFILO ───────────────────────────────────────────
-function PageProfilo({ authUser, isAdmin, joinStatus, onBack }) {
+function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, onBack }) {
   const username = authUser?.user_metadata?.username || authUser?.email?.split("@")[0] || "—";
   const legheAttive = Object.values(joinStatus).filter(s=>s==="APPROVED").length;
   return (
@@ -1998,13 +2003,18 @@ function PageProfilo({ authUser, isAdmin, joinStatus, onBack }) {
       <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:12,padding:"14px",marginTop:8}}>
         <div style={{fontWeight:"bold",fontSize:13,color:B.greenDark,marginBottom:6}}>Le mie leghe</div>
         {[{id:"L001-F",name:"Classic F"},{id:"L001-M",name:"Classic M"},{id:"L002-F",name:"Market F"},{id:"L002-M",name:"Market M"}].map(l=>(
-          <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${B.greenDark}22`}}>
-            <span style={{fontSize:13,color:B.dark}}>{l.name}</span>
-            <span style={{fontSize:11,fontWeight:"bold",padding:"2px 10px",borderRadius:20,
-              background:joinStatus[l.id]==="APPROVED"?B.greenDark:joinStatus[l.id]==="PENDING"?B.yellowPale:B.grayPale,
-              color:joinStatus[l.id]==="APPROVED"?B.white:joinStatus[l.id]==="PENDING"?"#7A4F00":B.gray}}>
-              {joinStatus[l.id]==="APPROVED"?"✓ Iscritto":joinStatus[l.id]==="PENDING"?"⏳ In attesa":"Non iscritto"}
-            </span>
+          <div key={l.id} style={{padding:"8px 0",borderBottom:`1px solid ${B.greenDark}22`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:13,color:B.dark,fontWeight:"bold"}}>{l.name}</span>
+              <span style={{fontSize:11,fontWeight:"bold",padding:"2px 10px",borderRadius:20,
+                background:joinStatus[l.id]==="APPROVED"?B.greenDark:joinStatus[l.id]==="PENDING"?B.yellowPale:B.grayPale,
+                color:joinStatus[l.id]==="APPROVED"?B.white:joinStatus[l.id]==="PENDING"?"#7A4F00":B.gray}}>
+                {joinStatus[l.id]==="APPROVED"?"✓ Iscritto":joinStatus[l.id]==="PENDING"?"⏳ In attesa":"Non iscritto"}
+              </span>
+            </div>
+            {teamNames?.[l.id] && joinStatus[l.id]==="APPROVED" && (
+              <div style={{fontSize:11,color:B.greenDark,marginTop:3}}>🏖️ {teamNames[l.id]}</div>
+            )}
           </div>
         ))}
       </div>
@@ -2996,6 +3006,17 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
   useEffect(() => {
     if (!matchResults && onLoad) onLoad();
   }, [event.id]);
+
+  // Mentre carica mostra spinner
+  if (!matchResults) return (
+    <div>
+      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+      <div style={{textAlign:"center",padding:"60px 20px",color:B.gray}}>
+        <div style={{fontSize:32,marginBottom:10}}>⏳</div>
+        <div>Caricamento risultati...</div>
+      </div>
+    </div>
+  );
 
   // I dati da Supabase sono per giocatore — ricostruisce le partite raggruppando per match_index
   // Ogni partita ha 2 o 4 righe (2 giocatori per squadra)
