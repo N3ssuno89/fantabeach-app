@@ -629,6 +629,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [syncResultsLoading, setSyncResultsLoading] = useState(false);
   const [lastSyncResults, setLastSyncResults] = useState(null);
   const [lastSyncResultsOk, setLastSyncResultsOk] = useState(null);
+  const [matchResultsData, setMatchResultsData] = useState({}); // event_id → array risultati
+
+  // Carica match_results da Supabase per un evento
+  const loadMatchResults = async (eventId) => {
+    if (!accessToken || !eventId || matchResultsData[eventId]) return;
+    try {
+      const db = await supabase.from("match_results", accessToken);
+      const rows = await db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`);
+      if (Array.isArray(rows)) {
+        setMatchResultsData(prev => ({ ...prev, [eventId]: rows }));
+      }
+    } catch(e) { console.warn("Errore caricamento match_results:", e.message); }
+  };
 
   // ── Carica dati utente da Supabase al mount ──────────────────
   useEffect(() => {
@@ -1189,60 +1202,41 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {(()=>{
               const activeEvent = EVENTS.find(e => e.status==="In corso" && (e.gender||"").toUpperCase()===league.gender);
               if (!activeEvent || roster.length===0) return null;
-              const eventMatches = MOCK_MATCHES_V2[activeEvent.id] || [];
+
+              // Carica i risultati da Supabase se non ancora caricati
+              if (!matchResultsData[activeEvent.id]) {
+                loadMatchResults(activeEvent.id);
+                return null; // mostra niente finché non carica
+              }
+
+              const eventMatches = matchResultsData[activeEvent.id] || [];
               const et = EVENT_TYPE_META[activeEvent.type]||EVENT_TYPE_META.Silver;
 
               // Calcola partite di un atleta con punti per partita
-              const calcPlayerMatches = (athleteName) => {
-                // Estrai cognome: per "De Milito Francesca" prendiamo "De Milito"
-                // Il nome nell'app è "Cognome Nome" dove il cognome può essere composto
-                // Nei match i nomi sono "Cognome I." quindi cerchiamo il primo token seguito da spazio+iniziale
-                // Strategia: cerca tutti i prefissi del nome finché trova match preciso
-                const tokens = athleteName.split(" ");
-                // Genera candidati cognome: "De", "De Milito", "Belliero", "Belliero Piccinin", ecc.
-                // Nei match il formato è "Cognome I." — il cognome è tutto prima dell'iniziale puntata
-                // Usiamo regex: word boundary per evitare "De" che matcha "Deizi"
-                const matchResults = [];
+              const calcPlayerMatches = (athlete) => {
+                // Cerca i risultati per player_id — matching diretto, zero ambiguità
+                const playerMatches = eventMatches.filter(m => m.player_id === athlete.id);
                 let grandTotal = 0;
-                eventMatches.forEach(m => {
-                  // Cerca il cognome nel teamA/B con word boundary
-                  // Il cognome nei match può essere 1 o 2 parole seguito da " X."
-                  const teamA = m.teamA || "";
-                  const teamB = m.teamB || "";
-                  // Prova con il cognome completo progressivo: "De Milito", "Belliero Piccinin", ecc.
-                  let inA = false, inB = false;
-                  for (let len = tokens.length - 1; len >= 1; len--) {
-                    const surname = tokens.slice(0, len).join(" ");
-                    if (surname.length < 3) continue; // evita "De", "Di", "Lo" da soli
-                    const re = new RegExp(`\\b${surname}\\b`, "i");
-                    if (re.test(teamA)) { inA = true; break; }
-                    if (re.test(teamB)) { inB = true; break; }
-                  }
-                  // Fallback: se cognome corto (< 3 token) usa match preciso "Cognome I."
-                  if (!inA && !inB) {
-                    const surname = tokens[0];
-                    const re = new RegExp(`\\b${surname}\\s+[A-Z]\\.`, "i");
-                    if (re.test(teamA)) inA = true;
-                    else if (re.test(teamB)) inB = true;
-                  }
-                  if (!inA && !inB) return;
-                  const bonuses = inA ? (m.bonusA||[]) : (m.bonusB||[]);
-                  const baseMeta = BONUS_META[bonuses[0]];
-                  const basePts = baseMeta?.pts || 0;
-                  const extraBonuses = bonuses.slice(1).filter(b => BONUS_META[b]);
-                  const extraPts = extraBonuses.reduce((s,b) => s + (BONUS_META[b]?.pts||0), 0);
-                  const totalPts = basePts + extraPts;
+                const matchResults = playerMatches.map(m => {
+                  const totalPts = (m.base_pts || 0) + (m.bonus_pts || 0);
                   grandTotal += totalPts;
-                  matchResults.push({
+                  // Converti bonus_codes in extraBonuses (tutti tranne il primo che è base)
+                  const codes = m.bonus_codes || [];
+                  const baseCodes = ["win20","win21","loss12","loss02","bye","forfait"];
+                  const extraBonuses = codes.filter(c => !baseCodes.includes(c));
+                  return {
                     phase: m.phase,
-                    opponent: inA ? m.teamB : m.teamA,
-                    result: m.result,
-                    scoreA: m.scoreA || "",
-                    isBye: m.isBye,
-                    basePts, extraBonuses, extraPts, totalPts,
-                  });
+                    opponent: m.opponent || "—",
+                    result: m.result || "—",
+                    scoreA: m.score || "",
+                    isBye: m.is_bye || false,
+                    basePts: m.base_pts || 0,
+                    extraBonuses,
+                    extraPts: m.bonus_pts || 0,
+                    totalPts,
+                  };
                 });
-                return {matchResults, grandTotal};
+                return { matchResults, grandTotal };
               };
 
               const coachOnField = coachInField[leagueId];
@@ -1325,7 +1319,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     const isStart = a._isStart;
                     const showStarterLabel = isStart && idx===0;
                     const showBenchLabel = !isStart && (idx===0 || arr[idx-1]._isStart);
-                    const {matchResults, grandTotal} = calcPlayerMatches(a.name);
+                    const {matchResults, grandTotal} = calcPlayerMatches(a);
                     const isCapt = isCaptain(a);
                     const totalTappa = (grandTotal * (et.weight||1) * (isCapt ? 1.3 : 1));
                     return (
@@ -1416,7 +1410,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   {(()=>{
                     let tot = 0;
                     starters.forEach(a => {
-                      const {grandTotal} = calcPlayerMatches(a.name);
+                      const {grandTotal} = calcPlayerMatches(a);
                       tot += grandTotal * (et.weight||1) * (isCaptain(a) ? 1.3 : 1);
                     });
                     return (
@@ -1586,7 +1580,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===3&&(
           <div>
             {selectedEvent?(
-              <EventDetail event={selectedEvent} onBack={()=>setSelectedEvent(null)} myRoster={roster}/>
+              <EventDetail
+                event={selectedEvent}
+                onBack={()=>setSelectedEvent(null)}
+                myRoster={roster}
+                matchResults={matchResultsData[selectedEvent.id]}
+                onLoad={()=>loadMatchResults(selectedEvent.id)}
+              />
             ):(
               <div>
                 {/* Filtro genere automatico dalla lega selezionata */}
@@ -2989,82 +2989,50 @@ const BONUS_META = {
 };
 
 // Mock matches arricchiti con bonus/malus
-const MOCK_MATCHES_V2 = {
-  "E0004": [
-  {phase:"Qualifiche 1",teamA:"Cimmino S. - Sarra A.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Genovesi G. - Russo G.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Aime S. - Enzo I.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Zanon C. - Di Prima V.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Deizi N. - Toppetti L.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Foscari F. - Saccullo G.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Francesconi A. - Maestroni E.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Porporati I. - Cacco V.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Roscigno V. - Marchelli R.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Orciani S. - Pratesi A.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Bozzoli M. - Bina N.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 1",teamA:"Barboni A. - Schwan C.",teamB:"",scoreA:"21-0 21-0",result:"2-0",bonusA:["win20"],bonusB:[],isBye:true},
-  {phase:"Qualifiche 2",teamA:"Cimmino S. - Sarra A.",teamB:"Genovesi G. - Russo G.",scoreA:"22-20 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet","closeSet"],isBye:false},
-  {phase:"Qualifiche 2",teamA:"Aime S. - Enzo I.",teamB:"Zanon C. - Di Prima V.",scoreA:"21-19 20-22 10-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"Qualifiche 2",teamA:"Deizi N. - Toppetti L.",teamB:"Foscari F. - Saccullo G.",scoreA:"21-15 21-10",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Qualifiche 2",teamA:"Francesconi A. - Maestroni E.",teamB:"Porporati I. - Cacco V.",scoreA:"21-16 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
-  {phase:"Qualifiche 2",teamA:"Roscigno V. - Marchelli R.",teamB:"Orciani S. - Pratesi A.",scoreA:"16-21 14-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Qualifiche 2",teamA:"Bozzoli M. - Bina N.",teamB:"Barboni A. - Schwan C.",scoreA:"18-21 7-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Pool 1",teamA:"Gradini A. - Frasca F.",teamB:"Zanon C. - Di Prima V.",scoreA:"21-8 21-12",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Pool 1",teamA:"Torrese V. - Biancini M.",teamB:"Salvador E. - Massi V.",scoreA:"14-21 5-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Pool 1",teamA:"Rottoli S. - Shpuza O.",teamB:"Deizi N. - Toppetti L.",scoreA:"21-17 21-14",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Pool 1",teamA:"Cimmino S. - Sarra A.",teamB:"Mancinelli M. - Sestini E.",scoreA:"16-21 21-10 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
-  {phase:"Pool 1",teamA:"Benazzi G. - Ditta E.",teamB:"Orciani S. - Pratesi A.",scoreA:"21-11 21-18",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Pool 1",teamA:"Boscolo G. - Cicola L.",teamB:"Annibalini E. - Toti G.",scoreA:"17-21 21-15 17-19",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
-  {phase:"Pool 1",teamA:"Sanguigni C. - Balducci S.",teamB:"Francesconi A. - Maestroni E.",scoreA:"21-14 21-12",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Pool 1",teamA:"Barboni A. - Schwan C.",teamB:"Puccinelli C. - Belliero P.",scoreA:"21-15 18-21 8-15",result:"1-2",bonusA:["loss12"],bonusB:["win21"],isBye:false},
-  {phase:"Pool 2",teamA:"Gradini A. - Frasca F.",teamB:"Salvador E. - Massi V.",scoreA:"21-16 20-22 15-9",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12"],isBye:false},
-  {phase:"Pool 2",teamA:"Zanon C. - Di Prima V.",teamB:"Torrese V. - Biancini M.",scoreA:"18-21 16-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Pool 2",teamA:"Rottoli S. - Shpuza O.",teamB:"Mancinelli M. - Sestini E.",scoreA:"21-14 21-15",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Pool 2",teamA:"Deizi N. - Toppetti L.",teamB:"Cimmino S. - Sarra A.",scoreA:"21-14 18-21 15-10",result:"2-1",bonusA:["win21"],bonusB:["loss12"],isBye:false},
-  {phase:"Pool 2",teamA:"Benazzi G. - Ditta E.",teamB:"Annibalini E. - Toti G.",scoreA:"22-20 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet","closeSet"],isBye:false},
-  {phase:"Pool 2",teamA:"Orciani S. - Pratesi A.",teamB:"Boscolo G. - Cicola L.",scoreA:"21-19 18-21 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"Pool 2",teamA:"Sanguigni C. - Balducci S.",teamB:"Puccinelli C. - Belliero P.",scoreA:"12-21 17-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Pool 2",teamA:"Francesconi A. - Maestroni E.",teamB:"Barboni A. - Schwan C.",scoreA:"18-21 21-16 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21"],isBye:false},
-  {phase:"Pool 1",teamA:"Mambriani E. - Resnati R.",teamB:"Gobbo I. - Arcaini S.",scoreA:"19-21 21-18 12-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"Pool 2",teamA:"Gobbo I. - Arcaini S.",teamB:"Mambriani E. - Resnati R.",scoreA:"21-17 21-19",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Round of 12",teamA:"Gobbo I. - Arcaini S.",teamB:"Cimmino S. - Sarra A.",scoreA:"21-19 18-21 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"BYE Pool",teamA:"Rottoli S. - Shpuza O.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
-  {phase:"BYE Pool",teamA:"Benazzi G. - Ditta E.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
-  {phase:"BYE Pool",teamA:"Puccinelli C. - Belliero P.",teamB:"",scoreA:"",result:"BYE",bonusA:["bye"],bonusB:[],isBye:true},
-  {phase:"Round of 12",teamA:"Torrese V. - Biancini M.",teamB:"Sanguigni C. - Balducci S.",scoreA:"17-21 15-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Round of 12",teamA:"Annibalini E. - Toti G.",teamB:"Deizi N. - Toppetti L.",scoreA:"12-21 17-21",result:"0-2",bonusA:["loss02"],bonusB:["win20"],isBye:false},
-  {phase:"Round of 12",teamA:"Barboni A. - Schwan C.",teamB:"Salvador E. - Massi V.",scoreA:"21-19 21-15",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
-  {phase:"Round of 12",teamA:"Mancinelli M. - Sestini E.",teamB:"Boscolo G. - Cicola L.",scoreA:"24-26 21-15 15-12",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12"],isBye:false},
-  {phase:"Quarti",teamA:"Benazzi G. - Ditta E.",teamB:"Sanguigni C. - Balducci S.",scoreA:"21-15 21-14",result:"2-0",bonusA:["win20"],bonusB:["loss02"],isBye:false},
-  {phase:"Quarti",teamA:"Deizi N. - Toppetti L.",teamB:"Puccinelli C. - Belliero P.",scoreA:"22-20 16-21 6-15",result:"1-2",bonusA:["loss12"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"Quarti",teamA:"Rottoli S. - Shpuza O.",teamB:"Barboni A. - Schwan C.",scoreA:"22-24 16-21",result:"0-2",bonusA:["loss02","closeSet"],bonusB:["win20"],isBye:false},
-  {phase:"Quarti",teamA:"Mancinelli M. - Sestini E.",teamB:"Gradini A. - Frasca F.",scoreA:"23-21 12-21 13-15",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet"],isBye:false},
-  {phase:"Semifinale",teamA:"Benazzi G. - Ditta E.",teamB:"Puccinelli C. - Belliero P.",scoreA:"23-21 20-22 17-15",result:"2-1",bonusA:["win21","closeSet"],bonusB:["loss12","closeSet","closeSet"],isBye:false},
-  {phase:"Semifinale",teamA:"Barboni A. - Schwan C.",teamB:"Gradini A. - Frasca F.",scoreA:"25-23 19-21 15-17",result:"1-2",bonusA:["loss12","closeSet"],bonusB:["win21","closeSet","closeSet"],isBye:false},
-  {phase:"Finale 3° posto",teamA:"Puccinelli C. - Belliero P.",teamB:"Barboni A. - Schwan C.",scoreA:"21-15 19-21 15-17",result:"1-2",bonusA:["loss12","closeSet","closeSet"],bonusB:["win21"],isBye:false},
-  {phase:"Finale 1° posto",teamA:"Benazzi G. - Ditta E.",teamB:"Gradini A. - Frasca F.",scoreA:"21-13 23-21",result:"2-0",bonusA:["win20"],bonusB:["loss02","closeSet"],isBye:false},
-  ],
-};
 
 const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool 1","Pool 2","BYE Pool","Round of 12","Round of 8","Quarti","Semifinale","Finale 3° posto","Finale 1° posto"];
 
-function EventDetail({event, onBack, myRoster}) {
-  const matches = MOCK_MATCHES_V2[event.id] || [];
-  const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
-  const phases = PHASE_ORDER.filter(p => matches.some(m => m.phase === p));
+function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
+  useEffect(() => {
+    if (!matchResults && onLoad) onLoad();
+  }, [event.id]);
 
-  const isMyTeam = (teamStr) => {
-    if (!myRoster || myRoster.length === 0 || !teamStr) return false;
-    return myRoster.some(a => {
-      const tokens = a.name.split(" ");
-      for (let len = tokens.length - 1; len >= 1; len--) {
-        const surname = tokens.slice(0, len).join(" ");
-        if (surname.length < 3) continue;
-        if (new RegExp(`\\b${surname}\\b`, "i").test(teamStr)) return true;
-      }
-      return new RegExp(`\\b${tokens[0]}\\s+[A-Z]\\.`, "i").test(teamStr);
+  // I dati da Supabase sono per giocatore — ricostruisce le partite raggruppando per match_index
+  // Ogni partita ha 2 o 4 righe (2 giocatori per squadra)
+  // Prendiamo solo le righe dei giocatori del mio roster per evidenziarle
+  const myPlayerIds = new Set((myRoster || []).map(a => a.id));
+
+  // Ricostruisce partite uniche da array di righe per giocatore
+  const buildMatches = (rows) => {
+    const byIndex = {};
+    rows.forEach(r => {
+      if (!byIndex[r.match_index]) byIndex[r.match_index] = [];
+      byIndex[r.match_index].push(r);
     });
+    return Object.values(byIndex).map(rows => {
+      const first = rows[0];
+      // teamA = chi ha result che inizia con il primo numero più alto o BYE
+      // Usiamo opponent per ricostruire: teamA = first.opponent opposto
+      // Semplificato: teamA è il giocatore, opponent è l'avversario
+      const teamA = first.opponent || "—";
+      const teamB = first.is_bye ? "" : rows.map(r => r.player_id).join("/");
+      return {
+        phase: first.phase,
+        result: first.result,
+        scoreA: first.score,
+        isBye: first.is_bye,
+        teamA: first.opponent || "—",
+        teamB: first.is_bye ? "" : "—",
+        myPlayers: rows.filter(r => myPlayerIds.has(r.player_id)),
+        _rows: rows,
+      };
+    }).sort((a,b) => a._rows[0].match_index - b._rows[0].match_index);
   };
+
+  const builtMatches = buildMatches(matches);
+  const phases = PHASE_ORDER.filter(p => builtMatches.some(m => m.phase === p));
+
+  const isMyMatch = (m) => m.myPlayers && m.myPlayers.length > 0;
 
   return (
     <div>
@@ -3079,13 +3047,13 @@ function EventDetail({event, onBack, myRoster}) {
         </div>
       </div>
 
-      {matches.length === 0 ? (
+      {builtMatches.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
           <div style={{fontSize:40,marginBottom:10}}>📋</div>
-          <div>Risultati non ancora disponibili</div>
+          <div>{matchResults ? "Nessuna partita trovata" : "Caricamento risultati..."}</div>
         </div>
       ) : phases.map(phase => {
-        const phaseMatches = matches.filter(m => m.phase === phase);
+        const phaseMatches = builtMatches.filter(m => m.phase === phase);
         const isGrid = phase.includes("Qualifiche") || phase.includes("Pool") || phase.includes("Round");
         return (
           <div key={phase} style={{marginBottom:14}}>
@@ -3094,23 +3062,24 @@ function EventDetail({event, onBack, myRoster}) {
             </div>
             <div style={{display:"grid",gridTemplateColumns:isGrid?"repeat(auto-fill, minmax(min(100%, 48%), 1fr))":"1fr",gap:6}}>
               {phaseMatches.map((m, i) => {
-                const myA = isMyTeam(m.teamA);
-                const myB = isMyTeam(m.teamB);
-                const winA = m.result==="2-0"||m.result==="2-1";
-                const winB = m.result==="0-2"||m.result==="1-2";
+                const mine = isMyMatch(m);
+                // Ottieni nome atleta dal roster per mostrarlo
+                const myNames = m.myPlayers?.map(r => {
+                  const a = myRoster?.find(x => x.id === r.player_id);
+                  return a ? a.name.split(" ")[0] : r.player_id;
+                }).join(", ") || "";
                 return (
-                  <div key={i} style={{background:B.white,border:`1px solid ${myA||myB?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${myA||myB?B.greenDark:B.creamDark}`,borderRadius:8,padding:"8px 10px"}}>
-                    <div style={{fontSize:11,fontWeight:winA?"bold":"normal",color:myA?B.greenDark:winA?B.dark:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>
-                      {myA&&"★ "}{m.teamA}
-                    </div>
+                  <div key={i} style={{background:B.white,border:`1px solid ${mine?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${mine?B.greenDark:B.creamDark}`,borderRadius:8,padding:"8px 10px"}}>
+                    {mine && <div style={{fontSize:9,color:B.greenDark,fontWeight:"bold",marginBottom:3}}>★ {myNames}</div>}
                     <div style={{display:"flex",alignItems:"center",gap:5,margin:"3px 0"}}>
-                      <span style={{fontSize:11,fontWeight:"bold",background:m.isBye?B.grayPale:B.greenDark,color:m.isBye?B.gray:B.white,padding:"1px 7px",borderRadius:4,flexShrink:0}}>{m.result}</span>
-                      {m.scoreA&&<span style={{fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.scoreA}</span>}
+                      <span style={{fontSize:11,fontWeight:"bold",background:m.isBye?B.grayPale:B.greenDark,color:m.isBye?B.gray:B.white,padding:"1px 7px",borderRadius:4,flexShrink:0}}>
+                        {m.isBye?"BYE":m.result}
+                      </span>
+                      <span style={{fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        vs {m.isBye?"—":m.teamA}
+                      </span>
                     </div>
-                    <div style={{fontSize:11,fontWeight:winB?"bold":"normal",color:myB?B.greenDark:winB?B.dark:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:m.coach!==undefined?3:0}}>
-                      {myB&&"★ "}{m.teamB||"BYE"}
-                    </div>
-                    {m.coach!==undefined&&<div style={{fontSize:9,color:m.coach?B.greenDark:B.gray}}>🧢 {m.coach?"Coach in campo":"Nessun coach"}</div>}
+                    {m.scoreA&&<div style={{fontSize:10,color:B.gray}}>{m.scoreA}</div>}
                   </div>
                 );
               })}
