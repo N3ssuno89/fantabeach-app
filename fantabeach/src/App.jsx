@@ -270,28 +270,28 @@ const STANDINGS = {
   "L001-F":[
     {rank:1,prev:2,user:"SandQueen",   team:"Le Regine",   pts:342,budget:28},
     {rank:2,prev:1,user:"BeachKing99", team:"Onde Alte",   pts:318,budget:45},
-    {rank:3,prev:3,user:"Zio_Emanuele",team:"Fanta Crew F",pts:301,budget:12},
+    {rank:3,prev:3,user:"zioema",team:"Fanta Crew F",pts:301,budget:12},
     {rank:4,prev:6,user:"VolleyPro",   team:"Spike Force", pts:287,budget:33},
     {rank:5,prev:4,user:"CoastLine",   team:"Sunset Team", pts:265,budget:67},
   ],
   "L001-M":[
     {rank:1,prev:1,user:"MarcoBeach",  team:"I Dominatori",pts:388,budget:15},
-    {rank:2,prev:3,user:"Zio_Emanuele",team:"Fanta Crew M",pts:355,budget:42},
+    {rank:2,prev:3,user:"zioema",team:"Fanta Crew M",pts:355,budget:42},
     {rank:3,prev:2,user:"VolleyMaster",team:"Beach Boys",  pts:340,budget:58},
   ],
   "L002-F":[
-    {rank:1,prev:2,user:"Zio_Emanuele",team:"Market Queens",pts:412,budget:55},
+    {rank:1,prev:2,user:"zioema",team:"Market Queens",pts:412,budget:55},
     {rank:2,prev:1,user:"WaveRider",   team:"Le Imbattibili",pts:398,budget:30},
     {rank:3,prev:4,user:"SandQueen",   team:"Golden Girls",pts:375,budget:88},
   ],
   "L002-M":[
     {rank:1,prev:1,user:"BeachKing99", team:"I Fenomeni",  pts:445,budget:22},
-    {rank:2,prev:3,user:"Zio_Emanuele",team:"Market Kings",pts:421,budget:67},
+    {rank:2,prev:3,user:"zioema",team:"Market Kings",pts:421,budget:67},
     {rank:3,prev:2,user:"SpikeMaster", team:"Spike & Win", pts:399,budget:44},
   ],
 };
 const COMBO=[
-  {rank:1,prev:1,user:"Zio_Emanuele",pts:1134,leagues:4},
+  {rank:1,prev:1,user:"zioema",pts:1134,leagues:4},
   {rank:2,prev:3,user:"SandQueen",   pts:1087,leagues:3},
   {rank:3,prev:2,user:"BeachKing99", pts:1063,leagues:3},
   {rank:4,prev:4,user:"VolleyPro",   pts:998, leagues:2},
@@ -633,14 +633,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   // Carica match_results da Supabase per un evento
   const loadMatchResults = async (eventId) => {
-    if (!accessToken || !eventId || matchResultsData[eventId]) return;
+    if (!accessToken || !eventId) return;
+    // Già caricato (anche se vuoto [] è un valore valido)
+    if (matchResultsData.hasOwnProperty(eventId)) return;
     try {
       const db = await supabase.from("match_results", accessToken);
       const rows = await db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`);
-      if (Array.isArray(rows)) {
-        setMatchResultsData(prev => ({ ...prev, [eventId]: rows }));
-      }
-    } catch(e) { console.warn("Errore caricamento match_results:", e.message); }
+      // Salva sempre il risultato, anche array vuoto — così sappiamo che abbiamo già caricato
+      setMatchResultsData(prev => ({ ...prev, [eventId]: Array.isArray(rows) ? rows : [] }));
+    } catch(e) {
+      console.warn("Errore caricamento match_results:", e.message);
+      // Salva array vuoto anche in caso di errore per evitare loop
+      setMatchResultsData(prev => ({ ...prev, [eventId]: [] }));
+    }
   };
 
   // ── Carica dati utente da Supabase al mount ──────────────────
@@ -1554,7 +1559,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Classifica {league.name}</div>
             <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:18}}>
               {standings.map(s=>{
-                const moved=s.prev-s.rank; const isMe=s.user==="Zio_Emanuele";
+                const moved=s.prev-s.rank; const myUsername = authUser?.user_metadata?.username || authUser?.email?.split("@")[0]; const isMe=s.user===myUsername;
                 return(<div key={s.user} style={{background:isMe?B.greenPale:B.white,border:`1px solid ${isMe?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:30,height:30,borderRadius:8,flexShrink:0,background:s.rank===1?B.yellow:s.rank===2?B.grayLight:s.rank===3?"#CD7F32":B.grayPale,display:"flex",alignItems:"center",justifyContent:"center",color:s.rank<=3?B.dark:B.gray,fontWeight:"bold",fontSize:s.rank<=3?14:12}}>{s.rank<=3?["🥇","🥈","🥉"][s.rank-1]:s.rank}</div>
                   <div style={{flex:1,minWidth:0}}><div style={{color:isMe?B.greenDark:B.dark,fontWeight:"bold",fontSize:13}}>{s.team} {isMe&&"⭐"}</div><div style={{color:B.gray,fontSize:11}}>{s.user} · ${s.budget}</div></div>
@@ -1569,7 +1574,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.orange}}>🔥 Combo</div>
                 <span style={{fontSize:10,color:B.gray}}>{COMBO.length}/30</span>
               </div>
-              {COMBO.map(s=>{const moved=s.prev-s.rank;const isMe=s.user==="Zio_Emanuele";return(<div key={s.user} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${B.creamDark}`}}>
+              {COMBO.map(s=>{const moved=s.prev-s.rank;const myUsername2=authUser?.user_metadata?.username||authUser?.email?.split("@")[0];const isMe=s.user===myUsername2;return(<div key={s.user} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${B.creamDark}`}}>
                 <div style={{width:22,textAlign:"center",color:B.gray,fontWeight:"bold",fontSize:13}}>{s.rank}</div>
                 <div style={{flex:1}}><div style={{color:isMe?B.greenDark:B.dark,fontWeight:isMe?"bold":"normal",fontSize:13}}>{s.user} {isMe&&"⭐"}</div><div style={{color:B.gray,fontSize:10}}>{s.leagues} leghe</div></div>
                 <div style={{fontSize:10,color:moved>0?B.greenDark:moved<0?B.orange:B.grayLight,fontWeight:"bold",marginRight:6}}>{moved>0?`▲${moved}`:moved<0?`▼${Math.abs(moved)}`:"—"}</div>
@@ -3006,8 +3011,8 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
     if (!matchResults && onLoad) onLoad();
   }, [event.id]);
 
-  // Mentre carica mostra spinner
-  if (!matchResults) return (
+  // Mentre carica mostra spinner (matchResults è undefined = non ancora caricato)
+  if (matchResults === undefined) return (
     <div>
       <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
       <div style={{textAlign:"center",padding:"60px 20px",color:B.gray}}>
