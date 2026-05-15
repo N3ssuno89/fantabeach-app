@@ -2868,7 +2868,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
   };
 
   const builtMatches = (() => {
-    try { return buildMatches(matches); }
+    try { return buildMatches(matchResults || []); }
     catch(e) { console.warn("buildMatches error:", e); return []; }
   })();
   const phases = PHASE_ORDER.filter(p => builtMatches.some(m => m.phase === p));
@@ -2903,6 +2903,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
               ? "I risultati verranno caricati dall\u2019admin al termine di ogni giornata di gara."
               : "I risultati di questa tappa non sono ancora stati inseriti nel sistema."}
           </div>
+        </div>
         </div>
       ) : phases.map(phase => {
         const phaseMatches = builtMatches.filter(m => m.phase === phase);
