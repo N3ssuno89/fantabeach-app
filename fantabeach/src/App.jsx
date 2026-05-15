@@ -1101,7 +1101,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       )}
 
       {/* HEADER */}
-      <div style={{background:B.sandDark,padding:"16px 16px 0",color:B.dark,borderBottom:`2px solid ${B.sandDeep}`}}>
+      <div style={{background:B.sandDark,padding:"env(safe-area-inset-top, 16px) 16px 0",paddingTop:"max(env(safe-area-inset-top), 20px)",color:B.dark,borderBottom:`2px solid ${B.sandDeep}`}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
           <button onClick={()=>setShowMenu(true)} style={{width:36,height:36,borderRadius:10,border:`1px solid ${B.sandDeep}`,background:B.white,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,flexShrink:0}}>
             <div style={{width:16,height:2,borderRadius:1,background:B.dark}}/>
