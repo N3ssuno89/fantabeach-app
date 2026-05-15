@@ -1725,7 +1725,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 myRoster={roster}
                 matchResults={matchResultsData[selectedEvent.id]}
                 onLoad={()=>loadMatchResults(selectedEvent.id)}
-              />
+                athletes={athletes_data}/>
             ):(
               <div>
                 {/* Filtro genere automatico dalla lega selezionata */}
@@ -2833,12 +2833,11 @@ const PHASE_ORDER = [
   "Finale 3° posto","Finale 1° posto",
 ];
 
-function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
+function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) {
   useEffect(() => {
     if (!matchResults && onLoad) onLoad();
   }, [event.id]);
 
-  // Mentre carica mostra spinner (matchResults è undefined = non ancora caricato)
   if (matchResults === undefined) return (
     <div>
       <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
@@ -2849,14 +2848,17 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
     </div>
   );
 
-  // I dati da Supabase sono per giocatore — ricostruisce le partite raggruppando per match_index
   const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
 
-  // Nome display di un player_id (cerca nel roster, poi usa player_name dal DB)
-  const playerName = (playerId, dbName) => {
-    const a = myRoster?.find(x => x.id === playerId);
-    return a ? a.name : (dbName || playerId);
+  // Lookup nome cognome da player_id — cerca nel roster poi negli atleti caricati
+  const allAthletes = [...(athletes?.women||[]), ...(athletes?.men||[])];
+  const getPlayerName = (playerId) => {
+    const inRoster = myRoster?.find(x => x.id === playerId);
+    if (inRoster) return inRoster.name.split(" ")[0];
+    const inAll = allAthletes.find(x => x.id === playerId);
+    if (inAll) return inAll.name.split(" ")[0];
+    return playerId; // fallback all'ID
   };
 
   // Ricostruisce partite uniche raggruppando per match_index
@@ -2872,12 +2874,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
       // Nel DB ogni riga è un giocatore della coppia A
       // Cerca nel roster il nome, altrimenti usa player_name dal DB
       const teamANames = matchRows.slice(0,2)
-        .map(r => {
-          const a = myRoster?.find(x => x.id === r.player_id);
-          if (a) return a.name.split(" ")[0]; // cognome
-          if (r.player_name) return r.player_name.split(" ").slice(0,1).join(" ");
-          return null;
-        })
+        .map(r => getPlayerName(r.player_id))
         .filter(Boolean)
         .join(" - ");
 
