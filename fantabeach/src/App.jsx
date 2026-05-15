@@ -2852,23 +2852,25 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
   const allAthletes = [...(athletes?.women||[]), ...(athletes?.men||[])];
 
-  // Capitalizza stringa: "DI PRIMA" → "Di Prima"
-  const cap = (s) => s ? s.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") : "";
-
-  // Lookup cognome da player_id
+  // Cognome da player_id — usa surname (colonna Cognome dal PLAYER_MAPPING via sync)
   const getPlayerName = (playerId) => {
     const find = (list) => list?.find(x => x.id === playerId);
     const a = find(myRoster) || find(allAthletes);
     if (!a) return playerId;
-    return cap(a.surname || a.name.split(" ")[0]);
+    // surname = colonna Cognome dal PLAYER_MAPPING (es. "GOTTARDI", "DI PRIMA")
+    // fallback: primo token del Federation Name (es. "GOTTARDI" da "GOTTARDI VALENTINA")
+    const s = a.surname || a.name.split(" ")[0];
+    return s.toUpperCase();
   };
 
-  // Per teamB dall'opponent string — prende tutto tranne l'ultimo token (cognome anche con spazi)
+  // Per teamB: opponent è "COGNOME1 NOME1 - COGNOME2 NOME2" (Federation Name format)
+  // Prende tutto tranne l'ultimo token = cognome (funziona anche per DI PRIMA)
   const extractSurname = (fullName) => {
     if (!fullName) return "";
     const tokens = fullName.trim().split(" ");
-    const surname = tokens.length === 1 ? tokens[0] : tokens.slice(0, tokens.length - 1).join(" ");
-    return cap(surname);
+    if (tokens.length === 1) return tokens[0].toUpperCase();
+    // Formato COGNOME NOME → tutto tranne ultimo = cognome
+    return tokens.slice(0, -1).join(" ").toUpperCase();
   };
 
   // Ricostruisce partite uniche raggruppando per match_index
