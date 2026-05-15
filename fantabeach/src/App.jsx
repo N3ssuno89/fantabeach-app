@@ -2868,27 +2868,38 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
     });
     return Object.values(byIndex).map(matchRows => {
       const first = matchRows[0];
-      // Determina risultato: le righe hanno result "2-0","2-1","1-2","0-2","BYE"
-      // Le righe della coppia A hanno result che inizia con il numero più alto (vincitrice)
-      // La coppia A è quella di cui conosciamo i player_id
-      // La coppia B è l'avversario (campo opponent)
-      const teamAPlayers = matchRows; // tutte le righe sono della coppia A
-      const teamANames = teamAPlayers
-        .map(r => playerName(r.player_id, r.player_name))
+      // Nomi della coppia A: prendi max 2 giocatori
+      // Nel DB ogni riga è un giocatore della coppia A
+      // Cerca nel roster il nome, altrimenti usa player_name dal DB
+      const teamANames = matchRows.slice(0,2)
+        .map(r => {
+          const a = myRoster?.find(x => x.id === r.player_id);
+          if (a) return a.name.split(" ")[0]; // cognome
+          if (r.player_name) return r.player_name.split(" ").slice(0,1).join(" ");
+          return null;
+        })
         .filter(Boolean)
-        .map(n => n.split(" ")[0]) // solo cognome
         .join(" - ");
-      const teamBName = first.opponent || (first.is_bye ? "" : "—");
-      const winA = first.result && (first.result.startsWith("2") || first.result === "BYE");
-      const winB = first.result && first.result.startsWith("0") || first.result === "1-2";
+
+      // Coppia B = campo opponent (es. "GRADINI ALICE - FRASCA FEDERICA")
+      // Prendi solo i cognomi
+      const teamBRaw = first.opponent || "";
+      const teamBNames = teamBRaw
+        ? teamBRaw.split(" - ").map(n => n.trim().split(" ")[0]).join(" - ")
+        : "";
+
+      const isBye = first.is_bye || !teamBRaw;
+      const winA = first.result && (first.result.startsWith("2") || isBye);
+      const winB = first.result && !winA;
       const myInMatch = matchRows.filter(r => myPlayerIds.has(r.player_id));
+
       return {
         phase: first.phase,
-        result: first.result || (first.is_bye ? "BYE" : "—"),
-        score: first.score || "",
-        isBye: first.is_bye,
-        teamA: teamANames,
-        teamB: teamBName,
+        result: isBye ? "2-0" : (first.result || "—"),
+        score: isBye ? "21-0 21-0" : (first.score || ""),
+        isBye,
+        teamA: teamANames || "—",
+        teamB: teamBNames,
         winA, winB,
         myInMatch,
         _rows: matchRows,
