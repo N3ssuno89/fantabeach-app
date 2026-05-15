@@ -703,14 +703,24 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const loadUserData = async (token, userId) => {
     try {
       // Tutte le chiamate in parallelo — da 6 chiamate sequenziali a 3 parallele
-      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes] = await Promise.all([
+      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes] = await Promise.all([
         supabase.from("profiles", token).then(db => db.select("role,username,display_name", `&id=eq.${userId}`)),
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
         supabase.from("lineups", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=name.asc")),
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
+        supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
       ]);
+
+      // ── Coach selezionati ──
+      if (Array.isArray(coachSelectRes) && coachSelectRes.length > 0) {
+        const newCoaches = {"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null};
+        coachSelectRes.forEach(cs => {
+          if (newCoaches[cs.league_id] !== undefined) newCoaches[cs.league_id] = cs.coach_id;
+        });
+        setCoaches(newCoaches);
+      }
 
       // ── Events da DB ──
       if (Array.isArray(eventsRes) && eventsRes.length > 0) {
@@ -862,7 +872,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const showNotif = (msg, type="success") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),2800); };
   const canTrade = () => {
     if (league.status !== "OPEN") return false;
-    // Classic: bloccato se la stagione è iniziata (almeno una tappa completata o in corso)
     if (league.type === "classic") {
       const stagionIniziata = events.some(e =>
         (e.gender||"").toUpperCase() === league.gender &&
@@ -870,13 +879,23 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       );
       return !stagionIniziata;
     }
-    // Market: bloccato solo durante tappa in corso per questo genere
     const activeTappa = events.find(e =>
       e.status === "In corso" &&
       (e.gender||"").toUpperCase() === league.gender
     );
     if (activeTappa) return false;
     return league.marketOpen;
+  };
+
+  // Il coach si può cambiare finché non c'è una tappa In corso
+  // Dopo la tappa si può cambiare di nuovo fino alla prossima
+  const canSelectCoach = () => {
+    if (league.status !== "OPEN") return false;
+    const tappaInCorso = events.find(e =>
+      e.status === "In corso" &&
+      (e.gender||"").toUpperCase() === league.gender
+    );
+    return !tappaInCorso; // bloccato solo DURANTE la tappa
   };
   const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
   const isStarter = (a) => lineup.includes(a.id);
@@ -925,24 +944,42 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     } catch(e) { console.error("Errore vendita:", e); }
   };
 
-  const handleBuyCoach = (c) => {
-    if (!canTrade()) return showNotif("Mercato chiuso!","error");
+  const handleBuyCoach = async (c) => {
+    if (!canSelectCoach()) return showNotif("Coach bloccato durante la tappa!","error");
     if (myCoach===c.id) return showNotif("Coach già selezionato!","error");
     const prev = coachesList.find(x=>x.id===myCoach);
-    const prevCost = prev ? prev.cost : 0;
-    if (budget - prevCost + (myCoach?prev.cost:0) < c.cost) return showNotif("Crediti insufficienti!","error");
-    if (myCoach) setBudgets(b=>({...b,[leagueId]:b[leagueId]+1}));
+    const prevCost = prev?.cost || 0;
+    if (budget - prevCost < c.cost) return showNotif("Crediti insufficienti!","error");
+    // Aggiorna stato locale
+    if (myCoach) setBudgets(b=>({...b,[leagueId]:b[leagueId]+prevCost}));
     setCoaches(ch=>({...ch,[leagueId]:c.id}));
     setBudgets(b=>({...b,[leagueId]:b[leagueId]-c.cost}));
     showNotif(`Coach ${c.name} selezionato!`);
+    // Persiste su Supabase
+    try {
+      const db = await supabase.from("coach_selections", accessToken);
+      await db.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+      await db.insert({ user_id:authUser.id, league_id:leagueId, coach_id:c.id, coach_name:c.name });
+      // Aggiorna budget
+      const udb = await supabase.from("user_leagues", accessToken);
+      const newBudget = myCoach ? budget - c.cost + prevCost : budget - c.cost;
+      await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+    } catch(e) { console.error("Errore selezione coach:", e); }
   };
 
-  const handleRemoveCoach = () => {
+  const handleRemoveCoach = async () => {
     if (!myCoach) return;
     const c = coachesList.find(x=>x.id===myCoach);
-    setBudgets(b=>({...b,[leagueId]:b[leagueId]+c.cost}));
+    const cost = c?.cost || 0;
+    setBudgets(b=>({...b,[leagueId]:b[leagueId]+cost}));
     setCoaches(ch=>({...ch,[leagueId]:null}));
     showNotif("Coach rimosso");
+    try {
+      const db = await supabase.from("coach_selections", accessToken);
+      await db.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+      const udb = await supabase.from("user_leagues", accessToken);
+      await udb.update({ budget: budget+cost }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+    } catch(e) { console.error("Errore rimozione coach:", e); }
   };
 
   const toggleStarter = (a) => {
@@ -1296,7 +1333,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                           {isSelected?(
                             <span style={{fontSize:10,color:B.greenDark,fontWeight:"bold"}}>✓ Scelto</span>
                           ):(
-                            <button onClick={()=>handleBuyCoach(c)} style={{marginTop:4,padding:"5px 10px",borderRadius:8,border:"none",background:canTrade()&&budget>=c.cost?B.greenDark:B.grayPale,color:canTrade()&&budget>=c.cost?B.white:B.gray,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif"}}>Scegli</button>
+                            <button onClick={()=>handleBuyCoach(c)} style={{marginTop:4,padding:"5px 10px",borderRadius:8,border:"none",background:canSelectCoach()&&budget>=c.cost?B.greenDark:B.grayPale,color:canSelectCoach()&&budget>=c.cost?B.white:B.gray,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif"}}>{canSelectCoach()?"Scegli":"Bloccato"}</button>
                           )}
                         </div>
                       </div>
