@@ -922,8 +922,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
   const isStarter = (a) => lineup.includes(a.id);
   const isCaptain = (a) => captain===a.id;
-  const isStarter = (a) => lineup.includes(a.id);
-  const isCaptain = (a) => captain===a.id;
 
   const handleBuy = async (a) => {
     if (myJoin!=="APPROVED") return showNotif("Non sei ancora approvato!","error");
