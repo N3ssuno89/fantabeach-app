@@ -2904,7 +2904,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
               : "I risultati di questa tappa non sono ancora stati inseriti nel sistema."}
           </div>
         </div>
-        </div>
+       
       ) : phases.map(phase => {
         const phaseMatches = builtMatches.filter(m => m.phase === phase);
         const isGrid = phase.includes("Qualifiche") || phase.includes("Pool") || phase.includes("Round");
