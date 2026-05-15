@@ -2851,14 +2851,20 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
   const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
 
-  // Lookup nome cognome da player_id — cerca nel roster poi negli atleti caricati
-  const allAthletes = [...(athletes?.women||[]), ...(athletes?.men||[])];
+  // Lookup cognome da player_id — usa il campo surname (colonna Cognome dal PLAYER_MAPPING)
   const getPlayerName = (playerId) => {
-    const inRoster = myRoster?.find(x => x.id === playerId);
-    if (inRoster) return inRoster.name.split(" ")[0];
-    const inAll = allAthletes.find(x => x.id === playerId);
-    if (inAll) return inAll.name.split(" ")[0];
-    return playerId; // fallback all'ID
+    const find = (list) => list?.find(x => x.id === playerId);
+    const a = find(myRoster) || find(allAthletes);
+    if (!a) return playerId;
+    return a.surname || a.name.split(" ")[0]; // surname è il cognome puro dalla colonna dedicata
+  };
+
+  // Per teamB dall'opponent string — prende tutto tranne l'ultimo token (= cognome anche con spazi)
+  const extractSurname = (fullName) => {
+    if (!fullName) return "";
+    const tokens = fullName.trim().split(" ");
+    if (tokens.length === 1) return tokens[0];
+    return tokens.slice(0, tokens.length - 1).join(" ");
   };
 
   // Ricostruisce partite uniche raggruppando per match_index
@@ -2878,11 +2884,10 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
         .filter(Boolean)
         .join(" - ");
 
-      // Coppia B = campo opponent (es. "GRADINI ALICE - FRASCA FEDERICA")
-      // Prendi solo i cognomi
+      // Coppia B = campo opponent — estrai cognomi
       const teamBRaw = first.opponent || "";
       const teamBNames = teamBRaw
-        ? teamBRaw.split(" - ").map(n => n.trim().split(" ")[0]).join(" - ")
+        ? teamBRaw.split(" - ").map(n => extractSurname(n.trim())).join(" - ")
         : "";
 
       const isBye = first.is_bye || !teamBRaw;
@@ -2951,38 +2956,32 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
             <div style={{display:"grid",gridTemplateColumns:isGrid?"repeat(auto-fill,minmax(min(100%,300px),1fr))":"1fr",gap:6}}>
               {phaseMatches.map((m, i) => {
                 const hasMyPlayer = m.myInMatch.length > 0;
-                const resultColor = m.winA ? B.greenDark : B.orange;
                 return (
                   <div key={i} style={{
-                    background:B.white,
+                    background: hasMyPlayer ? B.greenPale : B.white,
                     border:`1px solid ${hasMyPlayer?B.greenDark:B.creamDark}`,
                     borderLeft:`3px solid ${hasMyPlayer?B.greenDark:B.creamDark}`,
-                    borderRadius:8,padding:"8px 10px",
+                    borderRadius:8, padding:"10px",
+                    textAlign:"center",
                   }}>
                     {/* Coppia A */}
                     <div style={{
-                      fontSize:11,fontWeight:m.winA||m.isBye?"bold":"normal",
-                      color:m.winA||m.isBye?B.dark:B.gray,
+                      fontSize:11,
+                      fontWeight: m.winA||m.isBye ? "bold" : "normal",
+                      color: m.winA||m.isBye ? B.dark : "#555",
                       overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                      marginBottom:2,
+                      marginBottom:4,
                     }}>
                       {m.teamA || "—"}
-                      {m.myInMatch.map(r => (
-                        <span key={r.player_id} style={{
-                          marginLeft:4,fontSize:9,
-                          background:B.greenPale,color:B.greenDark,
-                          padding:"0px 4px",borderRadius:4,fontWeight:"bold",
-                        }}>★</span>
-                      ))}
                     </div>
 
                     {/* Risultato + score */}
-                    <div style={{display:"flex",alignItems:"center",gap:5,margin:"3px 0"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,margin:"4px 0"}}>
                       <span style={{
                         fontSize:11,fontWeight:"bold",
-                        background:B.greenDark,
+                        background: m.winA||m.isBye ? B.greenDark : B.orange,
                         color:B.white,
-                        padding:"1px 7px",borderRadius:4,flexShrink:0,
+                        padding:"2px 8px",borderRadius:4,flexShrink:0,
                       }}>
                         {m.isBye?"2-0":m.result}
                       </span>
@@ -2993,12 +2992,13 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
                     {/* Coppia B o BYE */}
                     <div style={{
-                      fontSize:11,fontWeight:m.winB?"bold":"normal",
-                      color:m.isBye?B.grayLight:m.winB?B.dark:B.gray,
+                      fontSize:11,
+                      fontWeight: m.winB ? "bold" : "normal",
+                      color: m.isBye ? B.grayLight : m.winB ? B.dark : "#555",
                       overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                      marginTop:2,fontStyle:m.isBye?"italic":"normal",
+                      marginTop:4, fontStyle:m.isBye?"italic":"normal",
                     }}>
-                      {m.isBye?"BYE":(m.teamB || "—")}
+                      {m.isBye ? "BYE" : (m.teamB || "—")}
                     </div>
                   </div>
                 );
