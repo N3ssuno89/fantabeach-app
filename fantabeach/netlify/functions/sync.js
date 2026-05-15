@@ -228,6 +228,7 @@ exports.handler = async (event) => {
     const coaches = coachRows.slice(1).filter(r => r[0]?.trim()).map(row => ({
       id:     row[ci("coach id") ?? 0]?.trim() || row[0]?.trim(),
       name:   `${row[ci("cognome") ?? 2]?.trim() || ""} ${row[ci("nome") ?? 1]?.trim() || ""}`.trim(),
+      cost:   5,
       active: true,
     })).filter(c => c.id);
 
