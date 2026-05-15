@@ -559,87 +559,78 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [standingsLoading, setStandingsLoading] = useState(false);
 
   // Carica classifica reale da Supabase
-  const loadStandings = async (token) => {
+  // Cache standings: { data, timestamp }
+  const standingsCache = React.useRef({ ts: 0, data: null, combo: null });
+  const STANDINGS_TTL = 5 * 60 * 1000; // 5 minuti
+
+  const loadStandings = async (token, force = false) => {
     if (!token) return;
+    // Cache: non ricaricare se freschi
+    const now = Date.now();
+    if (!force && standingsCache.current.ts && (now - standingsCache.current.ts) < STANDINGS_TTL) {
+      if (standingsCache.current.data) {
+        setStandings(standingsCache.current.data);
+        setCombo(standingsCache.current.combo || []);
+      }
+      return;
+    }
     setStandingsLoading(true);
     try {
-      // 1. Legge tutte le user_leagues approvate con team_name e budget
-      const db = await supabase.from("user_leagues", token);
-      const allLeagues = await db.select("user_id,league_id,team_name,budget,status", "&status=eq.approved");
-      if (!Array.isArray(allLeagues)) return;
+      // 1 chiamata alla vista aggregata invece di 4 chiamate separate
+      const [scoresRes, profilesRes, historyRes] = await Promise.all([
+        supabase.from("user_league_scores", token).then(db =>
+          db.select("user_id,league_id,team_name,budget,total_pts,events_played,matches_played")),
+        supabase.from("profiles", token).then(db =>
+          db.select("id,username")),
+        supabase.from("standings_history", token).then(db =>
+          db.select("user_id,league_id,rank,recorded_at", "&order=recorded_at.desc&limit=200")),
+      ]);
 
-      // 2. Legge i profili per avere gli username
-      const pdb = await supabase.from("profiles", token);
-      const allProfiles = await pdb.select("user_id,username");
+      const scores = Array.isArray(scoresRes) ? scoresRes : [];
+      const profiles = Array.isArray(profilesRes) ? profilesRes : [];
+      const history = Array.isArray(historyRes) ? historyRes : [];
+
+      // Mappa profili
       const profileMap = {};
-      if (Array.isArray(allProfiles)) allProfiles.forEach(p => { profileMap[p.user_id] = p.username; });
+      profiles.forEach(p => { profileMap[p.id] = p.username; });
 
-      // 3. Legge i match_results con i punti per player_id
-      // Per ora punti = somma total_pts da match_results per ogni lineup approvata
-      // Semplificazione: calcoliamo i punti sommando i match_results degli atleti
-      // del roster di ogni utente per ogni evento
+      // Mappa rank precedente da standings_history (ultimo snapshot per lega)
+      const prevRankMap = {}; // user_id::league_id → rank precedente
+      const seenKeys = new Set();
+      history.forEach(h => {
+        const k = `${h.user_id}::${h.league_id}`;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          prevRankMap[k] = h.rank;
+        }
+      });
 
-      // Per ora usiamo solo budget residuo come proxy (punti = 0 se nessun risultato)
-      // Punti reali: da implementare con tabella scores dedicata
-      const ldb = await supabase.from("lineups", token);
-      const allLineups = await ldb.select("user_id,league_id,event_id,player_id,role");
-      const mrdb = await supabase.from("match_results", token);
-      const allMatchResults = await mrdb.select("player_id,event_id,total_pts,is_bye");
-
-      // Mappa match_results per lookup veloce
-      const mrMap = {}; // player_id::event_id → total_pts
-      if (Array.isArray(allMatchResults)) {
-        allMatchResults.forEach(r => {
-          const k = `${r.player_id}::${r.event_id}`;
-          mrMap[k] = (mrMap[k] || 0) + (r.total_pts || 0);
-        });
-      }
-
-      // Calcola punti per ogni utente per ogni lega
-      const userLeaguePoints = {}; // user_id::league_id → pts
-      if (Array.isArray(allLineups)) {
-        // Raggruppa lineups per user+league+event
-        const lineupMap = {};
-        allLineups.forEach(l => {
-          const k = `${l.user_id}::${l.league_id}::${l.event_id}`;
-          if (!lineupMap[k]) lineupMap[k] = [];
-          lineupMap[k].push(l);
-        });
-
-        Object.entries(lineupMap).forEach(([k, players]) => {
-          const [userId, leagueId, eventId] = k.split("::");
-          const event = EVENTS.find(e => e.id === eventId);
-          const weight = event?.weight || 1.0;
-          let eventPts = 0;
-          players.forEach(p => {
-            const mrKey = `${p.player_id}::${eventId}`;
-            let pts = (mrMap[mrKey] || 0) * weight;
-            if (p.role === "capitano") pts *= 1.3;
-            eventPts += pts;
-          });
-          const ulKey = `${userId}::${leagueId}`;
-          userLeaguePoints[ulKey] = (userLeaguePoints[ulKey] || 0) + eventPts;
-        });
-      }
-
-      // 4. Costruisce classifica per ogni lega
+      // Costruisce classifica per ogni lega
       const newStandings = {};
       const leagueIds = ["L001-F","L001-M","L002-F","L002-M"];
       leagueIds.forEach(lid => {
-        const members = allLeagues.filter(l => l.league_id === lid);
-        const ranked = members.map(m => ({
-          user_id: m.user_id,
-          user: profileMap[m.user_id] || m.user_id.slice(0,8),
-          team: m.team_name || profileMap[m.user_id] || "Squadra",
-          pts: Math.round((userLeaguePoints[`${m.user_id}::${lid}`] || 0) * 10) / 10,
-          budget: Math.round(m.budget || 0),
-        })).sort((a,b) => b.pts - a.pts)
-          .map((s,i) => ({ ...s, rank: i+1, prev: i+1 })); // prev = rank corrente (storico da implementare)
+        const members = scores.filter(s => s.league_id === lid);
+        const ranked = members
+          .sort((a,b) => b.total_pts - a.total_pts)
+          .map((s, i) => {
+            const rank = i + 1;
+            const prevKey = `${s.user_id}::${lid}`;
+            const prev = prevRankMap[prevKey] || rank; // se nessuno storico = stesso posto
+            return {
+              user_id: s.user_id,
+              user: profileMap[s.user_id] || s.user_id.slice(0,8),
+              team: s.team_name || profileMap[s.user_id] || "Squadra",
+              pts: Math.round((s.total_pts || 0) * 10) / 10,
+              budget: Math.round(s.budget || 0),
+              events_played: s.events_played || 0,
+              rank,
+              prev,
+            };
+          });
         newStandings[lid] = ranked;
       });
-      setStandings(newStandings);
 
-      // 5. Combo: somma punti tra tutte le leghe per utente
+      // Combo: somma punti tra tutte le leghe (min 2 leghe)
       const comboMap = {};
       leagueIds.forEach(lid => {
         (newStandings[lid] || []).forEach(s => {
@@ -653,10 +644,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         .sort((a,b) => b.pts - a.pts)
         .map((c,i) => ({ ...c, rank: i+1, prev: i+1,
           pts: Math.round(c.pts * 10) / 10 }));
+
+      setStandings(newStandings);
       setCombo(comboArr);
+      // Salva in cache
+      standingsCache.current = { ts: Date.now(), data: newStandings, combo: comboArr };
 
     } catch(e) {
-      console.warn("Errore caricamento classifica:", e.message);
+      console.warn("Errore classifica:", e.message);
     }
     setStandingsLoading(false);
   };
@@ -682,6 +677,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [menuSection, setMenuSection] = useState(null);
   const [leagues, setLeagues]     = useState(LEAGUES_INIT);
   const [dbLoading, setDbLoading] = useState(false);
+  const [coachesList, setCoachesList] = useState(COACHES); // fallback hardcoded, sostituito da DB
   const [isAdmin, setIsAdmin]     = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [totalUsers, setTotalUsers] = useState(0);
@@ -723,56 +719,66 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const loadUserData = async (token, userId) => {
     try {
-      // ── Ruolo utente ──
-      const pdb = await supabase.from("profiles", token);
-      const profile_data = await pdb.select("role", `&id=eq.${userId}`);
-      const userIsAdmin = Array.isArray(profile_data) && profile_data[0]?.role === "admin";
+      // Tutte le chiamate in parallelo — da 6 chiamate sequenziali a 3 parallele
+      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes] = await Promise.all([
+        supabase.from("profiles", token).then(db => db.select("role,username,display_name", `&id=eq.${userId}`)),
+        supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
+        supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
+        supabase.from("lineups", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
+        supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=name.asc")),
+      ]);
+
+      // ── Coach da DB (fallback a hardcoded se DB vuoto) ──
+      if (Array.isArray(coachesRes) && coachesRes.length > 0) {
+        setCoachesList(coachesRes.map(c => ({ ...c, athletes: [] })));
+      }
+
+      // ── Profilo e ruolo ──
+      const userIsAdmin = Array.isArray(profileRes) && profileRes[0]?.role === "admin";
       setIsAdmin(userIsAdmin);
 
-      // ── Se admin: richieste pending + statistiche ──
+      // ── Se admin: carica dati aggiuntivi in parallelo ──
       if (userIsAdmin) {
-        // Richieste pending
-        const reqdb = await supabase.from("user_leagues", token);
-        const pending = await reqdb.select("id,user_id,league_id,team_name,status", `&status=eq.pending&order=created_at.asc`);
-        if (Array.isArray(pending) && pending.length > 0) {
-          const userIds = [...new Set(pending.map(r => r.user_id))];
+        const [pendingRes, countRes, approvedRes, rostersAllRes] = await Promise.all([
+          supabase.from("user_leagues", token).then(db =>
+            db.select("id,user_id,league_id,team_name,status", "&status=eq.pending&order=created_at.asc")),
+          supabase.from("profiles", token).then(db => db.select("id", "")),
+          supabase.from("user_leagues", token).then(db =>
+            db.select("id,league_id,user_id", "&status=eq.approved")),
+          supabase.from("rosters", token).then(db =>
+            db.select("player_id,player_name,gender", "&sold_at=is.null")),
+        ]);
+
+        // Pending requests — carica username in parallelo
+        if (Array.isArray(pendingRes) && pendingRes.length > 0) {
+          const userIds = [...new Set(pendingRes.map(r => r.user_id))];
           const profdb = await supabase.from("profiles", token);
           const profiles = await profdb.select("id,username", `&id=in.(${userIds.join(",")})`);
           const profMap = {};
           if (Array.isArray(profiles)) profiles.forEach(p => { profMap[p.id] = p.username; });
-          setPendingRequests(pending.map(r => ({ ...r, username: profMap[r.user_id] || r.user_id })));
+          setPendingRequests(pendingRes.map(r => ({ ...r, username: profMap[r.user_id] || r.user_id })));
         } else {
           setPendingRequests([]);
         }
 
-        // Conteggio utenti totali
-        const countdb = await supabase.from("profiles", token);
-        const allProfiles = await countdb.select("id", "");
-        const userCount = Array.isArray(allProfiles) ? allProfiles.length : 0;
-        setTotalUsers(userCount);
+        // Statistiche admin
+        setTotalUsers(Array.isArray(countRes) ? countRes.length : 0);
+        setTotalSquads(Array.isArray(approvedRes) ? approvedRes.length : 0);
 
-        // Squadre totali (iscrizioni approvate)
-        const squaddb = await supabase.from("user_leagues", token);
-        const approved = await squaddb.select("id,league_id,user_id", `&status=eq.approved`);
-        setTotalSquads(Array.isArray(approved) ? approved.length : 0);
-
-        // Conteggio utenti per lega (per sblocco premi)
-        if (Array.isArray(approved)) {
+        if (Array.isArray(approvedRes)) {
           const counts = {};
-          approved.forEach(a => { counts[a.league_id] = (counts[a.league_id]||0) + 1; });
-          // Combo = utenti in più di 1 lega
           const userLeagueCounts = {};
-          approved.forEach(a => { userLeagueCounts[a.user_id] = (userLeagueCounts[a.user_id]||0) + 1; });
+          approvedRes.forEach(a => {
+            counts[a.league_id] = (counts[a.league_id]||0) + 1;
+            userLeagueCounts[a.user_id] = (userLeagueCounts[a.user_id]||0) + 1;
+          });
           counts["COMBO"] = Object.values(userLeagueCounts).filter(c => c > 1).length;
           setLeagueUserCounts(counts);
         }
 
-        // Top 3 atleti più comprati (roster attivi, non venduti)
-        const rdb = await supabase.from("rosters", token);
-        const allRosters = await rdb.select("player_id,player_name,gender", `&sold_at=is.null`);
-        if (Array.isArray(allRosters)) {
+        if (Array.isArray(rostersAllRes)) {
           const countF = {}, countM = {};
-          allRosters.forEach(r => {
+          rostersAllRes.forEach(r => {
             if (r.gender === "F") countF[r.player_id] = { name: r.player_name, count: (countF[r.player_id]?.count||0)+1 };
             else countM[r.player_id] = { name: r.player_name, count: (countM[r.player_id]?.count||0)+1 };
           });
@@ -780,46 +786,42 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           setTopM(Object.values(countM).sort((a,b)=>b.count-a.count).slice(0,3));
         }
       }
-      const db = await supabase.from("user_leagues", token);
-      const leagues_data = await db.select("*", `&user_id=eq.${userId}`);
-      if (Array.isArray(leagues_data)) {
+
+      // ── Leghe utente ──
+      if (Array.isArray(leaguesRes)) {
         const newJoin = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
         const newBudgets = { "L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400 };
         const newTeamNames = {};
-        leagues_data.forEach(ul => {
+        leaguesRes.forEach(ul => {
           newJoin[ul.league_id] = ul.status === "approved" ? "APPROVED" : ul.status === "pending" ? "PENDING" : null;
           if (ul.budget !== undefined) newBudgets[ul.league_id] = ul.budget;
           if (ul.team_name) newTeamNames[ul.league_id] = ul.team_name;
         });
 
-        // ── Auto-join admin su tutte le leghe ──
+        // Auto-join admin su tutte le leghe
         if (userIsAdmin) {
-          const username = authUser?.user_metadata?.username || authUser?.email?.split("@")[0] || "admin";
+          const username = profileRes?.[0]?.username || "admin";
           const leaguesToJoin = ["L001-F","L001-M","L002-F","L002-M"].filter(lid => !newJoin[lid]);
           if (leaguesToJoin.length > 0) {
             const adb = await supabase.from("user_leagues", token);
-            for (const lid of leaguesToJoin) {
-              await adb.upsert({
-                user_id: userId, league_id: lid,
-                status: "approved", team_name: username, budget: 400,
-              }, "user_id,league_id");
-              newJoin[lid] = "APPROVED";
-            }
+            await Promise.all(leaguesToJoin.map(lid =>
+              adb.upsert({ user_id: userId, league_id: lid, status: "approved",
+                team_name: username, budget: 400 }, "user_id,league_id")
+                .then(() => { newJoin[lid] = "APPROVED"; })
+            ));
           }
         }
 
         setJoinStatus(newJoin);
         setBudgets(newBudgets);
         setTeamNames(newTeamNames);
-        // Carica classifica reale
         loadStandings(token);
       }
 
-      const rdb = await supabase.from("rosters", token);
-      const roster_data = await rdb.select("*", `&user_id=eq.${userId}&sold_at=is.null`);
-      if (Array.isArray(roster_data)) {
+      // ── Roster ──
+      if (Array.isArray(rosterRes)) {
         const newRosters = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
-        roster_data.forEach(r => {
+        rosterRes.forEach(r => {
           const athlete = r.gender === "F"
             ? athletes_data.women.find(a => a.id === r.player_id)
             : athletes_data.men.find(a => a.id === r.player_id);
@@ -829,23 +831,21 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         setRosters(newRosters);
       }
 
-      const ldb = await supabase.from("lineups", token);
-      const lineup_data = await ldb.select("*", `&user_id=eq.${userId}`);
-      if (Array.isArray(lineup_data)) {
+      // ── Lineup ──
+      if (Array.isArray(lineupRes)) {
         const newLineups  = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         const newCaptains = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
-        lineup_data.forEach(l => {
+        lineupRes.forEach(l => {
           if (newLineups[l.league_id] !== undefined) {
-            // Solo titolari e capitano vanno nella lineup (non riserve)
-            if (l.role === "titolare" || l.role === "capitano") {
+            if (l.role === "titolare" || l.role === "capitano")
               newLineups[l.league_id].push(l.player_id);
-            }
             if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
           }
         });
         setLineups(newLineups);
         setCaptains(newCaptains);
       }
+
     } catch(e) { console.error("Errore caricamento dati:", e); }
   };
 
@@ -927,7 +927,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const handleBuyCoach = (c) => {
     if (!canTrade()) return showNotif("Mercato chiuso!","error");
     if (myCoach===c.id) return showNotif("Coach già selezionato!","error");
-    const prev = COACHES.find(x=>x.id===myCoach);
+    const prev = coachesList.find(x=>x.id===myCoach);
     const prevCost = prev ? prev.cost : 0;
     if (budget - prevCost + (myCoach?prev.cost:0) < c.cost) return showNotif("Crediti insufficienti!","error");
     if (myCoach) setBudgets(b=>({...b,[leagueId]:b[leagueId]+1}));
@@ -938,7 +938,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const handleRemoveCoach = () => {
     if (!myCoach) return;
-    const c = COACHES.find(x=>x.id===myCoach);
+    const c = coachesList.find(x=>x.id===myCoach);
     setBudgets(b=>({...b,[leagueId]:b[leagueId]+c.cost}));
     setCoaches(ch=>({...ch,[leagueId]:null}));
     showNotif("Coach rimosso");
@@ -979,28 +979,32 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       return;
     }
     showNotif("Formazione salvata! 🏐");
-    // Salva formazione su Supabase
     try {
-      const currentEvent = EVENTS.find(e => e.status === "In corso" || e.status === "Planned");
-      const eventId = currentEvent?.id || "E_PRESTAGIONE";
+      // Trova la tappa corretta per questo genere:
+      // 1. Se c'è una tappa "In corso" per questo genere → quella
+      // 2. Altrimenti la prossima "Planned" per questo genere
+      // 3. Fallback: "E_PRESTAGIONE"
+      const eventsForGender = EVENTS.filter(e =>
+        (e.gender||"").toUpperCase() === league.gender.toUpperCase()
+      );
+      const activeEvent = eventsForGender.find(e => e.status === "In corso")
+        || eventsForGender.find(e => e.status === "Planned")
+        || null;
+      const eventId = activeEvent?.id || "E_PRESTAGIONE";
       const ldb = await supabase.from("lineups", accessToken);
-      // Prima cancella la formazione precedente per questa lega/tappa
       await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}&event_id=eq.${eventId}`);
-      // Inserisci la nuova formazione
       const entries = lineup.map(pid => ({
         user_id: authUser.id,
         league_id: leagueId,
         event_id: eventId,
         player_id: pid,
         role: pid === captain ? "capitano" : "titolare",
-        gender_slot: league.gender === "F" ? "F" : "M",
+        gender_slot: league.gender,
       }));
-      // Aggiungi riserve (atleti in roster ma non titolari)
       roster.filter(a => !lineup.includes(a.id)).forEach(a => {
         entries.push({
           user_id: authUser.id, league_id: leagueId, event_id: eventId,
-          player_id: a.id, role: "riserva",
-          gender_slot: league.gender === "F" ? "F" : "M",
+          player_id: a.id, role: "riserva", gender_slot: league.gender,
         });
       });
       await ldb.insert(entries);
@@ -1039,7 +1043,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const starters = roster.filter(a=>isStarter(a));
   const bench    = roster.filter(a=>!isStarter(a));
   const leagueStandings = standings[leagueId] || [];
-  const currentCoach = COACHES.find(c=>c.id===myCoach);
+  const currentCoach = coachesList.find(c=>c.id===myCoach);
 
   return (
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:B.sand,color:B.dark,position:"relative"}}>
@@ -1125,7 +1129,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
@@ -1140,7 +1144,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           <div>
             {/* Profilo atleta inline nel mercato */}
             {selectedAthlete?(
-              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()}/>
+              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()} accessToken={accessToken}/>
             ):(
             <div>
             {/* Market sub-tabs */}
@@ -1242,7 +1246,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 )}
 
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {COACHES.filter(c=>league.gender==="F"?c.id.startsWith("C00"):true).map(c=>{
+                  {coachesList.filter(c=>league.gender==="F"?c.id.startsWith("C00"):true).map(c=>{
                     const isSelected = myCoach===c.id;
                     return(
                       <div key={c.id} style={{background:isSelected?B.greenPale:B.white,border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isSelected?B.greenDark:B.creamDark}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
@@ -1973,7 +1977,25 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     setLastSyncResults(now);
                     setLastSyncResultsOk(true);
 
-                    // Mostra risultato + eventuali warning
+                    // Salva snapshot classifica per le frecce ▲▼
+                    const eventIdSynced = body?.event_id;
+                    if (eventIdSynced) {
+                      try {
+                        const snapDb = await supabase.from("", accessToken); // usa RPC
+                        await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_standings_snapshot`, {
+                          method: "POST",
+                          headers: {
+                            "apikey": SUPABASE_ANON,
+                            "Authorization": `Bearer ${accessToken}`,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({ p_event_id: eventIdSynced }),
+                        });
+                      } catch(e) { console.warn("Snapshot classifica fallito:", e.message); }
+                    }
+                    // Ricarica classifica (forza aggiornamento cache)
+                    loadStandings(accessToken, true);
+
                     const msg = `✓ ${data.resultsGenerated} risultati salvati (${data.matchesProcessed} partite)`;
                     showNotif(msg);
                     if (data.warnings && data.warnings.length > 0) {
@@ -2103,9 +2125,24 @@ function MenuPage({ title, emoji, onBack, children }) {
 }
 
 // ─── PAGINA PROFILO ───────────────────────────────────────────
-function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, onBack }) {
+function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, onBack }) {
   const username = authUser?.user_metadata?.username || authUser?.email?.split("@")[0] || "—";
   const legheAttive = Object.values(joinStatus).filter(s=>s==="APPROVED").length;
+  const [transfers, setTransfers] = React.useState(null);
+
+  useEffect(() => {
+    if (!accessToken || !authUser?.id) return;
+    const load = async () => {
+      try {
+        const db = await supabase.from("transfer_history", accessToken);
+        const rows = await db.select("*",
+          `&user_id=eq.${authUser.id}&order=created_at.desc&limit=30`);
+        setTransfers(Array.isArray(rows) ? rows : []);
+      } catch(e) { setTransfers([]); }
+    };
+    load();
+  }, [authUser?.id]);
+
   return (
     <MenuPage title="Il mio profilo" emoji="👤" onBack={onBack}>
       {[
@@ -2119,7 +2156,9 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, onBack }) {
           <div style={{fontSize:14,fontWeight:"bold",color:B.dark,marginTop:3}}>{f.v}</div>
         </div>
       ))}
-      <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:12,padding:"14px",marginTop:8}}>
+
+      {/* Leghe */}
+      <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:12,padding:"14px",marginTop:8,marginBottom:14}}>
         <div style={{fontWeight:"bold",fontSize:13,color:B.greenDark,marginBottom:6}}>Le mie leghe</div>
         {[{id:"L001-F",name:"Classic F"},{id:"L001-M",name:"Classic M"},{id:"L002-F",name:"Market F"},{id:"L002-M",name:"Market M"}].map(l=>(
           <div key={l.id} style={{padding:"8px 0",borderBottom:`1px solid ${B.greenDark}22`}}>
@@ -2136,6 +2175,36 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, onBack }) {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Storico trasferimenti */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:14}}>
+        <div style={{fontWeight:"bold",fontSize:13,color:B.dark,marginBottom:10}}>📋 Storico Trasferimenti</div>
+        {transfers === null
+          ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>⏳ Caricamento...</div>
+          : transfers.length === 0
+            ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>Nessun trasferimento ancora</div>
+            : transfers.map((t,i) => (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
+                borderBottom:i<transfers.length-1?`1px solid ${B.creamDark}`:"none"}}>
+                <span style={{fontSize:18}}>{t.action==="buy"?"🟢":"🔴"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {t.player_name||t.player_id}
+                  </div>
+                  <div style={{fontSize:10,color:B.gray}}>
+                    {t.league_id} · {t.created_at?new Date(t.created_at).toLocaleDateString("it-IT"):""}
+                  </div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:13,fontWeight:"bold",color:t.action==="buy"?B.orange:B.greenDark}}>
+                    {t.action==="buy"?"-":"+"}${t.price||0}
+                  </div>
+                  <div style={{fontSize:9,color:B.gray}}>saldo: ${t.budget_after||0}</div>
+                </div>
+              </div>
+            ))
+        }
       </div>
     </MenuPage>
   );
@@ -2528,29 +2597,41 @@ function StatsAwards({ onBack }) {
 }
 
 
-function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
+function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessToken}) {
   const cat  = getCategory(a.ranking);
   const diff = a.cost - (a.prevCost || a.cost);
   const rankDelta = a.rankDelta || null;
   const photo = ATHLETE_PHOTOS[a.id];
+  const [fullHistory, setFullHistory] = React.useState(null);
 
-  // Grafico storico prezzi — responsivo con date reali
-  const history = a.costHistory || [a.cost];
-  const EVENT_DATES = ["Falconara","Termoli","Ravenna","Modica","San Cataldo","Montesilvano","Cordenons","Vasto","Caorle"];
-  const tLabels = history.length === 1
-    ? ["Ora"]
-    : history.map((_, i) =>
-        i === history.length - 1 ? "Ora" : (EVENT_DATES[i] || `Tappa ${i+1}`)
-      );
-  const minV = Math.min(...history) * 0.88;
-  const maxV = Math.max(...history) * 1.08;
+  // Carica storico prezzi completo da player_history
+  useEffect(() => {
+    if (!accessToken || !a.id) return;
+    const load = async () => {
+      try {
+        const db = await supabase.from("player_history", accessToken);
+        const rows = await db.select("cost,ranking,synced_at",
+          `&player_id=eq.${a.id}&order=synced_at.asc&limit=20`);
+        if (Array.isArray(rows) && rows.length > 0) {
+          setFullHistory(rows);
+        }
+      } catch(e) { /* silenzioso */ }
+    };
+    load();
+  }, [a.id]);
+
+  // Grafico storico prezzi
+  const historyData = fullHistory
+    ? fullHistory.map(r => ({ cost: r.cost, label: new Date(r.synced_at).toLocaleDateString("it-IT", {day:"2-digit",month:"2-digit"}) }))
+    : (a.costHistory || [a.cost]).map((c,i,arr) => ({
+        cost: c,
+        label: i === arr.length-1 ? "Ora" : `Sync ${i+1}`
+      }));
+
+  const costs = historyData.map(h => h.cost);
+  const minV = Math.min(...costs) * 0.88;
+  const maxV = Math.max(...costs) * 1.08;
   const range = maxV - minV || 1;
-
-  // Risultati mock se vuoti
-  const results = a.results?.length > 0 ? a.results : [
-    {event:"Falconara",   phase:"Qualifiche",  pts:4.0},
-    {event:"Termoli",     phase:"Pool",        pts:3.0},
-  ];
 
   return (
     <div>
@@ -2616,14 +2697,16 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
 
       {/* GRAFICO STORICO PREZZI */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px",marginBottom:12}}>
-        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>Andamento Prezzo</div>
+        <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:12}}>
+          Andamento Prezzo {fullHistory===null&&<span style={{fontSize:9,color:B.gray,fontWeight:"normal"}}>⏳</span>}
+        </div>
         {(() => {
           const W = 300, H = 110, PAD = 24;
           const innerW = W - PAD * 2;
-          const px = (i) => PAD + (i / Math.max(history.length - 1, 1)) * innerW;
+          const px = (i) => PAD + (i / Math.max(historyData.length - 1, 1)) * innerW;
           const py = (v) => H - 22 - ((v - minV) / range) * (H - 44);
-          const pts = history.map((v,i) => `${px(i)},${py(v)}`).join(" ");
-          const area = `${PAD},${H-22} ${pts} ${px(history.length-1)},${H-22}`;
+          const pts = historyData.map((h,i) => `${px(i)},${py(h.cost)}`).join(" ");
+          const area = `${PAD},${H-22} ${pts} ${px(historyData.length-1)},${H-22}`;
           return (
             <>
               <svg width="100%" height="auto" viewBox={`0 0 ${W} ${H}`}
@@ -2631,21 +2714,21 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
                 style={{display:"block",maxHeight:"140px"}}>
                 <polygon points={area} fill={B.greenDark} fillOpacity="0.07"/>
                 <polyline points={pts} fill="none" stroke={B.greenDark} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                {history.map((v,i)=>(
+                {historyData.map((h,i)=>(
                   <g key={i}>
-                    <circle cx={px(i)} cy={py(v)} r="4" fill={i===history.length-1?B.orange:B.greenDark}/>
-                    <text x={px(i)} y={py(v)-8} textAnchor="middle" fontSize="9" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${v}</text>
+                    <circle cx={px(i)} cy={py(h.cost)} r="4" fill={i===historyData.length-1?B.orange:B.greenDark}/>
+                    <text x={px(i)} y={py(h.cost)-8} textAnchor="middle" fontSize="9" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${h.cost}</text>
                   </g>
                 ))}
               </svg>
               <div style={{display:"flex",marginTop:6}}>
-                {tLabels.map((l,i)=>(
+                {historyData.map((h,i)=>(
                   <div key={i} style={{
-                    flex:1, textAlign: i===0?"left": i===tLabels.length-1?"right":"center",
-                    fontSize:10, fontWeight:i===tLabels.length-1?"bold":"normal",
-                    color:i===tLabels.length-1?B.orange:B.gray,
-                    paddingLeft: i===0?"4px":0, paddingRight: i===tLabels.length-1?"4px":0
-                  }}>{l}</div>
+                    flex:1, textAlign: i===0?"left": i===historyData.length-1?"right":"center",
+                    fontSize:10, fontWeight:i===historyData.length-1?"bold":"normal",
+                    color:i===historyData.length-1?B.orange:B.gray,
+                    paddingLeft: i===0?"4px":0, paddingRight: i===historyData.length-1?"4px":0
+                  }}>{h.label}</div>
                 ))}
               </div>
             </>
@@ -2653,23 +2736,13 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
         })()}
       </div>
 
-      {/* ULTIMI RISULTATI */}
+      {/* ULTIMI RISULTATI — stato vuoto sicuro, nessun mock */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px"}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Ultimi Risultati</div>
-        {results.length === 0
-          ? <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>Nessun risultato disponibile</div>
-          : results.map((r,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<results.length-1?`1px solid ${B.creamDark}`:"none"}}>
-              <div>
-                <div style={{color:B.dark,fontSize:13,fontWeight:"bold"}}>{r.event}</div>
-                <div style={{color:B.gray,fontSize:11,marginTop:2}}>{r.phase}</div>
-              </div>
-              <div style={{background:B.greenPale,borderRadius:8,padding:"4px 12px",textAlign:"center"}}>
-                <div style={{color:B.greenDark,fontWeight:"bold",fontSize:16}}>+{r.pts} pt</div>
-              </div>
-            </div>
-          ))
-        }
+        <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>
+          <div style={{fontSize:24,marginBottom:6}}>🏐</div>
+          Nessun risultato disponibile per questa atleta
+        </div>
       </div>
     </div>
   );
