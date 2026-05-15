@@ -2936,10 +2936,11 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
     const find = (list) => list?.find(x => x.id === playerId);
     const a = find(myRoster) || find(allAthletes);
     if (!a) return playerId;
-    // surname = colonna Cognome dal PLAYER_MAPPING (es. "GOTTARDI", "DI PRIMA")
-    // fallback: primo token del Federation Name (es. "GOTTARDI" da "GOTTARDI VALENTINA")
-    const s = a.surname || a.name.split(" ")[0];
-    return s.toUpperCase();
+    // Usa stessa logica di extractSurname: tutto tranne l'ultimo token
+    // Federation Name = "COGNOME NOME" → "DI PRIMA VALENTINA" → "DI PRIMA"
+    const tokens = a.name.trim().split(" ");
+    if (tokens.length === 1) return tokens[0].toUpperCase();
+    return tokens.slice(0, -1).join(" ").toUpperCase();
   };
 
   // Per teamB: opponent è "COGNOME1 NOME1 - COGNOME2 NOME2" (Federation Name format)
