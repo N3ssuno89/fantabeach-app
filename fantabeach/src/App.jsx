@@ -681,16 +681,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   // Carica match_results da Supabase per un evento
   const loadMatchResults = async (eventId) => {
     if (!accessToken || !eventId) return;
-    // Già caricato (anche se vuoto [] è un valore valido)
     if (matchResultsData.hasOwnProperty(eventId)) return;
     try {
       const db = await supabase.from("match_results", accessToken);
       const rows = await db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`);
-      // Salva sempre il risultato, anche array vuoto — così sappiamo che abbiamo già caricato
+      console.log(`[matchResults] ${eventId}:`, Array.isArray(rows) ? `${rows.length} righe OK` : JSON.stringify(rows).slice(0,200));
       setMatchResultsData(prev => ({ ...prev, [eventId]: Array.isArray(rows) ? rows : [] }));
     } catch(e) {
       console.warn("Errore caricamento match_results:", e.message);
-      // Salva array vuoto anche in caso di errore per evitare loop
       setMatchResultsData(prev => ({ ...prev, [eventId]: [] }));
     }
   };
@@ -1760,7 +1758,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                             return (
                               <div key={e.id}
                                 onClick={isClickable
-                                  ? ()=>setSelectedEvent(e)
+                                  ? ()=>{
+                                      // Forza ricaricamento pulito ad ogni click
+                                      setMatchResultsData(prev => {
+                                        const next = {...prev};
+                                        delete next[e.id];
+                                        return next;
+                                      });
+                                      setSelectedEvent(e);
+                                    }
                                   : ()=>setPopup({
                                       title:"Tappa non ancora disputata",
                                       msg:`${e.name} (${e.date}) non è ancora stata giocata. I risultati saranno disponibili dopo l'inserimento dei dati ufficiali.`,
@@ -2904,7 +2910,6 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
               : "I risultati di questa tappa non sono ancora stati inseriti nel sistema."}
           </div>
         </div>
-       
       ) : phases.map(phase => {
         const phaseMatches = builtMatches.filter(m => m.phase === phase);
         const isGrid = phase.includes("Qualifiche") || phase.includes("Pool") || phase.includes("Round");
