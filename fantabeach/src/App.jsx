@@ -918,6 +918,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     );
     return !tappaInCorso;
   };
+
+  const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
+  const isStarter = (a) => lineup.includes(a.id);
+  const isCaptain = (a) => captain===a.id;
   const isStarter = (a) => lineup.includes(a.id);
   const isCaptain = (a) => captain===a.id;
 
