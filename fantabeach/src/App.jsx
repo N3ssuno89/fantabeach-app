@@ -1525,9 +1525,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               </div>
             ):(
               <div>
-                {/* Formazione modificabile — solo senza tappa in corso */}
-                {!EVENTS.some(e=>(e.status==="In corso"||e.status==="Completato")&&(e.gender||"").toUpperCase()===league.gender&&league.type==="classic") &&
-                 !EVENTS.some(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender) && (
+                {/* Tappa in corso → mostra punti tappa */}
+                {EVENTS.some(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)
+                  ? null /* gestito dal blocco punti sopra */
+                  : (
+                  /* Formazione modificabile — sempre visibile se non c'è tappa in corso */
                 <div>
                   {/* IN CAMPO */}
                   <div style={{marginBottom:18}}>
@@ -1605,7 +1607,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   style={{width:"100%",padding:"13px",background:!canTrade()?"#DC2626":roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:!canTrade()||roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
                   {!canTrade()&&EVENTS.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)?"🔴 Tappa in corso":roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
                 </button>
-                </div>)} {/* fine formazione modificabile */}
+                </div>
+                  )}
               </div>
             )}
           </div>
