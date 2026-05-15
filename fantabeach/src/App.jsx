@@ -907,7 +907,17 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     );
     return !tappaInCorso; // bloccato solo DURANTE la tappa
   };
-  const isOwned   = (a) => !!roster.find(r=>r.id===a.id);
+  // Formazione: bloccata solo se c'è tappa In corso per questo genere
+  // Non bloccata da tappe completate o dalla stagione iniziata
+  const canSaveFormation = () => {
+    if (league.status !== "OPEN") return false;
+    const tappaInCorso = events.find(e =>
+      e.status === "In corso" &&
+      (e.anno || 2026) === 2026 &&
+      (e.gender||"").toUpperCase() === league.gender
+    );
+    return !tappaInCorso;
+  };
   const isStarter = (a) => lineup.includes(a.id);
   const isCaptain = (a) => captain===a.id;
 
@@ -993,6 +1003,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   };
 
   const toggleStarter = (a) => {
+    if (!canSaveFormation()) return showNotif("Tappa in corso — formazione bloccata","error");
     if (isStarter(a)) {
       setLineups(l=>({...l,[leagueId]:l[leagueId].filter(id=>id!==a.id)}));
       if (captain===a.id) setCaptains(c=>({...c,[leagueId]:null}));
@@ -1003,6 +1014,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   };
 
   const toggleCaptain = (a) => {
+    if (!canSaveFormation()) return showNotif("Tappa in corso — formazione bloccata","error");
     if (!isStarter(a)) return showNotif("Il capitano deve essere titolare!","error");
     setCaptains(c=>({...c,[leagueId]:c[leagueId]===a.id?null:a.id}));
   };
@@ -1686,9 +1698,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   Salva entro giovedì 23:00.
                 </div>
 
-                <button onClick={canTrade()?handleSaveFormation:()=>showNotif("Tappa in corso — formazione bloccata","error")}
-                  style={{width:"100%",padding:"13px",background:!canTrade()?"#DC2626":roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:!canTrade()||roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                  {!canTrade()&&events.find(e=>e.status==="In corso"&&(e.gender||"").toUpperCase()===league.gender)?"🔴 Tappa in corso":roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
+                <button onClick={canSaveFormation()?handleSaveFormation:()=>showNotif("Tappa in corso — formazione bloccata","error")}
+                  style={{width:"100%",padding:"13px",background:!canSaveFormation()?"#DC2626":roster.length===5&&lineup.length===3&&captain?B.greenDark:B.grayLight,border:"none",borderRadius:12,color:!canSaveFormation()||roster.length===5&&lineup.length===3&&captain?B.white:B.gray,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  {!canSaveFormation()?"🔴 Tappa in corso":roster.length<5?`⚠️ Roster (${roster.length}/5)`:lineup.length<3?`Schiera titolari (${lineup.length}/3)`:!captain?"★ Nomina il capitano":"Salva Formazione ✓"}
                 </button>
                 </div>
                   )}
