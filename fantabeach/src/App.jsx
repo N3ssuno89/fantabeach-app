@@ -2851,33 +2851,47 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
 
   // I dati da Supabase sono per giocatore — ricostruisce le partite raggruppando per match_index
   const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
-  // Ogni partita ha 2 o 4 righe (2 giocatori per squadra)
-  // Prendiamo solo le righe dei giocatori del mio roster per evidenziarle
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
 
-  // Ricostruisce partite uniche da array di righe per giocatore
+  // Nome display di un player_id (cerca nel roster, poi usa player_name dal DB)
+  const playerName = (playerId, dbName) => {
+    const a = myRoster?.find(x => x.id === playerId);
+    return a ? a.name : (dbName || playerId);
+  };
+
+  // Ricostruisce partite uniche raggruppando per match_index
   const buildMatches = (rows) => {
     const byIndex = {};
     rows.forEach(r => {
       if (!byIndex[r.match_index]) byIndex[r.match_index] = [];
       byIndex[r.match_index].push(r);
     });
-    return Object.values(byIndex).map(rows => {
-      const first = rows[0];
-      // teamA = chi ha result che inizia con il primo numero più alto o BYE
-      // Usiamo opponent per ricostruire: teamA = first.opponent opposto
-      // Semplificato: teamA è il giocatore, opponent è l'avversario
-      const teamA = first.opponent || "—";
-      const teamB = first.is_bye ? "" : rows.map(r => r.player_id).join("/");
+    return Object.values(byIndex).map(matchRows => {
+      const first = matchRows[0];
+      // Determina risultato: le righe hanno result "2-0","2-1","1-2","0-2","BYE"
+      // Le righe della coppia A hanno result che inizia con il numero più alto (vincitrice)
+      // La coppia A è quella di cui conosciamo i player_id
+      // La coppia B è l'avversario (campo opponent)
+      const teamAPlayers = matchRows; // tutte le righe sono della coppia A
+      const teamANames = teamAPlayers
+        .map(r => playerName(r.player_id, r.player_name))
+        .filter(Boolean)
+        .map(n => n.split(" ")[0]) // solo cognome
+        .join(" - ");
+      const teamBName = first.opponent || (first.is_bye ? "" : "—");
+      const winA = first.result && (first.result.startsWith("2") || first.result === "BYE");
+      const winB = first.result && first.result.startsWith("0") || first.result === "1-2";
+      const myInMatch = matchRows.filter(r => myPlayerIds.has(r.player_id));
       return {
         phase: first.phase,
-        result: first.result,
-        scoreA: first.score,
+        result: first.result || (first.is_bye ? "BYE" : "—"),
+        score: first.score || "",
         isBye: first.is_bye,
-        teamA: first.opponent || "—",
-        teamB: first.is_bye ? "" : "—",
-        myPlayers: rows.filter(r => myPlayerIds.has(r.player_id)),
-        _rows: rows,
+        teamA: teamANames,
+        teamB: teamBName,
+        winA, winB,
+        myInMatch,
+        _rows: matchRows,
       };
     }).sort((a,b) => a._rows[0].match_index - b._rows[0].match_index);
   };
@@ -2886,15 +2900,12 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
     try { return buildMatches(matchResults || []); }
     catch(e) { console.warn("buildMatches error:", e); return []; }
   })();
-  // Fasi presenti nelle partite, ordinate secondo PHASE_ORDER
-  // Se una fase non è in PHASE_ORDER la mette in fondo
+
   const phasesPresent = [...new Set(builtMatches.map(m => m.phase))];
   const phases = [
     ...PHASE_ORDER.filter(p => phasesPresent.includes(p)),
     ...phasesPresent.filter(p => !PHASE_ORDER.includes(p)),
   ];
-
-  const isMyMatch = (m) => m.myPlayers && m.myPlayers.length > 0;
 
   return (
     <div>
@@ -2903,7 +2914,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{fontWeight:"bold",fontSize:17}}>{event.name}</div>
-            <div style={{color:"rgba(255,255,255,.7)",fontSize:11,marginTop:2}}>{event.date}{event.location?` · ${event.location}`:""}</div>
+            <div style={{color:"rgba(255,255,255,.7)",fontSize:11,marginTop:2}}>{event.date_start||event.date}{event.location?` · ${event.location}`:""}</div>
           </div>
           <div style={{background:et.bg,color:et.color,padding:"3px 10px",borderRadius:8,fontSize:11,fontWeight:"bold"}}>{et.label} ×{et.weight}</div>
         </div>
@@ -2911,13 +2922,9 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
 
       {builtMatches.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
-          <div style={{fontSize:40,marginBottom:10}}>
-            {event.status==="In corso"?"🔴":"📋"}
-          </div>
+          <div style={{fontSize:40,marginBottom:10}}>{event.status==="In corso"?"🔴":"📋"}</div>
           <div style={{fontSize:13,fontWeight:"bold",color:B.dark,marginBottom:6}}>
-            {event.status==="In corso"
-              ? "Tappa in corso — risultati non ancora inseriti"
-              : "Nessun risultato disponibile"}
+            {event.status==="In corso" ? "Tappa in corso — risultati non ancora inseriti" : "Nessun risultato disponibile"}
           </div>
           <div style={{fontSize:11,color:B.gray,lineHeight:1.5}}>
             {event.status==="In corso"
@@ -2927,32 +2934,64 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
         </div>
       ) : phases.map(phase => {
         const phaseMatches = builtMatches.filter(m => m.phase === phase);
-        const isGrid = phase.includes("Qualifiche") || phase.includes("Pool") || phase.includes("Round");
+        const isGrid = ["QUALI","QUALIF","POOL","ROUND","GROUP"].some(k => phase.toUpperCase().includes(k));
         return (
-          <div key={phase} style={{marginBottom:14}}>
+          <div key={phase} style={{marginBottom:18}}>
             <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
               <div style={{flex:1,height:1,background:B.creamDark}}/>{phase} ({phaseMatches.length})<div style={{flex:1,height:1,background:B.creamDark}}/>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:isGrid?"repeat(auto-fill, minmax(min(100%, 48%), 1fr))":"1fr",gap:6}}>
+            <div style={{display:"grid",gridTemplateColumns:isGrid?"repeat(auto-fill,minmax(min(100%,300px),1fr))":"1fr",gap:6}}>
               {phaseMatches.map((m, i) => {
-                const mine = isMyMatch(m);
-                // Ottieni nome atleta dal roster per mostrarlo
-                const myNames = m.myPlayers?.map(r => {
-                  const a = myRoster?.find(x => x.id === r.player_id);
-                  return a ? a.name.split(" ")[0] : r.player_id;
-                }).join(", ") || "";
+                const hasMyPlayer = m.myInMatch.length > 0;
+                const resultColor = m.winA ? B.greenDark : B.orange;
                 return (
-                  <div key={i} style={{background:B.white,border:`1px solid ${mine?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${mine?B.greenDark:B.creamDark}`,borderRadius:8,padding:"8px 10px"}}>
-                    {mine && <div style={{fontSize:9,color:B.greenDark,fontWeight:"bold",marginBottom:3}}>★ {myNames}</div>}
+                  <div key={i} style={{
+                    background:B.white,
+                    border:`1px solid ${hasMyPlayer?B.greenDark:B.creamDark}`,
+                    borderLeft:`3px solid ${hasMyPlayer?B.greenDark:B.creamDark}`,
+                    borderRadius:8,padding:"8px 10px",
+                  }}>
+                    {/* Coppia A */}
+                    <div style={{
+                      fontSize:11,fontWeight:m.winA||m.isBye?"bold":"normal",
+                      color:m.winA||m.isBye?B.dark:B.gray,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                      marginBottom:2,
+                    }}>
+                      {m.teamA || "—"}
+                      {m.myInMatch.map(r => (
+                        <span key={r.player_id} style={{
+                          marginLeft:4,fontSize:9,
+                          background:B.greenPale,color:B.greenDark,
+                          padding:"0px 4px",borderRadius:4,fontWeight:"bold",
+                        }}>★</span>
+                      ))}
+                    </div>
+
+                    {/* Risultato + score */}
                     <div style={{display:"flex",alignItems:"center",gap:5,margin:"3px 0"}}>
-                      <span style={{fontSize:11,fontWeight:"bold",background:m.isBye?B.grayPale:B.greenDark,color:m.isBye?B.gray:B.white,padding:"1px 7px",borderRadius:4,flexShrink:0}}>
-                        {m.isBye?"BYE":m.result}
+                      <span style={{
+                        fontSize:11,fontWeight:"bold",
+                        background:B.greenDark,
+                        color:B.white,
+                        padding:"1px 7px",borderRadius:4,flexShrink:0,
+                      }}>
+                        {m.isBye?"2-0":m.result}
                       </span>
-                      <span style={{fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        vs {m.isBye?"—":m.teamA}
+                      <span style={{fontSize:10,color:B.gray}}>
+                        {m.isBye?"21-0 21-0":m.score}
                       </span>
                     </div>
-                    {m.scoreA&&<div style={{fontSize:10,color:B.gray}}>{m.scoreA}</div>}
+
+                    {/* Coppia B o BYE */}
+                    <div style={{
+                      fontSize:11,fontWeight:m.winB?"bold":"normal",
+                      color:m.isBye?B.grayLight:m.winB?B.dark:B.gray,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                      marginTop:2,fontStyle:m.isBye?"italic":"normal",
+                    }}>
+                      {m.isBye?"BYE":(m.teamB || "—")}
+                    </div>
                   </div>
                 );
               })}
