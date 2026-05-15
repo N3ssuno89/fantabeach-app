@@ -2852,20 +2852,23 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
   const allAthletes = [...(athletes?.women||[]), ...(athletes?.men||[])];
 
-  // Lookup cognome da player_id — usa il campo surname (colonna Cognome dal PLAYER_MAPPING)
+  // Capitalizza stringa: "DI PRIMA" → "Di Prima"
+  const cap = (s) => s ? s.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") : "";
+
+  // Lookup cognome da player_id
   const getPlayerName = (playerId) => {
     const find = (list) => list?.find(x => x.id === playerId);
     const a = find(myRoster) || find(allAthletes);
     if (!a) return playerId;
-    return a.surname || a.name.split(" ")[0];
+    return cap(a.surname || a.name.split(" ")[0]);
   };
 
-  // Per teamB dall'opponent string — prende tutto tranne l'ultimo token (= cognome anche con spazi)
+  // Per teamB dall'opponent string — prende tutto tranne l'ultimo token (cognome anche con spazi)
   const extractSurname = (fullName) => {
     if (!fullName) return "";
     const tokens = fullName.trim().split(" ");
-    if (tokens.length === 1) return tokens[0];
-    return tokens.slice(0, tokens.length - 1).join(" ");
+    const surname = tokens.length === 1 ? tokens[0] : tokens.slice(0, tokens.length - 1).join(" ");
+    return cap(surname);
   };
 
   // Ricostruisce partite uniche raggruppando per match_index
