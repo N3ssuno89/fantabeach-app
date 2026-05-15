@@ -160,20 +160,44 @@ exports.handler = async (event) => {
       }
     }
 
-    // ── Tappe ──
+    // ── Tappe — legge da Sheet e salva su Supabase ──
     const eventRows = eventsRes.data.values || [];
     const eH = (eventRows[0] || []).map(h => h?.trim().toLowerCase());
     const ec = n => { const i = eH.indexOf(n); return i >= 0 ? i : null; };
     const events = eventRows.slice(1).filter(r => r[0]).map(row => ({
-      id:       row[ec("event_id") ?? 0] || row[0],
-      name:     row[ec("name")     ?? 1] || row[1] || "",
-      type:     row[ec("type")     ?? 2] || "Silver",
-      weight:   parseFloat(row[ec("weight") ?? 3]) || 1.0,
-      gender:   row[ec("gender")   ?? 4] || "F",
-      date:     row[ec("date_start") ?? 5] || "",
-      location: row[ec("location") ?? 7] || "",
-      status:   row[ec("status")   ?? 8] || "Planned",
+      id:         row[ec("event id") ?? ec("event_id") ?? 0] || row[0],
+      name:       row[ec("nome tappa") ?? ec("name") ?? 1] || row[1] || "",
+      anno:       parseInt(row[ec("anno") ?? 2]) || new Date().getFullYear(),
+      circuito:   row[ec("circuito") ?? 2] || "",
+      type:       row[ec("tipo") ?? ec("type") ?? 3] || "Silver",
+      gender:     (row[ec("sesso") ?? ec("gender") ?? 4] || "F").includes("aschile") ? "M"
+                : (row[ec("sesso") ?? ec("gender") ?? 4] || "F").includes("emminile") ? "F"
+                : row[ec("sesso") ?? ec("gender") ?? 4] || "F",
+      location:   row[ec("location") ?? 5] || "",
+      date_start: row[ec("data inizio") ?? ec("date_start") ?? 6] || "",
+      date_end:   row[ec("data fine") ?? ec("date_end") ?? 7] || "",
+      weight:     parseFloat(row[ec("peso") ?? ec("weight") ?? 8]) || 1.0,
+      status:     row[ec("status") ?? 9] || "Planned",
     }));
+
+    // Salva events su Supabase (upsert per ID)
+    let eventsSaved = 0;
+    if (events.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+      const supaHeaders = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+      };
+      const eventsWithTs = events.map(e => ({ ...e, synced_at: new Date().toISOString() }));
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/events?on_conflict=id`, {
+        method: "POST",
+        headers: supaHeaders,
+        body: JSON.stringify(eventsWithTs),
+      });
+      if (res.ok) eventsSaved = events.length;
+      else console.error("Events upsert error:", await res.text());
+    }
 
     return {
       statusCode: 200,
@@ -183,6 +207,7 @@ exports.handler = async (event) => {
         men,
         events,
         savedCount,
+        eventsSaved,
         updatedAt: new Date().toISOString(),
       }),
     };
