@@ -52,7 +52,7 @@ exports.handler = async (event) => {
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "PLAYER_MAPPING!A:C" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_M!A:D" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_W!A:D" }),
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "EVENTS_DB!A:I" })
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "EVENTS_DB!A:K" })
         .catch(() => ({ data: { values: [] } })),
     ]);
 
@@ -162,23 +162,39 @@ exports.handler = async (event) => {
 
     // ── Tappe — legge da Sheet e salva su Supabase ──
     const eventRows = eventsRes.data.values || [];
-    const eH = (eventRows[0] || []).map(h => h?.trim().toLowerCase());
-    const ec = n => { const i = eH.indexOf(n); return i >= 0 ? i : null; };
-    const events = eventRows.slice(1).filter(r => r[0]).map(row => ({
-      id:         row[ec("event id") ?? ec("event_id") ?? 0] || row[0],
-      name:       row[ec("nome tappa") ?? ec("name") ?? 1] || row[1] || "",
-      anno:       parseInt(row[ec("anno") ?? 2]) || new Date().getFullYear(),
-      circuito:   row[ec("circuito") ?? 2] || "",
-      type:       row[ec("tipo") ?? ec("type") ?? 3] || "Silver",
-      gender:     (row[ec("sesso") ?? ec("gender") ?? 4] || "F").includes("aschile") ? "M"
-                : (row[ec("sesso") ?? ec("gender") ?? 4] || "F").includes("emminile") ? "F"
-                : row[ec("sesso") ?? ec("gender") ?? 4] || "F",
-      location:   row[ec("location") ?? 5] || "",
-      date_start: row[ec("data inizio") ?? ec("date_start") ?? 6] || "",
-      date_end:   row[ec("data fine") ?? ec("date_end") ?? 7] || "",
-      weight:     parseFloat(row[ec("peso") ?? ec("weight") ?? 8]) || 1.0,
-      status:     row[ec("status") ?? 9] || "Planned",
-    }));
+    const eH = (eventRows[0] || []).map(h => (h||"").trim().toLowerCase());
+    // Intestazioni reali: Event ID|Nome tappa|Circuito|Tipo tappa|Sesso|Location|Data inizio|Data fine|Peso tappa|Status|Anno
+    const ec = n => {
+      const idx = eH.indexOf(n.toLowerCase());
+      return idx >= 0 ? idx : null;
+    };
+    const events = eventRows.slice(1).filter(r => r[0]?.trim()).map(row => {
+      const get = (names, fallback) => {
+        for (const n of names) {
+          const i = ec(n);
+          if (i !== null && row[i]?.trim()) return row[i].trim();
+        }
+        return row[fallback] || "";
+      };
+      const genderRaw = get(["sesso","gender"], 4);
+      const gender = genderRaw.toLowerCase().includes("aschile") ? "M"
+                   : genderRaw.toLowerCase().includes("emminile") ? "F"
+                   : genderRaw.toUpperCase().startsWith("M") ? "M" : "F";
+      const pesoRaw = get(["peso tappa","peso","weight"], 8).replace(",",".");
+      return {
+        id:         get(["event id","event_id"], 0),
+        name:       get(["nome tappa","name"], 1),
+        anno:       parseInt(get(["anno","year"], 10)) || 2026,
+        circuito:   get(["circuito","circuit"], 2),
+        type:       get(["tipo tappa","tipo","type"], 3) || "Silver",
+        gender,
+        location:   get(["location"], 5),
+        date_start: get(["data inizio","date_start"], 6),
+        date_end:   get(["data fine","date_end"], 7),
+        weight:     parseFloat(pesoRaw) || 1.0,
+        status:     get(["status"], 9) || "Planned",
+      };
+    }).filter(e => e.id);
 
     // Salva events su Supabase (upsert per ID)
     let eventsSaved = 0;
