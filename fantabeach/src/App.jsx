@@ -2850,13 +2850,14 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
   const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
+  const allAthletes = [...(athletes?.women||[]), ...(athletes?.men||[])];
 
   // Lookup cognome da player_id — usa il campo surname (colonna Cognome dal PLAYER_MAPPING)
   const getPlayerName = (playerId) => {
     const find = (list) => list?.find(x => x.id === playerId);
     const a = find(myRoster) || find(allAthletes);
     if (!a) return playerId;
-    return a.surname || a.name.split(" ")[0]; // surname è il cognome puro dalla colonna dedicata
+    return a.surname || a.name.split(" ")[0];
   };
 
   // Per teamB dall'opponent string — prende tutto tranne l'ultimo token (= cognome anche con spazi)
