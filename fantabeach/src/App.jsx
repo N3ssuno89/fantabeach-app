@@ -1734,10 +1734,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 {(() => {
                   const leagueGender = league.gender; // "F" o "M"
                   const filteredEvents = events.filter(e => {
+                    if ((e.anno || 2026) !== 2026) return false; // solo 2026
                     const eg = (e.gender||"").toUpperCase();
                     if (eg === "F" || eg === "FEMMINILE") return leagueGender === "F";
                     if (eg === "M" || eg === "MASCHILE")  return leagueGender === "M";
-                    return true; // se non specificato mostra tutto
+                    return true;
                   });
                   return (
                     <div>
@@ -2834,6 +2835,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
   );
 
   // I dati da Supabase sono per giocatore — ricostruisce le partite raggruppando per match_index
+  const et = EVENT_TYPE_META[event.type] || EVENT_TYPE_META.Silver;
   // Ogni partita ha 2 o 4 righe (2 giocatori per squadra)
   // Prendiamo solo le righe dei giocatori del mio roster per evidenziarle
   const myPlayerIds = new Set((myRoster || []).map(a => a.id));
@@ -2888,15 +2890,20 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
 
       {builtMatches.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
-          <div style={{fontSize:40,marginBottom:10}}>📋</div>
+          <div style={{fontSize:40,marginBottom:10}}>
+            {event.status==="In corso"?"🔴":"📋"}
+          </div>
           <div style={{fontSize:13,fontWeight:"bold",color:B.dark,marginBottom:6}}>
-            {matchResults === null ? "Caricamento..." : "Nessun risultato disponibile"}
+            {event.status==="In corso"
+              ? "Tappa in corso — risultati non ancora inseriti"
+              : "Nessun risultato disponibile"}
           </div>
-          <div style={{fontSize:11,color:B.gray}}>
-            {matchResults?.length === 0
-              ? "I risultati di questa tappa non sono ancora stati inseriti."
-              : "Caricamento in corso..."}
+          <div style={{fontSize:11,color:B.gray,lineHeight:1.5}}>
+            {event.status==="In corso"
+              ? "I risultati verranno caricati dall'admin al termine di ogni giornata di gara."
+              : "I risultati di questa tappa non sono ancora stati inseriti nel sistema."}
           </div>
+        </div>
         </div>
       ) : phases.map(phase => {
         const phaseMatches = builtMatches.filter(m => m.phase === phase);
