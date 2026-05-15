@@ -218,19 +218,8 @@ async function loadAthletesFromAPI() {
   }
 }
 
-const MOCK_MATCHES = {
-  "E0001":[
-    {phase:"Qualifiche 1",teamA:"Gottardi V. - Orsi Toth R.",teamB:"Rastelli G. - Tamagnone G.",scoreA:"21-9 21-5",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Qualifiche 1",teamA:"Scampoli C. - Massi V.",teamB:"Panfili L. - D\'Arrigo C.",scoreA:"21-12 21-5",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Pool 1",teamA:"Gottardi V. - Orsi Toth R.",teamB:"Bertozzi N. - Mazzotti B.",scoreA:"21-10 21-15",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Pool 1",teamA:"Bianchi G. - Scampoli C.",teamB:"Barboni A. - Cicola L.",scoreA:"15-21 21-16 12-15",result:"1-2",ptsA:1,ptsB:3},
-    {phase:"BYE Pool",teamA:"Gottardi V. - Orsi Toth R.",teamB:"—",scoreA:"21-0 21-0",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Quarti",teamA:"Gottardi V. - Orsi Toth R.",teamB:"Mattavelli A. - Tega M.",scoreA:"21-14 17-21 16-14",result:"2-1",ptsA:3,ptsB:1},
-    {phase:"Semifinale",teamA:"Gradini A. - Frasca F.",teamB:"Bianchi G. - Scampoli C.",scoreA:"21-19 23-21",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Semifinale",teamA:"Gottardi V. - Orsi Toth R.",teamB:"Barboni A. - Cicola L.",scoreA:"21-9 21-17",result:"2-0",ptsA:4,ptsB:0},
-    {phase:"Finale 1°",teamA:"Gottardi V. - Orsi Toth R.",teamB:"Gradini A. - Frasca F.",scoreA:"21-17 21-15",result:"2-0",ptsA:4,ptsB:0},
-  ],
-};
+// MOCK_MATCHES rimosso — dati reali da Supabase match_results
+
 
 const LEAGUES_INIT = [
   { id:"L001-F", name:"Classic F", type:"classic", gender:"F", status:"OPEN",   marketOpen:false },
@@ -266,36 +255,8 @@ const EVENTS = [
   { id:"E0018",name:"Caorle F",           type:"Gold",  weight:2.0, date:"4-6 set",  gender:"F",status:"Planned"    },
 ];
 
-const STANDINGS = {
-  "L001-F":[
-    {rank:1,prev:2,user:"SandQueen",   team:"Le Regine",   pts:342,budget:28},
-    {rank:2,prev:1,user:"BeachKing99", team:"Onde Alte",   pts:318,budget:45},
-    {rank:3,prev:3,user:"zioema",team:"Fanta Crew F",pts:301,budget:12},
-    {rank:4,prev:6,user:"VolleyPro",   team:"Spike Force", pts:287,budget:33},
-    {rank:5,prev:4,user:"CoastLine",   team:"Sunset Team", pts:265,budget:67},
-  ],
-  "L001-M":[
-    {rank:1,prev:1,user:"MarcoBeach",  team:"I Dominatori",pts:388,budget:15},
-    {rank:2,prev:3,user:"zioema",team:"Fanta Crew M",pts:355,budget:42},
-    {rank:3,prev:2,user:"VolleyMaster",team:"Beach Boys",  pts:340,budget:58},
-  ],
-  "L002-F":[
-    {rank:1,prev:2,user:"zioema",team:"Market Queens",pts:412,budget:55},
-    {rank:2,prev:1,user:"WaveRider",   team:"Le Imbattibili",pts:398,budget:30},
-    {rank:3,prev:4,user:"SandQueen",   team:"Golden Girls",pts:375,budget:88},
-  ],
-  "L002-M":[
-    {rank:1,prev:1,user:"BeachKing99", team:"I Fenomeni",  pts:445,budget:22},
-    {rank:2,prev:3,user:"zioema",team:"Market Kings",pts:421,budget:67},
-    {rank:3,prev:2,user:"SpikeMaster", team:"Spike & Win", pts:399,budget:44},
-  ],
-};
-const COMBO=[
-  {rank:1,prev:1,user:"zioema",pts:1134,leagues:4},
-  {rank:2,prev:3,user:"SandQueen",   pts:1087,leagues:3},
-  {rank:3,prev:2,user:"BeachKing99", pts:1063,leagues:3},
-  {rank:4,prev:4,user:"VolleyPro",   pts:998, leagues:2},
-];
+// STANDINGS e COMBO rimossi — classifica reale caricata da Supabase
+
 const PRIZES=[
   {threshold:10,pos:"3°",name:"Borsone Under Armour",         icon:"🎒"},
   {threshold:18,pos:"2°",name:"Canotta/Top firmata Nazionale", icon:"👕"},
@@ -593,6 +554,112 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [athletes_data, setAthletesData] = useState({ women: WOMEN, men: MEN }); // 'stats-atleti'|'stats-utenti'|'stats-awards'|'profile'|'prizes'|'rules'|'terms'
   const [leagueId, setLeagueId]   = useState("L001-F");
   const [teamNames, setTeamNames] = useState({});
+  const [standings, setStandings] = useState({}); // leagueId → array
+  const [combo, setCombo]         = useState([]);
+  const [standingsLoading, setStandingsLoading] = useState(false);
+
+  // Carica classifica reale da Supabase
+  const loadStandings = async (token) => {
+    if (!token) return;
+    setStandingsLoading(true);
+    try {
+      // 1. Legge tutte le user_leagues approvate con team_name e budget
+      const db = await supabase.from("user_leagues", token);
+      const allLeagues = await db.select("user_id,league_id,team_name,budget,status", "&status=eq.approved");
+      if (!Array.isArray(allLeagues)) return;
+
+      // 2. Legge i profili per avere gli username
+      const pdb = await supabase.from("profiles", token);
+      const allProfiles = await pdb.select("user_id,username");
+      const profileMap = {};
+      if (Array.isArray(allProfiles)) allProfiles.forEach(p => { profileMap[p.user_id] = p.username; });
+
+      // 3. Legge i match_results con i punti per player_id
+      // Per ora punti = somma total_pts da match_results per ogni lineup approvata
+      // Semplificazione: calcoliamo i punti sommando i match_results degli atleti
+      // del roster di ogni utente per ogni evento
+
+      // Per ora usiamo solo budget residuo come proxy (punti = 0 se nessun risultato)
+      // Punti reali: da implementare con tabella scores dedicata
+      const ldb = await supabase.from("lineups", token);
+      const allLineups = await ldb.select("user_id,league_id,event_id,player_id,role");
+      const mrdb = await supabase.from("match_results", token);
+      const allMatchResults = await mrdb.select("player_id,event_id,total_pts,is_bye");
+
+      // Mappa match_results per lookup veloce
+      const mrMap = {}; // player_id::event_id → total_pts
+      if (Array.isArray(allMatchResults)) {
+        allMatchResults.forEach(r => {
+          const k = `${r.player_id}::${r.event_id}`;
+          mrMap[k] = (mrMap[k] || 0) + (r.total_pts || 0);
+        });
+      }
+
+      // Calcola punti per ogni utente per ogni lega
+      const userLeaguePoints = {}; // user_id::league_id → pts
+      if (Array.isArray(allLineups)) {
+        // Raggruppa lineups per user+league+event
+        const lineupMap = {};
+        allLineups.forEach(l => {
+          const k = `${l.user_id}::${l.league_id}::${l.event_id}`;
+          if (!lineupMap[k]) lineupMap[k] = [];
+          lineupMap[k].push(l);
+        });
+
+        Object.entries(lineupMap).forEach(([k, players]) => {
+          const [userId, leagueId, eventId] = k.split("::");
+          const event = EVENTS.find(e => e.id === eventId);
+          const weight = event?.weight || 1.0;
+          let eventPts = 0;
+          players.forEach(p => {
+            const mrKey = `${p.player_id}::${eventId}`;
+            let pts = (mrMap[mrKey] || 0) * weight;
+            if (p.role === "capitano") pts *= 1.3;
+            eventPts += pts;
+          });
+          const ulKey = `${userId}::${leagueId}`;
+          userLeaguePoints[ulKey] = (userLeaguePoints[ulKey] || 0) + eventPts;
+        });
+      }
+
+      // 4. Costruisce classifica per ogni lega
+      const newStandings = {};
+      const leagueIds = ["L001-F","L001-M","L002-F","L002-M"];
+      leagueIds.forEach(lid => {
+        const members = allLeagues.filter(l => l.league_id === lid);
+        const ranked = members.map(m => ({
+          user_id: m.user_id,
+          user: profileMap[m.user_id] || m.user_id.slice(0,8),
+          team: m.team_name || profileMap[m.user_id] || "Squadra",
+          pts: Math.round((userLeaguePoints[`${m.user_id}::${lid}`] || 0) * 10) / 10,
+          budget: Math.round(m.budget || 0),
+        })).sort((a,b) => b.pts - a.pts)
+          .map((s,i) => ({ ...s, rank: i+1, prev: i+1 })); // prev = rank corrente (storico da implementare)
+        newStandings[lid] = ranked;
+      });
+      setStandings(newStandings);
+
+      // 5. Combo: somma punti tra tutte le leghe per utente
+      const comboMap = {};
+      leagueIds.forEach(lid => {
+        (newStandings[lid] || []).forEach(s => {
+          if (!comboMap[s.user_id]) comboMap[s.user_id] = { user: s.user, pts: 0, leagues: 0 };
+          comboMap[s.user_id].pts += s.pts;
+          comboMap[s.user_id].leagues += 1;
+        });
+      });
+      const comboArr = Object.values(comboMap)
+        .filter(c => c.leagues >= 2)
+        .sort((a,b) => b.pts - a.pts)
+        .map((c,i) => ({ ...c, rank: i+1, prev: i+1,
+          pts: Math.round(c.pts * 10) / 10 }));
+      setCombo(comboArr);
+
+    } catch(e) {
+      console.warn("Errore caricamento classifica:", e.message);
+    }
+    setStandingsLoading(false);
+  };
   const [budgets, setBudgets]     = useState({"L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400});
   const [rosters, setRosters]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [lineups, setLineups]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
@@ -611,7 +678,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [marketTab, setMarketTab] = useState("athletes"); // "athletes" | "coaches"
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [mockUsers]               = useState(14);
   const [showMenu, setShowMenu]     = useState(false);
   const [menuSection, setMenuSection] = useState(null);
   const [leagues, setLeagues]     = useState(LEAGUES_INIT);
@@ -745,6 +811,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         setJoinStatus(newJoin);
         setBudgets(newBudgets);
         setTeamNames(newTeamNames);
+        // Carica classifica reale
+        loadStandings(token);
       }
 
       const rdb = await supabase.from("rosters", token);
@@ -970,7 +1038,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const hasMore = visibleCount < filtered.length;
   const starters = roster.filter(a=>isStarter(a));
   const bench    = roster.filter(a=>!isStarter(a));
-  const standings = STANDINGS[leagueId]||[];
+  const leagueStandings = standings[leagueId] || [];
   const currentCoach = COACHES.find(c=>c.id===myCoach);
 
   return (
@@ -1558,28 +1626,56 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
             <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Classifica {league.name}</div>
             <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:18}}>
-              {standings.map(s=>{
-                const moved=s.prev-s.rank; const myUsername = authUser?.user_metadata?.username || authUser?.email?.split("@")[0]; const isMe=s.user===myUsername;
-                return(<div key={s.user} style={{background:isMe?B.greenPale:B.white,border:`1px solid ${isMe?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:30,height:30,borderRadius:8,flexShrink:0,background:s.rank===1?B.yellow:s.rank===2?B.grayLight:s.rank===3?"#CD7F32":B.grayPale,display:"flex",alignItems:"center",justifyContent:"center",color:s.rank<=3?B.dark:B.gray,fontWeight:"bold",fontSize:s.rank<=3?14:12}}>{s.rank<=3?["🥇","🥈","🥉"][s.rank-1]:s.rank}</div>
-                  <div style={{flex:1,minWidth:0}}><div style={{color:isMe?B.greenDark:B.dark,fontWeight:"bold",fontSize:13}}>{s.team} {isMe&&"⭐"}</div><div style={{color:B.gray,fontSize:11}}>{s.user} · ${s.budget}</div></div>
-                  <div style={{flexShrink:0,textAlign:"center",marginRight:4}}>{moved>0&&<div style={{color:B.greenDark,fontSize:11,fontWeight:"bold"}}>▲{moved}</div>}{moved<0&&<div style={{color:B.orange,fontSize:11,fontWeight:"bold"}}>▼{Math.abs(moved)}</div>}{moved===0&&<div style={{color:B.grayLight,fontSize:11}}>—</div>}</div>
-                  <div style={{textAlign:"right",flexShrink:0}}><div style={{color:s.rank===1?B.orange:B.dark,fontWeight:"bold",fontSize:20}}>{s.pts}</div><div style={{color:B.gray,fontSize:9}}>punti</div></div>
-                </div>);
+              {standingsLoading ? (
+                <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>⏳ Caricamento classifica...</div>
+              ) : leagueStandings.length === 0 ? (
+                <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"20px",textAlign:"center"}}>
+                  <div style={{fontSize:28,marginBottom:8}}>🏖️</div>
+                  <div style={{fontSize:13,fontWeight:"bold",color:B.dark,marginBottom:4}}>Nessun risultato ancora</div>
+                  <div style={{fontSize:11,color:B.gray}}>La classifica si aggiornerà dopo la prima tappa disputata.</div>
+                </div>
+              ) : leagueStandings.map(s=>{
+                const myUsername = authUser?.user_metadata?.username || authUser?.email?.split("@")[0];
+                const isMe = s.user === myUsername;
+                return(
+                  <div key={s.user_id} style={{background:isMe?B.greenPale:B.white,border:`1px solid ${isMe?B.greenDark:B.creamDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:30,height:30,borderRadius:8,flexShrink:0,background:s.rank===1?B.yellow:s.rank===2?B.grayLight:s.rank===3?"#CD7F32":B.grayPale,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:"bold",fontSize:s.rank<=3?14:12}}>
+                      {s.rank<=3?["🥇","🥈","🥉"][s.rank-1]:s.rank}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:isMe?B.greenDark:B.dark,fontWeight:"bold",fontSize:13}}>{s.team}{isMe&&" ⭐"}</div>
+                      <div style={{color:B.gray,fontSize:11}}>@{s.user} · {s.budget}$ rimasti</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:s.rank===1?B.orange:B.dark,fontWeight:"bold",fontSize:20}}>{s.pts}</div>
+                      <div style={{color:B.gray,fontSize:9}}>punti</div>
+                    </div>
+                  </div>
+                );
               })}
             </div>
 
             <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.orange}}>🔥 Combo</div>
-                <span style={{fontSize:10,color:B.gray}}>{COMBO.length}/30</span>
+                <span style={{fontSize:10,color:B.gray}}>{combo.length} giocatori</span>
               </div>
-              {COMBO.map(s=>{const moved=s.prev-s.rank;const myUsername2=authUser?.user_metadata?.username||authUser?.email?.split("@")[0];const isMe=s.user===myUsername2;return(<div key={s.user} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${B.creamDark}`}}>
-                <div style={{width:22,textAlign:"center",color:B.gray,fontWeight:"bold",fontSize:13}}>{s.rank}</div>
-                <div style={{flex:1}}><div style={{color:isMe?B.greenDark:B.dark,fontWeight:isMe?"bold":"normal",fontSize:13}}>{s.user} {isMe&&"⭐"}</div><div style={{color:B.gray,fontSize:10}}>{s.leagues} leghe</div></div>
-                <div style={{fontSize:10,color:moved>0?B.greenDark:moved<0?B.orange:B.grayLight,fontWeight:"bold",marginRight:6}}>{moved>0?`▲${moved}`:moved<0?`▼${Math.abs(moved)}`:"—"}</div>
-                <div style={{color:B.orange,fontWeight:"bold",fontSize:16}}>{s.pts}</div>
-              </div>);})}
+              {combo.length === 0 ? (
+                <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>Nessun giocatore iscritto a più leghe ancora.</div>
+              ) : combo.map(s=>{
+                const myUsername2=authUser?.user_metadata?.username||authUser?.email?.split("@")[0];
+                const isMe=s.user===myUsername2;
+                return(
+                  <div key={s.user} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${B.creamDark}`}}>
+                    <div style={{width:22,textAlign:"center",color:B.gray,fontWeight:"bold",fontSize:13}}>{s.rank}</div>
+                    <div style={{flex:1}}>
+                      <div style={{color:isMe?B.greenDark:B.dark,fontWeight:isMe?"bold":"normal",fontSize:13}}>@{s.user}{isMe&&" ⭐"}</div>
+                      <div style={{color:B.gray,fontSize:10}}>{s.leagues} leghe</div>
+                    </div>
+                    <div style={{color:B.orange,fontWeight:"bold",fontSize:16}}>{s.pts}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1615,20 +1711,39 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:8}}>
                         {filteredEvents.length===0
-                          ? <div style={{textAlign:"center",padding:30,color:B.gray}}>Nessuna tappa disponibile</div>
+                          ? <div style={{textAlign:"center",padding:30,color:B.gray}}>
+                              <div style={{fontSize:32,marginBottom:8}}>📅</div>
+                              <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>Nessuna tappa disponibile</div>
+                              <div style={{fontSize:11,color:B.gray,marginTop:4}}>Le tappe appariranno qui quando programmate.</div>
+                            </div>
                           : filteredEvents.map(e=>{
                             const et = EVENT_TYPE_META[e.type]||EVENT_TYPE_META.Silver;
+                            const isPlanned = e.status === "Planned";
+                            const isClickable = !isPlanned; // solo Completato o In corso
                             return (
-                              <div key={e.id} onClick={()=>setSelectedEvent(e)}
-                                style={{background:B.cream,borderLeft:`4px solid ${et.color}`,
+                              <div key={e.id}
+                                onClick={isClickable
+                                  ? ()=>setSelectedEvent(e)
+                                  : ()=>setPopup({
+                                      title:"Tappa non ancora disputata",
+                                      msg:`${e.name} (${e.date}) non è ancora stata giocata. I risultati saranno disponibili dopo l'inserimento dei dati ufficiali.`,
+                                      confirm:"Ok",
+                                      onConfirm:()=>setPopup(null),
+                                      onCancel:null,
+                                    })
+                                }
+                                style={{background:B.cream,
                                   border:`1px solid ${e.status==="In corso"?B.orange:B.creamDark}`,
-                                  borderRadius:10,padding:"12px 14px",cursor:"pointer",
+                                  borderLeft:`4px solid ${isPlanned?B.grayLight:et.color}`,
+                                  borderRadius:10,padding:"12px 14px",
+                                  cursor:isClickable?"pointer":"default",
+                                  opacity:isPlanned?0.65:1,
                                   display:"flex",alignItems:"center",gap:12}}>
                                 <div style={{width:52,height:52,borderRadius:10,flexShrink:0,
-                                  background:et.bg,display:"flex",flexDirection:"column",
+                                  background:isPlanned?B.sandDeep:et.bg,display:"flex",flexDirection:"column",
                                   alignItems:"center",justifyContent:"center",gap:1}}>
-                                  <span style={{fontSize:9,fontWeight:"bold",color:et.color,textAlign:"center",lineHeight:1.2}}>{et.label}</span>
-                                  <span style={{fontSize:14,fontWeight:"900",color:et.color}}>×{et.weight}</span>
+                                  <span style={{fontSize:9,fontWeight:"bold",color:isPlanned?B.gray:et.color,textAlign:"center",lineHeight:1.2}}>{et.label}</span>
+                                  <span style={{fontSize:14,fontWeight:"900",color:isPlanned?B.gray:et.color}}>×{et.weight}</span>
                                 </div>
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{color:B.dark,fontWeight:"bold",fontSize:14}}>{e.name}</div>
@@ -1637,7 +1752,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                                 <span style={{fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:"bold",flexShrink:0,
                                   background:e.status==="Completato"?B.greenPale:e.status==="In corso"?B.orangePale:B.sandDeep,
                                   color:e.status==="Completato"?B.greenDark:e.status==="In corso"?B.orange:B.gray}}>
-                                  {e.status==="In corso"?"🔴 In corso":e.status==="Completato"?"✓ Concluso":"Pianificato"}
+                                  {e.status==="In corso"?"🔴 In corso":e.status==="Completato"?"✓ Concluso":"📅 Pianificata"}
                                 </span>
                               </div>
                             );
@@ -2278,279 +2393,8 @@ function PageTermini({ onBack }) {
     </MenuPage>
   );
 }
-const MOCK_STATS = {
-  atleti: {
-    topScorer: [
-      {name:"Valentina Gottardi",     cat:"Top Player", pts:87.4, gender:"F"},
-      {name:"Orsi Toth Reka",         cat:"Top Player", pts:81.2, gender:"F"},
-      {name:"Dal Corso Gianluca",     cat:"Top Player", pts:79.8, gender:"M"},
-      {name:"Podestà Simone",         cat:"Top Player", pts:76.1, gender:"M"},
-      {name:"Gradini Alice",          cat:"Elite",      pts:74.5, gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      pts:71.2, gender:"M"},
-      {name:"Scampoli Claudia",       cat:"Elite",      pts:69.8, gender:"F"},
-      {name:"Cottafava Samuele",      cat:"Elite",      pts:68.1, gender:"M"},
-      {name:"Bianchi Giada",          cat:"Elite",      pts:65.4, gender:"F"},
-      {name:"Andreatta Tiziano",      cat:"Elite",      pts:63.2, gender:"M"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", pts:54.3, gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", pts:52.1, gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", pts:49.8, gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", pts:48.2, gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", pts:46.1, gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", pts:34.2, gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", pts:32.8, gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", pts:31.4, gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", pts:29.7, gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", pts:28.3, gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   pts:18.4, gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   pts:17.2, gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   pts:15.8, gender:"F"},
-      {name:"Michieli Francesco",     cat:"Outsider",   pts:14.3, gender:"M"},
-      {name:"Quagliotti Vittoria",    cat:"Outsider",   pts:13.1, gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  pts:8.4,  gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  pts:7.2,  gender:"M"},
-      {name:"Gulisano Giada",         cat:"Wild Card",  pts:6.8,  gender:"F"},
-      {name:"Drago Alessandro",       cat:"Wild Card",  pts:5.4,  gender:"M"},
-      {name:"Verrigni Stefania",      cat:"Wild Card",  pts:4.1,  gender:"F"},
-    ],
-    hiddenGem: [
-      {name:"Valentina Gottardi",     cat:"Top Player", ratio:5.1, pts:87.4, cost:140, gender:"F"},
-      {name:"Dal Corso Gianluca",     cat:"Top Player", ratio:4.8, pts:79.8, cost:140, gender:"M"},
-      {name:"Gradini Alice",          cat:"Elite",      ratio:4.5, pts:74.5, cost:107, gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      ratio:4.2, pts:71.2, cost:107, gender:"M"},
-      {name:"Bianchi Giada",          cat:"Elite",      ratio:4.0, pts:65.4, cost:99,  gender:"F"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", ratio:4.2, pts:54.3, cost:58,  gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", ratio:3.9, pts:52.1, cost:56,  gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", ratio:3.7, pts:49.8, cost:50,  gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", ratio:3.5, pts:48.2, cost:48,  gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", ratio:3.3, pts:46.1, cost:44,  gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", ratio:3.8, pts:34.2, cost:28,  gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", ratio:3.6, pts:32.8, cost:26,  gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", ratio:3.4, pts:31.4, cost:26,  gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", ratio:3.2, pts:29.7, cost:24,  gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", ratio:3.0, pts:28.3, cost:22,  gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   ratio:2.8, pts:18.4, cost:15,  gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   ratio:2.6, pts:17.2, cost:14,  gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   ratio:2.4, pts:15.8, cost:13,  gender:"F"},
-      {name:"Michieli Francesco",     cat:"Outsider",   ratio:2.2, pts:14.3, cost:12,  gender:"M"},
-      {name:"Quagliotti Vittoria",    cat:"Outsider",   ratio:2.0, pts:13.1, cost:11,  gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  ratio:1.8, pts:8.4,  cost:5,   gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  ratio:1.6, pts:7.2,  cost:4,   gender:"M"},
-      {name:"Gulisano Giada",         cat:"Wild Card",  ratio:1.4, pts:6.8,  cost:4,   gender:"F"},
-      {name:"Drago Alessandro",       cat:"Wild Card",  ratio:1.2, pts:5.4,  cost:3,   gender:"M"},
-      {name:"Verrigni Stefania",      cat:"Wild Card",  ratio:1.0, pts:4.1,  cost:3,   gender:"F"},
-    ],
-    rocket: [
-      {name:"Gradini Alice",          cat:"Elite",      growth:+18, tappaRef:"Falconara", gender:"F"},
-      {name:"Cottafava Samuele",      cat:"Top Player", growth:+15, tappaRef:"Falconara", gender:"M"},
-      {name:"Bianchi Giada",          cat:"Elite",      growth:+12, tappaRef:"Falconara", gender:"F"},
-      {name:"Acerbi Raoul",           cat:"Top Player", growth:+11, tappaRef:"Falconara", gender:"M"},
-      {name:"Scampoli Claudia",       cat:"Top Player", growth:+10, tappaRef:"Falconara", gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      growth:+9,  tappaRef:"Falconara", gender:"M"},
-      {name:"Andreatta Tiziano",      cat:"Elite",      growth:+8,  tappaRef:"Falconara", gender:"M"},
-      {name:"Frasca Federica",        cat:"Elite",      growth:+7,  tappaRef:"Falconara", gender:"F"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", growth:+9,  tappaRef:"Falconara", gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", growth:+8,  tappaRef:"Falconara", gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", growth:+7,  tappaRef:"Falconara", gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", growth:+6,  tappaRef:"Falconara", gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", growth:+5,  tappaRef:"Falconara", gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", growth:+6,  tappaRef:"Falconara", gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", growth:+5,  tappaRef:"Falconara", gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", growth:+4,  tappaRef:"Falconara", gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", growth:+3,  tappaRef:"Falconara", gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", growth:+2,  tappaRef:"Falconara", gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   growth:+4,  tappaRef:"Falconara", gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   growth:+3,  tappaRef:"Falconara", gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   growth:+2,  tappaRef:"Falconara", gender:"F"},
-      {name:"Michieli Francesco",     cat:"Outsider",   growth:+1,  tappaRef:"Falconara", gender:"M"},
-      {name:"Quagliotti Vittoria",    cat:"Outsider",   growth:+1,  tappaRef:"Falconara", gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  growth:+3,  tappaRef:"Falconara", gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  growth:+2,  tappaRef:"Falconara", gender:"M"},
-    ],
-    wallStreet: [
-      {name:"Valentina Gottardi",     cat:"Top Player", streak:3, gender:"F"},
-      {name:"Dal Corso Gianluca",     cat:"Top Player", streak:3, gender:"M"},
-      {name:"Podestà Simone",         cat:"Top Player", streak:2, gender:"M"},
-      {name:"Orsi Toth Reka",         cat:"Top Player", streak:2, gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      streak:3, gender:"M"},
-      {name:"Gradini Alice",          cat:"Elite",      streak:2, gender:"F"},
-      {name:"Scampoli Claudia",       cat:"Elite",      streak:2, gender:"F"},
-      {name:"Bianchi Giada",          cat:"Elite",      streak:1, gender:"F"},
-      {name:"Andreatta Tiziano",      cat:"Elite",      streak:1, gender:"M"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", streak:3, gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", streak:2, gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", streak:2, gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", streak:1, gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", streak:1, gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", streak:2, gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", streak:2, gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", streak:1, gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", streak:1, gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", streak:1, gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   streak:2, gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   streak:1, gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   streak:1, gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  streak:1, gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  streak:1, gender:"M"},
-    ],
-    ownership: [
-      {name:"Valentina Gottardi",     cat:"Top Player", pct:85, gender:"F"},
-      {name:"Dal Corso Gianluca",     cat:"Top Player", pct:80, gender:"M"},
-      {name:"Orsi Toth Reka",         cat:"Top Player", pct:75, gender:"F"},
-      {name:"Podestà Simone",         cat:"Top Player", pct:70, gender:"M"},
-      {name:"Gradini Alice",          cat:"Elite",      pct:65, gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      pct:60, gender:"M"},
-      {name:"Scampoli Claudia",       cat:"Elite",      pct:55, gender:"F"},
-      {name:"Cottafava Samuele",      cat:"Elite",      pct:52, gender:"M"},
-      {name:"Bianchi Giada",          cat:"Elite",      pct:48, gender:"F"},
-      {name:"Andreatta Tiziano",      cat:"Elite",      pct:44, gender:"M"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", pct:38, gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", pct:35, gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", pct:32, gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", pct:28, gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", pct:25, gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", pct:20, gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", pct:18, gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", pct:15, gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", pct:12, gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", pct:10, gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   pct:8,  gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   pct:7,  gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   pct:6,  gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  pct:4,  gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  pct:3,  gender:"M"},
-    ],
-    differential: [
-      {name:"Gradini Alice",          cat:"Elite",      ownership:18, pts:74.5, gender:"F"},
-      {name:"Alfieri Manuel",         cat:"Elite",      ownership:20, pts:71.2, gender:"M"},
-      {name:"Bianchi Giada",          cat:"Elite",      ownership:22, pts:65.4, gender:"F"},
-      {name:"Andreatta Tiziano",      cat:"Elite",      ownership:24, pts:63.2, gender:"M"},
-      {name:"Cottafava Samuele",      cat:"Top Player", ownership:30, pts:68.1, gender:"M"},
-      {name:"Rottoli Sharin",         cat:"Solid Pick", ownership:12, pts:54.3, gender:"F"},
-      {name:"Camozzi Matteo",         cat:"Solid Pick", ownership:10, pts:52.1, gender:"M"},
-      {name:"Concetti Giulia",        cat:"Solid Pick", ownership:14, pts:49.8, gender:"F"},
-      {name:"Bolognesi Giacomo",      cat:"Solid Pick", ownership:11, pts:48.2, gender:"M"},
-      {name:"Mancinelli M. Rachele",  cat:"Solid Pick", ownership:9,  pts:46.1, gender:"F"},
-      {name:"Sarra Anna Maria",       cat:"Value Pick", ownership:8,  pts:34.2, gender:"F"},
-      {name:"Ingrosso Paolo",         cat:"Value Pick", ownership:6,  pts:32.8, gender:"M"},
-      {name:"Zanon Chiara",           cat:"Value Pick", ownership:7,  pts:31.4, gender:"F"},
-      {name:"Furgani Simone",         cat:"Value Pick", ownership:5,  pts:29.7, gender:"M"},
-      {name:"Toti Giulia",            cat:"Value Pick", ownership:6,  pts:28.3, gender:"F"},
-      {name:"Orciani Sofia",          cat:"Outsider",   ownership:4,  pts:18.4, gender:"F"},
-      {name:"Grosso Laerte",          cat:"Outsider",   ownership:3,  pts:17.2, gender:"M"},
-      {name:"Noveri Marta",           cat:"Outsider",   ownership:4,  pts:15.8, gender:"F"},
-      {name:"Boscolo Gloria",         cat:"Wild Card",  ownership:2,  pts:8.4,  gender:"F"},
-      {name:"Delforno Nicholas",      cat:"Wild Card",  ownership:2,  pts:7.2,  gender:"M"},
-    ],
-  },
-  utenti: [
-    {username:"zioema",    guru:142.3, casino:8,  panchinaro:24.1, trader:+45},
-    {username:"test1",     guru:98.4,  casino:3,  panchinaro:12.4, trader:-8},
-    {username:"beachking", guru:131.2, casino:12, panchinaro:31.2, trader:+62},
-    {username:"sandqueen", guru:118.7, casino:5,  panchinaro:8.4,  trader:+28},
-    {username:"volleypro", guru:104.1, casino:9,  panchinaro:19.8, trader:+11},
-  ],
-  awards: {
-    bandit:        [
-      {name:"Gradini Alice",         cat:"Elite",      crediti:+38, gender:"F"},
-      {name:"Cottafava Samuele",     cat:"Top Player", crediti:+31, gender:"M"},
-      {name:"Bianchi Giada",         cat:"Elite",      crediti:+28, gender:"F"},
-      {name:"Acerbi Raoul",          cat:"Top Player", crediti:+25, gender:"M"},
-      {name:"Frasca Federica",       cat:"Elite",      crediti:+21, gender:"F"},
-      {name:"Rottoli Sharin",        cat:"Solid Pick", crediti:+18, gender:"F"},
-      {name:"Camozzi Matteo",        cat:"Solid Pick", crediti:+15, gender:"M"},
-      {name:"Concetti Giulia",       cat:"Solid Pick", crediti:+12, gender:"F"},
-      {name:"Bolognesi Giacomo",     cat:"Solid Pick", crediti:+10, gender:"M"},
-      {name:"Mancinelli M. Rachele", cat:"Solid Pick", crediti:+8,  gender:"F"},
-      {name:"Sarra Anna Maria",      cat:"Value Pick", crediti:+14, gender:"F"},
-      {name:"Ingrosso Paolo",        cat:"Value Pick", crediti:+11, gender:"M"},
-      {name:"Zanon Chiara",          cat:"Value Pick", crediti:+9,  gender:"F"},
-      {name:"Furgani Simone",        cat:"Value Pick", crediti:+7,  gender:"M"},
-      {name:"Toti Giulia",           cat:"Value Pick", crediti:+5,  gender:"F"},
-      {name:"Orciani Sofia",         cat:"Outsider",   crediti:+8,  gender:"F"},
-      {name:"Grosso Laerte",         cat:"Outsider",   crediti:+6,  gender:"M"},
-      {name:"Noveri Marta",          cat:"Outsider",   crediti:+4,  gender:"F"},
-      {name:"Boscolo Gloria",        cat:"Wild Card",  crediti:+5,  gender:"F"},
-      {name:"Delforno Nicholas",     cat:"Wild Card",  crediti:+3,  gender:"M"},
-    ],
-    scam:          [
-      {name:"Mussa Fabrizio",        cat:"Solid Pick", owned:4, pts:2.1, gender:"M"},
-      {name:"Sanguigni Camilla",     cat:"Elite",      owned:3, pts:3.2, gender:"F"},
-      {name:"Titta Giacomo",         cat:"Solid Pick", owned:3, pts:4.1, gender:"M"},
-      {name:"Ditta Erika",           cat:"Solid Pick", owned:2, pts:2.8, gender:"F"},
-      {name:"Sacripanti Mauro",      cat:"Value Pick", owned:2, pts:3.4, gender:"M"},
-      {name:"Benazzi Giada",         cat:"Elite",      owned:2, pts:4.2, gender:"F"},
-      {name:"Carucci Alessandro",    cat:"Solid Pick", owned:2, pts:3.8, gender:"M"},
-      {name:"Luisetto Michele",      cat:"Solid Pick", owned:1, pts:2.4, gender:"M"},
-      {name:"Allegretti Jessica",    cat:"Value Pick", owned:2, pts:4.1, gender:"F"},
-      {name:"Pantalei Edoardo",      cat:"Value Pick", owned:2, pts:3.6, gender:"M"},
-      {name:"Orciani Sofia",         cat:"Outsider",   owned:2, pts:2.8, gender:"F"},
-      {name:"Grosso Laerte",         cat:"Outsider",   owned:1, pts:1.9, gender:"M"},
-      {name:"Boscolo Gloria",        cat:"Wild Card",  owned:1, pts:1.4, gender:"F"},
-      {name:"Delforno Nicholas",     cat:"Wild Card",  owned:1, pts:1.2, gender:"M"},
-    ],
-    fedelissimi:   [
-      {name:"Valentina Gottardi",    cat:"Top Player", squads:2, gender:"F"},
-      {name:"Dal Corso Gianluca",    cat:"Top Player", squads:2, gender:"M"},
-      {name:"Orsi Toth Reka",        cat:"Top Player", squads:1, gender:"F"},
-      {name:"Podestà Simone",        cat:"Top Player", squads:1, gender:"M"},
-      {name:"Gradini Alice",         cat:"Elite",      squads:1, gender:"F"},
-      {name:"Alfieri Manuel",        cat:"Elite",      squads:1, gender:"M"},
-      {name:"Scampoli Claudia",      cat:"Elite",      squads:1, gender:"F"},
-      {name:"Bianchi Giada",         cat:"Elite",      squads:1, gender:"F"},
-      {name:"Rottoli Sharin",        cat:"Solid Pick", squads:1, gender:"F"},
-      {name:"Camozzi Matteo",        cat:"Solid Pick", squads:1, gender:"M"},
-      {name:"Sarra Anna Maria",      cat:"Value Pick", squads:1, gender:"F"},
-      {name:"Ingrosso Paolo",        cat:"Value Pick", squads:1, gender:"M"},
-      {name:"Orciani Sofia",         cat:"Outsider",   squads:1, gender:"F"},
-      {name:"Boscolo Gloria",        cat:"Wild Card",  squads:1, gender:"F"},
-    ],
-    traditore:     [
-      {name:"Mussa Fabrizio",        cat:"Solid Pick", sold:3, gender:"M"},
-      {name:"Sanguigni Camilla",     cat:"Elite",      sold:2, gender:"F"},
-      {name:"Titta Giacomo",         cat:"Solid Pick", sold:2, gender:"M"},
-      {name:"Benazzi Giada",         cat:"Elite",      sold:1, gender:"F"},
-      {name:"Sacripanti Mauro",      cat:"Value Pick", sold:1, gender:"M"},
-      {name:"Ditta Erika",           cat:"Solid Pick", sold:1, gender:"F"},
-      {name:"Carucci Alessandro",    cat:"Solid Pick", sold:1, gender:"M"},
-      {name:"Allegretti Jessica",    cat:"Value Pick", sold:1, gender:"F"},
-      {name:"Pantalei Edoardo",      cat:"Value Pick", sold:1, gender:"M"},
-      {name:"Orciani Sofia",         cat:"Outsider",   sold:1, gender:"F"},
-      {name:"Boscolo Gloria",        cat:"Wild Card",  sold:1, gender:"F"},
-    ],
-    captainJackpot:[
-      {name:"Valentina Gottardi",    cat:"Top Player", capPts:52.1, gender:"F"},
-      {name:"Dal Corso Gianluca",    cat:"Top Player", capPts:48.3, gender:"M"},
-      {name:"Orsi Toth Reka",        cat:"Top Player", capPts:44.2, gender:"F"},
-      {name:"Cottafava Samuele",     cat:"Top Player", capPts:41.8, gender:"M"},
-      {name:"Gradini Alice",         cat:"Elite",      capPts:38.5, gender:"F"},
-      {name:"Alfieri Manuel",        cat:"Elite",      capPts:35.2, gender:"M"},
-      {name:"Scampoli Claudia",      cat:"Elite",      capPts:33.1, gender:"F"},
-      {name:"Bianchi Giada",         cat:"Elite",      capPts:30.8, gender:"F"},
-      {name:"Andreatta Tiziano",     cat:"Elite",      capPts:28.4, gender:"M"},
-      {name:"Rottoli Sharin",        cat:"Solid Pick", capPts:24.2, gender:"F"},
-      {name:"Camozzi Matteo",        cat:"Solid Pick", capPts:22.1, gender:"M"},
-      {name:"Concetti Giulia",       cat:"Solid Pick", capPts:20.8, gender:"F"},
-      {name:"Bolognesi Giacomo",     cat:"Solid Pick", capPts:18.4, gender:"M"},
-      {name:"Sarra Anna Maria",      cat:"Value Pick", capPts:16.2, gender:"F"},
-      {name:"Ingrosso Paolo",        cat:"Value Pick", capPts:14.8, gender:"M"},
-    ],
-    metaPlayers:   [
-      {name:"Valentina Gottardi",    cat:"Top Player", topTeams:2, gender:"F"},
-      {name:"Dal Corso Gianluca",    cat:"Top Player", topTeams:2, gender:"M"},
-      {name:"Gradini Alice",         cat:"Elite",      topTeams:1, gender:"F"},
-      {name:"Cottafava Samuele",     cat:"Top Player", topTeams:1, gender:"M"},
-      {name:"Orsi Toth Reka",        cat:"Top Player", topTeams:1, gender:"F"},
-      {name:"Alfieri Manuel",        cat:"Elite",      topTeams:1, gender:"M"},
-      {name:"Scampoli Claudia",      cat:"Elite",      topTeams:1, gender:"F"},
-      {name:"Bianchi Giada",         cat:"Elite",      topTeams:1, gender:"F"},
-      {name:"Rottoli Sharin",        cat:"Solid Pick", topTeams:1, gender:"F"},
-      {name:"Camozzi Matteo",        cat:"Solid Pick", topTeams:1, gender:"M"},
-      {name:"Sarra Anna Maria",      cat:"Value Pick", topTeams:1, gender:"F"},
-      {name:"Orciani Sofia",         cat:"Outsider",   topTeams:1, gender:"F"},
-      {name:"Boscolo Gloria",        cat:"Wild Card",  topTeams:1, gender:"F"},
-    ],
-  },
-};
+// MOCK_STATS rimosso — statistiche calcolate dinamicamente
+
 
 // ─── HELPERS STATISTICHE ──────────────────────────────────────
 const CAT_FILTERS = ["Tutti","Top Player","Elite","Solid Pick","Value Pick","Outsider","Wild Card"];
@@ -2637,207 +2481,52 @@ function CatBadge({cat}) {
   return <span style={{fontSize:9,padding:"1px 6px",borderRadius:6,background:c.bg,color:c.text,fontWeight:"bold",flexShrink:0}}>{cat}</span>;
 }
 
+// ─── STATO VUOTO STATISTICHE ──────────────────────────────────
+function StatComingSoon({ emoji, title, desc, onBack }) {
+  return (
+    <StatPage title={title} emoji={emoji} onBack={onBack}>
+      <div style={{textAlign:"center",padding:"40px 20px"}}>
+        <div style={{fontSize:48,marginBottom:12}}>{emoji}</div>
+        <div style={{fontSize:15,fontWeight:"bold",color:B.dark,marginBottom:8}}>{title}</div>
+        <div style={{fontSize:12,color:B.gray,lineHeight:1.6,marginBottom:16}}>{desc}</div>
+        <div style={{background:B.sandDark,borderRadius:12,padding:"12px 16px",display:"inline-block"}}>
+          <div style={{fontSize:11,color:B.gray}}>📊 Dati disponibili dopo la prima tappa disputata</div>
+        </div>
+      </div>
+    </StatPage>
+  );
+}
+
 // ─── PAGINA 1: STATS ATLETI ───────────────────────────────────
 function StatsAtleti({ onBack }) {
-  const [catFilter, setCatFilter] = useState("Tutti");
-  const filter = items => { const f = catFilter==="Tutti" ? items : items.filter(a=>a.cat===catFilter); return f.slice(0,5); };
-
   return (
-    <StatPage title="Stats Atleti" emoji="🏐" onBack={onBack}>
-      <CatFilter value={catFilter} onChange={setCatFilter}/>
-
-      <StatCard emoji="🏆" title="Top Scorer" subtitle="Punti totali stagione"
-        desc="Somma di tutti i punti fantasy accumulati dall'atleta nelle tappe disputate. Il parametro di riferimento assoluto per valutare la stagione."
-        items={filter(MOCK_STATS.atleti.topScorer)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13,marginLeft:4}}>{a.pts} pt</span>
-        </>}
-      />
-
-      <StatCard emoji="💎" title="Hidden Gem" subtitle="Miglior rapporto punti/prezzo"
-        desc="Rapporto punti/prezzo. Un valore alto significa che l'atleta rende tanto rispetto a quanto costa: l'affare della stagione."
-        items={filter(MOCK_STATS.atleti.hiddenGem)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <span style={{fontWeight:"bold",color:B.greenDark,fontSize:13,marginLeft:4}}>x{a.ratio}</span>
-        </>}
-      />
-
-      <StatCard emoji="🚀" title="Rocket" subtitle="Crescita maggiore in 1 tappa"
-        desc="Atleta con la crescita di valore più esplosiva in una singola tappa. Chi ha avuto il picco di performance più improvviso."
-        items={filter(MOCK_STATS.atleti.rocket)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <span style={{fontWeight:"bold",color:B.greenDark,fontSize:13,marginLeft:4}}>+{a.growth} cr</span>
-        </>}
-      />
-
-      <StatCard emoji="🧱" title="Wall Street" subtitle="Valore in trend positivo"
-        desc="Atleta il cui valore è aumentato consecutivamente nelle ultime tappe. In forma costante, sempre in salita."
-        items={filter(MOCK_STATS.atleti.wallStreet)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <span style={{fontWeight:"bold",color:B.greenDark,fontSize:13,marginLeft:4}}>{a.streak} tappe ↑</span>
-        </>}
-      />
-
-      <StatCard emoji="📊" title="Ownership %" subtitle="% squadre che possiedono l'atleta"
-        desc="Percentuale di squadre (su tutte le leghe) che hanno questo atleta nel roster. Più è alta, più l'atleta è mainstream."
-        items={filter(MOCK_STATS.atleti.ownership)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13,marginLeft:4}}>{a.pct}%</span>
-        </>}
-      />
-
-      <StatCard emoji="🎯" title="Differential" subtitle="Ownership bassa ma tanti punti"
-        desc="Atleti con pochi proprietari ma ottimi punti. Inserirli può fare la differenza contro chi non li ha."
-        items={filter(MOCK_STATS.atleti.differential)}
-        renderRow={(a)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{a.name} <span style={{color:B.gray,fontSize:10}}>{a.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={a.cat}/>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontWeight:"bold",color:B.greenDark,fontSize:11}}>{a.pts} pt</div>
-            <div style={{color:B.gray,fontSize:9}}>{a.ownership}% own</div>
-          </div>
-        </>}
-      />
-    </StatPage>
+    <StatComingSoon
+      emoji="🏐" title="Stats Atleti" onBack={onBack}
+      desc="Top Scorer, Hidden Gem, Rocket, Wall Street, Ownership e Differential. Tutto aggiornato dopo ogni tappa."
+    />
   );
 }
 
 // ─── PAGINA 2: STATS UTENTI ───────────────────────────────────
 function StatsUtenti({ onBack }) {
-  const users = MOCK_STATS.utenti;
-  const sorted = (key, desc=true) => [...users].sort((a,b)=>desc?b[key]-a[key]:a[key]-b[key]).slice(0,5);
-
   return (
-    <StatPage title="Stats Utenti" emoji="👥" onBack={onBack}>
-
-      <StatCard emoji="🧠" title="Guru" subtitle="Media punti più alta"
-        desc="Media punti a tappa. Non conta chi ha giocato di più, ma chi ha reso meglio in proporzione alle tappe disputate."
-        items={sorted("guru")}
-        renderRow={(u)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark,fontWeight:"bold"}}>{u.username}</span>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13}}>{u.guru} pt/tappa</span>
-        </>}
-      />
-
-      <StatCard emoji="🎲" title="Casinò" subtitle="Più cambi mercato"
-        desc="Numero totale di operazioni di mercato (acquisti + vendite). Il giocatore più attivo sul mercato."
-        items={sorted("casino")}
-        renderRow={(u)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark,fontWeight:"bold"}}>{u.username}</span>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13}}>{u.casino} operazioni</span>
-        </>}
-      />
-
-      <StatCard emoji="🫣" title="Panchinaro" subtitle="Più punti lasciati in panchina"
-        desc="Punti totalizzati dagli atleti lasciati in panchina. Chi spreca di più nella scelta dei titolari."
-        items={sorted("panchinaro")}
-        renderRow={(u)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark,fontWeight:"bold"}}>{u.username}</span>
-          <span style={{fontWeight:"bold",color:B.gray,fontSize:13}}>{u.panchinaro} pt sprecati</span>
-        </>}
-      />
-
-      <StatCard emoji="📈" title="Trader" subtitle="Più profitto da compravendite"
-        desc="Profitto netto da compravendite: crediti guadagnati vendendo atleti saliti di valore meno crediti persi su quelli scesi."
-        items={sorted("trader")}
-        renderRow={(u)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark,fontWeight:"bold"}}>{u.username}</span>
-          <span style={{fontWeight:"bold",color:u.trader>=0?B.greenDark:B.orange,fontSize:13}}>
-            {u.trader>=0?"+":""}{u.trader} cr
-          </span>
-        </>}
-      />
-
-    </StatPage>
+    <StatComingSoon
+      emoji="👥" title="Stats Utenti" onBack={onBack}
+      desc="Guru, Casinò, Panchinaro e Trader. Chi gestisce meglio la squadra stagione dopo stagione."
+    />
   );
 }
 
 // ─── PAGINA 3: AWARDS ─────────────────────────────────────────
 function StatsAwards({ onBack }) {
-  const [catFilter, setCatFilter] = useState("Tutti");
-  const filter = items => { const f = catFilter==="Tutti" ? items : items.filter(a=>a.cat===catFilter); return f.slice(0,5); };
-  const a = MOCK_STATS.awards;
-
   return (
-    <StatPage title="Awards" emoji="🏅" onBack={onBack}>
-      <CatFilter value={catFilter} onChange={setCatFilter}/>
-
-      <StatCard emoji="🤑" title="The Bandit" subtitle="Ha fatto guadagnare più Fantacrediti"
-        desc="L'atleta che ha fatto guadagnare più Fantacrediti ai suoi proprietari grazie all'aumento di valore nel mercato."
-        items={filter(a.bandit)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <span style={{fontWeight:"bold",color:B.greenDark,fontSize:13,marginLeft:4}}>+{x.crediti} cr</span>
-        </>}
-      />
-
-      <StatCard emoji="📉" title="The Scam" subtitle="Più comprato ma rende meno"
-        desc="L'atleta più comprato in assoluto ma con i punti più bassi. Il classico acquisto deludente della stagione."
-        items={filter(a.scam)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontWeight:"bold",color:B.orange,fontSize:11}}>{x.pts} pt</div>
-            <div style={{color:B.gray,fontSize:9}}>{x.owned} roster</div>
-          </div>
-        </>}
-      />
-
-      <StatCard emoji="🫡" title="Fedelissimi" subtitle="Presente nel maggior numero di squadre"
-        desc="L'atleta presente nel maggior numero di squadre attive. Il beniamino indiscusso di tutta la lega."
-        items={filter(a.fedelissimi)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13,marginLeft:4}}>{x.squads} sq.</span>
-        </>}
-      />
-
-      <StatCard emoji="☠️" title="Traditore" subtitle="Più venduto dopo tappa negativa"
-        desc="L'atleta più venduto subito dopo una tappa negativa. Chi ha deluso le aspettative e fatto scattare il panic selling."
-        items={filter(a.traditore)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13,marginLeft:4}}>{x.sold}x venduto</span>
-        </>}
-      />
-
-      <StatCard emoji="🧨" title="Captain Jackpot" subtitle="Più punti da capitano"
-        desc="L'atleta che ha reso di più quando scelto come capitano, moltiplicando i punti per 1.3."
-        items={filter(a.captainJackpot)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <span style={{fontWeight:"bold",color:B.orange,fontSize:13,marginLeft:4}}>{x.capPts} pt</span>
-        </>}
-      />
-
-      <StatCard emoji="🧬" title="Meta Players" subtitle="Presenti nei top team"
-        desc="Atleti presenti nei team con il punteggio più alto. Il nucleo delle squadre vincenti di questa stagione."
-        items={filter(a.metaPlayers)}
-        renderRow={(x)=><>
-          <span style={{flex:1,fontSize:12,color:B.dark}}>{x.name} <span style={{color:B.gray,fontSize:10}}>{x.gender==="F"?"♀":"♂"}</span></span>
-          <CatBadge cat={x.cat}/>
-          <span style={{fontWeight:"bold",color:B.greenDark,fontSize:13,marginLeft:4}}>{x.topTeams} top team</span>
-        </>}
-      />
-
-    </StatPage>
+    <StatComingSoon
+      emoji="🏅" title="Awards" onBack={onBack}
+      desc="The Bandit, The Scam, Fedelissimi e Traditore. I premi speciali della stagione assegnati a fine anno."
+    />
   );
 }
+
 
 function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade}) {
   const cat  = getCategory(a.ranking);
