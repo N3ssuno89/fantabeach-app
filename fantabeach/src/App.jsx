@@ -2822,7 +2822,16 @@ const BONUS_META = {
 
 // Mock matches arricchiti con bonus/malus
 
-const PHASE_ORDER = ["Qualifiche 1","Qualifiche 2","Pool 1","Pool 2","BYE Pool","Round of 12","Round of 8","Quarti","Semifinale","Finale 3° posto","Finale 1° posto"];
+const PHASE_ORDER = [
+  // Nomi usati nel DB (dalla sync-results)
+  "QUALI 1","QUALI 2","POOL 1","POOL 2","POOL 3","BYE POOL",
+  "ROUND OF 16","ROUND OF 12","ROUND OF 8",
+  "QUARTI","SEMIFINALE","FINALE 3","FINALE 1",
+  // Nomi alternativi (vecchio formato 2025)
+  "Qualifiche 1","Qualifiche 2","Pool 1","Pool 2","Pool 3","BYE Pool",
+  "Round of 12","Round of 8","Quarti","Semifinale",
+  "Finale 3° posto","Finale 1° posto",
+];
 
 function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
   useEffect(() => {
@@ -2877,7 +2886,13 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad}) {
     try { return buildMatches(matchResults || []); }
     catch(e) { console.warn("buildMatches error:", e); return []; }
   })();
-  const phases = PHASE_ORDER.filter(p => builtMatches.some(m => m.phase === p));
+  // Fasi presenti nelle partite, ordinate secondo PHASE_ORDER
+  // Se una fase non è in PHASE_ORDER la mette in fondo
+  const phasesPresent = [...new Set(builtMatches.map(m => m.phase))];
+  const phases = [
+    ...PHASE_ORDER.filter(p => phasesPresent.includes(p)),
+    ...phasesPresent.filter(p => !PHASE_ORDER.includes(p)),
+  ];
 
   const isMyMatch = (m) => m.myPlayers && m.myPlayers.length > 0;
 
