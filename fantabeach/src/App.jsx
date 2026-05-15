@@ -711,7 +711,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
         supabase.from("lineups", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=name.asc")),
-        supabase.from("events", token).then(db => db.select("*", "&anno=eq.2026&order=id.asc")),
+        supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
       ]);
 
       // ── Events da DB ──
@@ -829,23 +829,12 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       if (Array.isArray(lineupRes)) {
         const newLineups  = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         const newCaptains = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
-        // Per ogni lega prendi solo le righe dell'event_id più recente (saved_at DESC)
-        // evita di sommare lineup di tappe diverse
-        const byLeague = {};
         lineupRes.forEach(l => {
-          if (!byLeague[l.league_id]) byLeague[l.league_id] = [];
-          byLeague[l.league_id].push(l);
-        });
-        Object.entries(byLeague).forEach(([lid, rows]) => {
-          if (newLineups[lid] === undefined) return;
-          // Prendi l'event_id più recente (maggiore saved_at)
-          const latestEvent = rows.reduce((best, r) =>
-            !best || (r.saved_at || "") > (best.saved_at || "") ? r : best, null)?.event_id;
-          rows.filter(r => r.event_id === latestEvent).forEach(l => {
+          if (newLineups[l.league_id] !== undefined) {
             if (l.role === "titolare" || l.role === "capitano")
-              newLineups[lid].push(l.player_id);
-            if (l.role === "capitano") newCaptains[lid] = l.player_id;
-          });
+              newLineups[l.league_id].push(l.player_id);
+            if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
+          }
         });
         setLineups(newLineups);
         setCaptains(newCaptains);
@@ -985,10 +974,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     }
     showNotif("Formazione salvata! 🏐");
     try {
-      // Trova la tappa corretta per questo genere:
-      // 1. Se c'è una tappa "In corso" per questo genere → quella
-      // 2. Altrimenti la prossima "Planned" per questo genere
-      // 3. Fallback: "E_PRESTAGIONE"
       const eventsForGender = events.filter(e =>
         (e.gender||"").toUpperCase() === league.gender.toUpperCase()
       );
@@ -997,7 +982,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         || null;
       const eventId = activeEvent?.id || "E_PRESTAGIONE";
       const ldb = await supabase.from("lineups", accessToken);
-      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}&event_id=eq.${eventId}`);
+      // Cancella TUTTE le righe per questa lega (qualsiasi event_id) per evitare duplicati
+      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
       const entries = lineup.map(pid => ({
         user_id: authUser.id,
         league_id: leagueId,
@@ -2179,6 +2165,7 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, le
 
   useEffect(() => {
     if (!accessToken || !authUser?.id) return;
+    setTransfers(null); // reset prima del caricamento
     const load = async () => {
       try {
         const db = await supabase.from("transfer_history", accessToken);
