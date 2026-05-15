@@ -224,8 +224,8 @@ async function loadAthletesFromAPI() {
 const LEAGUES_INIT = [
   { id:"L001-F", name:"Classic F", type:"classic", gender:"F", status:"OPEN",   marketOpen:false },
   { id:"L001-M", name:"Classic M", type:"classic", gender:"M", status:"OPEN",   marketOpen:false },
-  { id:"L002-F", name:"Market F",  type:"market",  gender:"F", status:"LOCKED", marketOpen:false },
-  { id:"L002-M", name:"Market M",  type:"market",  gender:"M", status:"LOCKED", marketOpen:false },
+  { id:"L002-F", name:"Market F",  type:"market",  gender:"F", status:"OPEN",   marketOpen:false },
+  { id:"L002-M", name:"Market M",  type:"market",  gender:"M", status:"OPEN",   marketOpen:false },
 ];
 
 const EVENT_TYPE_META = {
@@ -703,7 +703,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const loadUserData = async (token, userId) => {
     try {
       // Tutte le chiamate in parallelo — da 6 chiamate sequenziali a 3 parallele
-      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes] = await Promise.all([
+      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes, leagueSettingsRes] = await Promise.all([
         supabase.from("profiles", token).then(db => db.select("role,username,display_name", `&id=eq.${userId}`)),
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
@@ -711,7 +711,17 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=name.asc")),
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
         supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
+        supabase.from("league_settings", token).then(db => db.select("*")),
       ]);
+
+      // ── League settings (status e marketOpen) da Supabase ──
+      if (Array.isArray(leagueSettingsRes) && leagueSettingsRes.length > 0) {
+        setLeagues(ls => ls.map(l => {
+          const s = leagueSettingsRes.find(x => x.league_id === l.id);
+          if (!s) return l;
+          return { ...l, status: s.status || "OPEN", marketOpen: s.market_open || false };
+        }));
+      }
 
       // ── Coach selezionati ──
       if (Array.isArray(coachSelectRes) && coachSelectRes.length > 0) {
@@ -1968,25 +1978,59 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               })}
             </div>
 
+
+            {/* Switch iscrizioni per lega */}
+            <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>🚪 Iscrizioni per lega</div>
+              {leagues.map(l => {
+                const isOpen = l.status === "OPEN";
+                return (
+                  <div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${B.creamDark}`}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>{l.name}</div>
+                      <div style={{fontSize:11,color:isOpen?B.greenDark:B.gray}}>{isOpen?"✓ Aperte":"✗ Chiuse"}</div>
+                    </div>
+                    <button onClick={async () => {
+                      const newStatus = isOpen ? "LOCKED" : "OPEN";
+                      setLeagues(ls=>ls.map(x=>x.id===l.id?{...x,status:newStatus}:x));
+                      showNotif(`${l.name}: iscrizioni ${newStatus==="OPEN"?"aperte":"chiuse"}`);
+                      try {
+                        const db = await supabase.from("league_settings", accessToken);
+                        await db.upsert({league_id:l.id,status:newStatus,updated_at:new Date().toISOString()},"league_id");
+                      } catch(e) { console.warn("Errore:", e); }
+                    }} style={{
+                      width:48,height:26,borderRadius:13,border:"none",cursor:"pointer",
+                      background:isOpen?B.greenDark:B.grayLight,
+                      position:"relative",transition:"background 0.2s",flexShrink:0,
+                    }}>
+                      <div style={{
+                        position:"absolute",top:3,left:isOpen?22:2,width:20,height:20,
+                        borderRadius:"50%",background:B.white,transition:"left 0.2s",
+                      }}/>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Pulsanti azioni con stato dinamico */}
             {[
-              {
-                icon:"🚪",
-                title:"Iscrizioni",
-                desc:`Tutte le leghe — attualmente ${leagues.find(l=>l.id==="L001-F")?.status==="OPEN"?"aperte":"chiuse"}`,
-                isOpen: leagues.find(l=>l.id==="L001-F")?.status==="OPEN",
-                action:()=>{
-                  const newStatus = leagues.find(l=>l.id==="L001-F")?.status==="OPEN" ? "LOCKED" : "OPEN";
-                  setLeagues(ls=>ls.map(l=>({...l,status:newStatus})));
-                  showNotif(`Iscrizioni ${newStatus==="OPEN"?"aperte":"chiuse"} per tutte le leghe!`);
-                }
-              },
               {
                 icon:"🏪",
                 title:"Mercato Market",
                 desc:`Compravendite — attualmente ${leagues.find(l=>l.id==="L002-F")?.marketOpen?"aperto":"chiuso"}`,
                 isOpen: leagues.find(l=>l.id==="L002-F")?.marketOpen,
-                action:()=>{setLeagues(ls=>ls.map(l=>l.type==="market"?{...l,marketOpen:!l.marketOpen}:l));showNotif("Mercato Market aggiornato!");}
+                action: async () => {
+                  const newMarket = !leagues.find(l=>l.id==="L002-F")?.marketOpen;
+                  setLeagues(ls=>ls.map(l=>l.type==="market"?{...l,marketOpen:newMarket}:l));
+                  showNotif(`Mercato Market ${newMarket?"aperto":"chiuso"}!`);
+                  try {
+                    const db = await supabase.from("league_settings", accessToken);
+                    for (const lid of ["L002-F","L002-M"]) {
+                      await db.upsert({league_id:lid,market_open:newMarket,updated_at:new Date().toISOString()},"league_id");
+                    }
+                  } catch(e) { console.warn("Errore salvataggio settings:", e); }
+                }
               },
               {
                 icon:"🔄",
