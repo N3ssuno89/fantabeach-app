@@ -48,11 +48,13 @@ exports.handler = async (event) => {
     const sheets = google.sheets({ version: "v4", auth });
 
     // Legge tutto in parallelo
-    const [mappingRes, rankMRes, rankWRes, eventsRes] = await Promise.all([
+    const [mappingRes, rankMRes, rankWRes, eventsRes, coachesRes] = await Promise.all([
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "PLAYER_MAPPING!A:C" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_M!A:D" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_W!A:D" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "EVENTS_DB!A:K" })
+        .catch(() => ({ data: { values: [] } })),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "COACHES_DB!A:D" })
         .catch(() => ({ data: { values: [] } })),
     ]);
 
@@ -219,6 +221,33 @@ exports.handler = async (event) => {
       else console.error("Events upsert error:", await res.text());
     }
 
+    // ── Coach — legge da COACHES_DB e salva su Supabase ──
+    const coachRows = coachesRes?.data?.values || [];
+    const coachHeader = (coachRows[0] || []).map(h => (h||"").trim().toLowerCase());
+    const ci = n => { const i = coachHeader.indexOf(n); return i >= 0 ? i : null; };
+    const coaches = coachRows.slice(1).filter(r => r[0]?.trim()).map(row => ({
+      id:     row[ci("coach id") ?? 0]?.trim() || row[0]?.trim(),
+      name:   `${row[ci("cognome") ?? 2]?.trim() || ""} ${row[ci("nome") ?? 1]?.trim() || ""}`.trim(),
+      active: true,
+    })).filter(c => c.id);
+
+    let coachesSaved = 0;
+    if (coaches.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+      const supaHeaders = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/coaches?on_conflict=id`, {
+        method: "POST",
+        headers: supaHeaders,
+        body: JSON.stringify(coaches),
+      });
+      if (res.ok) coachesSaved = coaches.length;
+      else console.error("Coaches upsert error:", await res.text());
+    }
+
     return {
       statusCode: 200,
       headers,
@@ -226,8 +255,10 @@ exports.handler = async (event) => {
         women,
         men,
         events,
+        coaches,
         savedCount,
         eventsSaved,
+        coachesSaved,
         updatedAt: new Date().toISOString(),
       }),
     };
