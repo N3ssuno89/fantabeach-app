@@ -2979,7 +2979,6 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
       }
 
       // Partita normale: raggruppa per opponent
-      // Ogni gruppo ha lo stesso opponent = sono la stessa coppia
       const groups = {};
       matchRows.forEach(r => {
         const key = r.opponent || "";
@@ -2989,42 +2988,44 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
       const groupEntries = Object.entries(groups);
 
-      // Gruppo 1: questi giocatori hanno come opponent il nome del gruppo 2
-      // Il nome reale del gruppo 1 = opponent del gruppo 2 e viceversa
       if (groupEntries.length < 2) {
-        // Fallback: una sola coppia trovata
         const g = groupEntries[0]?.[1] || matchRows;
         const names = g.slice(0,2).map(r => getPlayerName(r.player_id)).filter(Boolean).join(" - ");
+        const oppRaw = g[0]?.opponent || "";
+        const oppNames = oppRaw ? oppRaw.split(" - ").map(n => extractSurname(n.trim())).join(" - ") : "—";
         return {
           phase: first.phase, result: g[0]?.result || "—",
           score: g[0]?.score || "", isBye: false,
-          teamA: names, teamB: g[0]?.opponent ? extractSurname(g[0].opponent.split(" - ")[0]) + " - " + extractSurname(g[0].opponent.split(" - ")[1] || "") : "—",
+          teamA: names, teamB: oppNames,
           winA: g[0]?.result?.startsWith("2") || false,
-          winB: !g[0]?.result?.startsWith("2"),
+          winB: !(g[0]?.result?.startsWith("2") || false),
           myInMatch: matchRows.filter(r => myPlayerIds.has(r.player_id)),
           _rows: matchRows,
         };
       }
 
-      // Gruppo A = quello che ha result "2-x" (ha vinto) — o il primo se nessuno ha vinto
+      // Coppia A = gruppo con player_id numericamente più basso
+      // (la sync salva prima coppia A poi coppia B, W0013 < W0036 → ZANON è coppia A)
       const [key1, rows1] = groupEntries[0];
       const [key2, rows2] = groupEntries[1];
-      const group1Wins = rows1[0]?.result?.startsWith("2");
-      const [rowsA, rowsB] = group1Wins ? [rows1, rows2] : [rows2, rows1];
+      const minId1 = Math.min(...rows1.map(r => parseInt(r.player_id.slice(1))));
+      const minId2 = Math.min(...rows2.map(r => parseInt(r.player_id.slice(1))));
+      const [rowsA, rowsB] = minId1 < minId2 ? [rows1, rows2] : [rows2, rows1];
 
-      // Nome coppia A = cognomi dai player_id
+      // Nome coppia A dai player_id (cognomi reali)
       const teamANames = rowsA.slice(0,2)
         .map(r => getPlayerName(r.player_id)).filter(Boolean).join(" - ");
 
-      // Nome coppia B = opponent delle righe di A (già è il nome della coppia B)
+      // Nome coppia B dall'opponent di coppia A
       const teamBRaw = rowsA[0]?.opponent || "";
       const teamBNames = teamBRaw
         ? teamBRaw.split(" - ").map(n => extractSurname(n.trim())).join(" - ")
         : "";
 
-      const winA = rowsA[0]?.result?.startsWith("2") || false;
+      // Risultato dalla prospettiva di coppia A (non riordinare mai)
+      const resultA = rowsA[0]?.result || "—";
+      const winA = resultA.startsWith("2");
       const winB = !winA;
-      const myInMatch = matchRows.filter(r => myPlayerIds.has(r.player_id));
 
       return {
         phase: first.phase,
