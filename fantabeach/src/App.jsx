@@ -720,9 +720,18 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         })));
       }
 
-      // ── Coach da DB (fallback a hardcoded se DB vuoto) ──
+      // ── Coach da DB (sostituisce hardcoded se DB ha dati) ──
       if (Array.isArray(coachesRes) && coachesRes.length > 0) {
-        setCoachesList(coachesRes.map(c => ({ ...c, athletes: [] })));
+        const mapped = coachesRes
+          .filter(c => c.active !== false)
+          .map(c => ({
+            id: c.id,
+            name: c.name || "",
+            cost: c.cost || 5,
+            athletes: [],
+          }));
+        console.log(`[coaches] caricati ${mapped.length} coach da Supabase`);
+        setCoachesList(mapped);
       }
 
       // ── Profilo e ruolo ──
@@ -1273,7 +1282,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 )}
 
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {coachesList.filter(c=>league.gender==="F"?c.id.startsWith("C00"):true).map(c=>{
+                  {coachesList.filter(c => c.active !== false).map(c=>{
                     const isSelected = myCoach===c.id;
                     return(
                       <div key={c.id} style={{background:isSelected?B.greenPale:B.white,border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isSelected?B.greenDark:B.creamDark}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
