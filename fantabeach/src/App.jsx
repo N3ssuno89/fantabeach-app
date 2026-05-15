@@ -829,12 +829,23 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       if (Array.isArray(lineupRes)) {
         const newLineups  = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         const newCaptains = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
+        // Per ogni lega prendi solo le righe dell'event_id più recente (saved_at DESC)
+        // evita di sommare lineup di tappe diverse
+        const byLeague = {};
         lineupRes.forEach(l => {
-          if (newLineups[l.league_id] !== undefined) {
+          if (!byLeague[l.league_id]) byLeague[l.league_id] = [];
+          byLeague[l.league_id].push(l);
+        });
+        Object.entries(byLeague).forEach(([lid, rows]) => {
+          if (newLineups[lid] === undefined) return;
+          // Prendi l'event_id più recente (maggiore saved_at)
+          const latestEvent = rows.reduce((best, r) =>
+            !best || (r.saved_at || "") > (best.saved_at || "") ? r : best, null)?.event_id;
+          rows.filter(r => r.event_id === latestEvent).forEach(l => {
             if (l.role === "titolare" || l.role === "capitano")
-              newLineups[l.league_id].push(l.player_id);
-            if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
-          }
+              newLineups[lid].push(l.player_id);
+            if (l.role === "capitano") newCaptains[lid] = l.player_id;
+          });
         });
         setLineups(newLineups);
         setCaptains(newCaptains);
@@ -1123,7 +1134,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
@@ -1178,7 +1189,45 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   ))}
                 </div>
 
-                <div style={{fontSize:11,color:B.gray,marginBottom:8}}>{filtered.length} atleti</div>
+                <div style={{fontSize:11,color:B.gray,marginBottom:8}}>{filtered.length} atleti{roster.length>0?` · ${roster.length} nel tuo roster`:""}</div>
+
+                {/* Box atleti nel mio roster — sempre in cima */}
+                {roster.length>0&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>
+                      🏖️ Nel mio roster ({roster.length}/5)
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {roster.map(a=>{
+                        const cat=getCategory(a.ranking);
+                        const diff=a.cost-a.prevCost;
+                        return(
+                          <div key={a.id} style={{background:B.greenPale,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${B.greenDark}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>{setSelectedAthlete(a);setTab(0);}}>
+                            <div style={{width:34,height:34,borderRadius:8,flexShrink:0,overflow:"hidden",background:B.greenDark,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                              {ATHLETE_PHOTOS[a.id]
+                                ?<img src={ATHLETE_PHOTOS[a.id]} alt={a.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}}/>
+                                :<span style={{color:B.white,fontWeight:"bold",fontSize:11}}>#{a.ranking}</span>
+                              }
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{color:B.greenDark,fontWeight:"bold",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+                              <div style={{display:"flex",gap:5,marginTop:3,alignItems:"center"}}>
+                                <span style={{fontSize:10,padding:"1px 7px",borderRadius:8,background:cat.bg,color:cat.text,fontWeight:"bold"}}>{cat.label}</span>
+                                {diff!==0&&<span style={{fontSize:10,color:diff>0?B.greenDark:B.orange,fontWeight:"bold"}}>{diff>0?"▲":"▼"}${Math.abs(diff)}</span>}
+                                {isStarter(a)&&<span style={{fontSize:10,color:B.orange,fontWeight:"bold"}}>{isCaptain(a)?"★ Cap":"Titolare"}</span>}
+                              </div>
+                            </div>
+                            <div style={{textAlign:"center",flexShrink:0,marginRight:4}}>
+                              <div style={{color:B.orange,fontWeight:"bold",fontSize:17}}>${a.cost}</div>
+                            </div>
+                            <button onClick={e=>{e.stopPropagation();handleSell(a);}} style={{padding:"7px 11px",borderRadius:8,border:canTrade()?`1px solid ${B.orange}`:`1px solid ${B.grayLight}`,background:canTrade()?B.orangePale:B.grayPale,color:canTrade()?B.orange:B.gray,fontSize:11,fontWeight:"bold",cursor:"pointer",flexShrink:0,fontFamily:"Georgia,serif"}}>{canTrade()?"Vendi":"Bloccato"}</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{height:1,background:B.sandDeep,margin:"14px 0"}}/>
+                  </div>
+                )}
 
                 <div style={{display:"flex",flexDirection:"column",gap:7}}>
                   {visibleAthletes.map(a=>{
@@ -2122,10 +2171,11 @@ function MenuPage({ title, emoji, onBack, children }) {
 }
 
 // ─── PAGINA PROFILO ───────────────────────────────────────────
-function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, onBack }) {
+function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, leagueId, onBack }) {
   const username = authUser?.user_metadata?.username || authUser?.email?.split("@")[0] || "—";
   const legheAttive = Object.values(joinStatus).filter(s=>s==="APPROVED").length;
   const [transfers, setTransfers] = React.useState(null);
+  const [filterLeague, setFilterLeague] = React.useState(leagueId || "L001-F");
 
   useEffect(() => {
     if (!accessToken || !authUser?.id) return;
@@ -2133,12 +2183,14 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, on
       try {
         const db = await supabase.from("transfer_history", accessToken);
         const rows = await db.select("*",
-          `&user_id=eq.${authUser.id}&order=created_at.desc&limit=30`);
+          `&user_id=eq.${authUser.id}&league_id=eq.${filterLeague}&order=created_at.desc&limit=30`);
         setTransfers(Array.isArray(rows) ? rows : []);
       } catch(e) { setTransfers([]); }
     };
     load();
-  }, [authUser?.id]);
+  }, [authUser?.id, filterLeague]);
+
+  const LEGHE = [{id:"L001-F",name:"Classic F"},{id:"L001-M",name:"Classic M"},{id:"L002-F",name:"Market F"},{id:"L002-M",name:"Market M"}];
 
   return (
     <MenuPage title="Il mio profilo" emoji="👤" onBack={onBack}>
@@ -2157,30 +2209,43 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, on
       {/* Leghe */}
       <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:12,padding:"14px",marginTop:8,marginBottom:14}}>
         <div style={{fontWeight:"bold",fontSize:13,color:B.greenDark,marginBottom:6}}>Le mie leghe</div>
-        {[{id:"L001-F",name:"Classic F"},{id:"L001-M",name:"Classic M"},{id:"L002-F",name:"Market F"},{id:"L002-M",name:"Market M"}].map(l=>(
-          <div key={l.id} style={{padding:"8px 0",borderBottom:`1px solid ${B.greenDark}22`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:13,color:B.dark,fontWeight:"bold"}}>{l.name}</span>
-              <span style={{fontSize:11,fontWeight:"bold",padding:"2px 10px",borderRadius:20,
-                background:joinStatus[l.id]==="APPROVED"?B.greenDark:joinStatus[l.id]==="PENDING"?B.yellowPale:B.grayPale,
-                color:joinStatus[l.id]==="APPROVED"?B.white:joinStatus[l.id]==="PENDING"?"#7A4F00":B.gray}}>
-                {joinStatus[l.id]==="APPROVED"?"✓ Iscritto":joinStatus[l.id]==="PENDING"?"⏳ In attesa":"Non iscritto"}
-              </span>
+        {LEGHE.map(l=>{
+          const isActive = l.id === leagueId;
+          return (
+            <div key={l.id} style={{padding:"8px 0",borderBottom:`1px solid ${B.greenDark}22`,background:isActive?"rgba(45,92,79,0.05)":"transparent",borderRadius:isActive?6:0,paddingLeft:isActive?6:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:B.dark,fontWeight:isActive?"bold":"normal"}}>
+                  {isActive&&"→ "}{l.name}
+                </span>
+                <span style={{fontSize:11,fontWeight:"bold",padding:"2px 10px",borderRadius:20,
+                  background:joinStatus[l.id]==="APPROVED"?B.greenDark:joinStatus[l.id]==="PENDING"?B.yellowPale:B.grayPale,
+                  color:joinStatus[l.id]==="APPROVED"?B.white:joinStatus[l.id]==="PENDING"?"#7A4F00":B.gray}}>
+                  {joinStatus[l.id]==="APPROVED"?"✓ Iscritto":joinStatus[l.id]==="PENDING"?"⏳ In attesa":"Non iscritto"}
+                </span>
+              </div>
+              {teamNames?.[l.id] && joinStatus[l.id]==="APPROVED" && (
+                <div style={{fontSize:12,color:B.greenDark,marginTop:3,fontWeight:isActive?"bold":"normal"}}>
+                  🏖️ {teamNames[l.id]}{isActive&&" ← lega attiva"}
+                </div>
+              )}
             </div>
-            {teamNames?.[l.id] && joinStatus[l.id]==="APPROVED" && (
-              <div style={{fontSize:11,color:B.greenDark,marginTop:3}}>🏖️ {teamNames[l.id]}</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Storico trasferimenti */}
+      {/* Storico trasferimenti filtrato per lega */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:14}}>
-        <div style={{fontWeight:"bold",fontSize:13,color:B.dark,marginBottom:10}}>📋 Storico Trasferimenti</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:"bold",fontSize:13,color:B.dark}}>📋 Storico Trasferimenti</div>
+          <select value={filterLeague} onChange={e=>{setFilterLeague(e.target.value);setTransfers(null);}}
+            style={{fontSize:11,border:`1px solid ${B.creamDark}`,borderRadius:8,padding:"3px 6px",background:B.white,color:B.dark,fontFamily:"Georgia,serif"}}>
+            {LEGHE.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
         {transfers === null
           ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>⏳ Caricamento...</div>
           : transfers.length === 0
-            ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>Nessun trasferimento ancora</div>
+            ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:11}}>Nessun trasferimento in {LEGHE.find(l=>l.id===filterLeague)?.name}</div>
             : transfers.map((t,i) => (
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
                 borderBottom:i<transfers.length-1?`1px solid ${B.creamDark}`:"none"}}>
@@ -2190,7 +2255,7 @@ function PageProfilo({ authUser, isAdmin, joinStatus, teamNames, accessToken, on
                     {t.player_name||t.player_id}
                   </div>
                   <div style={{fontSize:10,color:B.gray}}>
-                    {t.league_id} · {t.created_at?new Date(t.created_at).toLocaleDateString("it-IT"):""}
+                    {t.action==="buy"?"Acquistato":"Venduto"} · {t.created_at?new Date(t.created_at).toLocaleDateString("it-IT"):""}
                   </div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
