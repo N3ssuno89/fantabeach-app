@@ -644,7 +644,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [lineups, setLineups]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [captains, setCaptains]   = useState({"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null});
   const [coaches, setCoaches]     = useState({"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null});
-  const [coachInField, setCoachInField] = useState({"L001-F":true,"L001-M":true,"L002-F":true,"L002-M":true});
+  const [coachInField, setCoachInField] = useState({"L001-F":false,"L001-M":false,"L002-F":false,"L002-M":false});
   const [joinStatus, setJoinStatus] = useState(INIT_JOIN);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [joinTeamName, setJoinTeamName] = useState("");
@@ -725,10 +725,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       // ── Coach selezionati ──
       if (Array.isArray(coachSelectRes) && coachSelectRes.length > 0) {
         const newCoaches = {"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null};
+        const newCoachInField = {"L001-F":false,"L001-M":false,"L002-F":false,"L002-M":false};
         coachSelectRes.forEach(cs => {
-          if (newCoaches[cs.league_id] !== undefined) newCoaches[cs.league_id] = cs.coach_id;
+          if (newCoaches[cs.league_id] !== undefined) {
+            newCoaches[cs.league_id] = cs.coach_id;
+            newCoachInField[cs.league_id] = cs.in_field || false;
+          }
         });
         setCoaches(newCoaches);
+        setCoachInField(newCoachInField);
       }
 
       // ── Events da DB ──
@@ -1751,7 +1756,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{fontSize:10,color:B.gray}}>+0.5 pt per ogni vittoria se schierato</div>
                       </div>
                       {/* Toggle schierato/panchina */}
-                      <button onClick={()=>canTrade()&&setCoachInField(cf=>({...cf,[leagueId]:!cf[leagueId]}))}
+                      <button onClick={async ()=>{
+                        if (!canTrade()) return;
+                        const newVal = !coachInField[leagueId];
+                        setCoachInField(cf=>({...cf,[leagueId]:newVal}));
+                        try {
+                          const db = await supabase.from("coach_selections", accessToken);
+                          await db.update({in_field: newVal}, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+                        } catch(e) { console.warn("Errore salvataggio in_field:", e); }
+                      }}
                         style={{padding:"5px 10px",borderRadius:8,border:"none",cursor:canTrade()?"pointer":"default",fontFamily:"Georgia,serif",fontSize:10,fontWeight:"bold",
                           background:coachInField[leagueId]?B.greenDark:B.grayPale,
                           color:coachInField[leagueId]?B.white:B.gray}}>
