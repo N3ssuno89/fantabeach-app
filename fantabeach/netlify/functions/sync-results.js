@@ -155,6 +155,33 @@ exports.handler = async (event) => {
     const realTeamsRows = (realTeamsRes.data.values  || []).slice(1);
     const matchRows     = (matchesRes.data.values    || []).slice(1);
 
+    // ── Carica coach da Supabase per lookup cognome→ID ────────────────────
+    const coachNameToId = {};
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/coaches?select=id,name&active=eq.true`, {
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+        });
+        if (res.ok) {
+          const coaches = await res.json();
+          coaches.forEach(c => {
+            // Mappa sia nome completo che cognome (primo token)
+            const n = (c.name || "").toUpperCase().trim();
+            coachNameToId[n] = c.id;
+            const firstToken = n.split(" ")[0];
+            if (firstToken) coachNameToId[firstToken] = c.id;
+          });
+        }
+      } catch(e) { console.warn("Errore caricamento coach:", e.message); }
+    }
+
+    // Trova coach_id da stringa cognome
+    const findCoach = (name) => {
+      if (!name) return null;
+      const n = name.toUpperCase().trim();
+      return coachNameToId[n] || null;
+    };
+
     // ── 2. PLAYER_MAPPING: nome → {id, gender} ────────────────────────────
     const nameToPlayer = {};
     mappingRows.forEach(row => {
@@ -198,10 +225,12 @@ exports.handler = async (event) => {
       if (!p1Id) warnings.push(`REAL_TEAMS riga ${i+2}: "${name1}" non trovato in PLAYER_MAPPING`);
       if (!p2Id) warnings.push(`REAL_TEAMS riga ${i+2}: "${name2}" non trovato in PLAYER_MAPPING`);
 
+      const coachId = findCoach(coach); // converte cognome → ID (es. "Chiappini" → "C0001")
+
       // Chiave principale: event + entrambi i nomi (normalizzati, ordine non importa)
       const key1 = `${eventId}::${norm(name1)}::${norm(name2)}`;
       const key2 = `${eventId}::${norm(name2)}::${norm(name1)}`;
-      const teamEntry = { p1Id, p2Id, displayName: `${name1} - ${name2}`, coach };
+      const teamEntry = { p1Id, p2Id, displayName: `${name1} - ${name2}`, coach: coachId };
 
       teamMap[key1] = teamEntry;
       teamMap[key2] = teamEntry;
@@ -259,9 +288,9 @@ exports.handler = async (event) => {
       const fase     = row[2]?.trim();
       const coppiaA  = row[4]?.trim();
       const coppiaB  = row[5]?.trim();
-      const coachAIn = (row[12] || "").trim().toUpperCase() === "SI";
-      const coachBIn = (row[13] || "").trim().toUpperCase() === "SI";
-      const forfeit  = (row[14] || "").trim().toUpperCase(); // "A", "B", ""
+      const coachAIn = ["SI","1","YES","TRUE"].includes((row[12] || "").trim().toUpperCase());
+      const coachBIn = ["SI","1","YES","TRUE"].includes((row[13] || "").trim().toUpperCase());
+      const forfeit  = (row[14] || "").trim().toUpperCase();
 
       if (!eventId || !fase || !coppiaA) return;
       if (filterEventId && eventId !== filterEventId) return;
@@ -293,6 +322,7 @@ exports.handler = async (event) => {
             result: "BYE", score: "", is_bye: true,
             base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
             bonus_codes: b.codes, opponent: "",
+            coach_id: teamA.coach || null,
           });
         });
         return;
@@ -311,6 +341,7 @@ exports.handler = async (event) => {
           result: res.resultA, score: res.scoreStr, is_bye: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaB,
+          coach_id: teamA.coach || null,
         });
       });
 
@@ -323,6 +354,7 @@ exports.handler = async (event) => {
           result: res.resultB, score: res.scoreStr, is_bye: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaA,
+          coach_id: teamB.coach || null,
         });
       });
     });
