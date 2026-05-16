@@ -1676,8 +1676,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                     return (
                       <>
-                        {/* Coach schierato: PRIMA del totale */}
-                        {coachOnField && coachBox}
+                        {/* Coach sempre PRIMA del totale */}
+                        {coachBox}
                         <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                           <div>
                             <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
@@ -1689,8 +1689,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                             {(tot+coachPts)>0?`+${(tot+coachPts).toFixed(1)}`:(tot+coachPts).toFixed(1)} pt
                           </span>
                         </div>
-                        {/* Coach in panchina: DOPO il totale, opaco */}
-                        {!coachOnField && coachBox}
                       </>
                     );
                   })()}
