@@ -918,7 +918,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const canSelectCoach = () => {
     if (myJoin !== "APPROVED") return false;
     if (tappaInCorso2026) return false;
-    if (league.type === "classic") return true;
+    if (league.type === "classic") return !tappaCompletata2026;
     return league.marketOpen;
   };
 
