@@ -1607,7 +1607,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       tot += grandTotal * (et.weight||1) * (isCaptain(a) ? 1.3 : 1);
                     });
 
-                    // Calcola punti coach separatamente
+                    // Punti coach — solo se schierato in campo
                     let coachPts = 0;
                     const coachBox = currentCoach ? (()=>{
                       const coachMatches = eventMatches.filter(m =>
@@ -1618,23 +1618,37 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         if (!byMatch[m.match_index]) byMatch[m.match_index] = m;
                       });
                       const uniqueMatches = Object.values(byMatch);
-                      coachPts = uniqueMatches.reduce((s, m) => {
-                        const codes = m.bonus_codes || [];
-                        if (codes.includes("coachWin")) return s + 0.5;
-                        if (codes.includes("coachMalus")) return s - 1;
-                        return s;
-                      }, 0);
+                      // Punti coach contano SOLO se schierato
+                      if (coachOnField) {
+                        coachPts = uniqueMatches.reduce((s, m) => {
+                          const codes = m.bonus_codes || [];
+                          if (codes.includes("coachWin")) return s + 0.5;
+                          if (codes.includes("coachMalus")) return s - 1;
+                          return s;
+                        }, 0);
+                      }
+                      const isOnField = coachOnField;
                       return (
-                        <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:12,overflow:"hidden",marginBottom:10}}>
-                          <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,background:"rgba(245,166,35,0.15)"}}>
+                        <div style={{
+                          background: isOnField ? B.yellowPale : B.grayPale,
+                          border: `1px solid ${isOnField ? B.yellow : B.grayLight}`,
+                          borderRadius:12, overflow:"hidden", marginBottom:10,
+                          opacity: isOnField ? 1 : 0.65,
+                        }}>
+                          <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,
+                            background: isOnField ? "rgba(245,166,35,0.15)" : "transparent"}}>
                             <span style={{fontSize:20}}>🧢</span>
                             <div style={{flex:1}}>
-                              <div style={{fontSize:12,fontWeight:"bold",color:"#7A4F00"}}>{currentCoach.name}</div>
-                              <div style={{fontSize:10,color:"#9A6700"}}>{coachOnField?"Schierato":"In panchina"} · {uniqueMatches.length} partite</div>
+                              <div style={{fontSize:12,fontWeight:"bold",color:isOnField?"#7A4F00":B.gray}}>
+                                {currentCoach.name}
+                              </div>
+                              <div style={{fontSize:10,color:isOnField?"#9A6700":B.gray}}>
+                                {isOnField?"Schierato — punti conteggiati":"In panchina — punti non conteggiati"}
+                              </div>
                             </div>
-                            <div style={{fontWeight:"bold",fontSize:16,color:coachPts>0?B.greenDark:coachPts<0?B.orange:"#7A4F00"}}>
+                            {isOnField&&<div style={{fontWeight:"bold",fontSize:16,color:coachPts>0?B.greenDark:coachPts<0?B.orange:"#7A4F00"}}>
                               {coachPts>0?`+${coachPts}`:coachPts} pt
-                            </div>
+                            </div>}
                           </div>
                           {uniqueMatches.map((m, i) => {
                             const codes = m.bonus_codes || [];
@@ -1644,15 +1658,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                             const opp1 = oppParts[0]?.split(" ").slice(0,-1).join(" ") || oppParts[0] || "—";
                             const opp2 = oppParts[1]?.split(" ").slice(0,-1).join(" ") || oppParts[1] || "";
                             return (
-                              <div key={i} style={{padding:"7px 14px",borderTop:`1px solid ${B.yellow}44`,display:"flex",alignItems:"center",gap:8}}>
+                              <div key={i} style={{padding:"7px 14px",borderTop:`1px solid ${isOnField?B.yellow+"44":B.grayLight}`,display:"flex",alignItems:"center",gap:8}}>
                                 <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:"bold",
                                   background:m.result?.startsWith("2")?B.greenDark:B.orange,
                                   color:B.white,flexShrink:0}}>{m.result||"—"}</span>
                                 <div style={{flex:1,fontSize:11,color:B.gray}}>{m.phase} vs {opp1}{opp2?` - ${opp2}`:""}</div>
-                                <div style={{fontSize:11,fontWeight:"bold",
+                                {isOnField&&<div style={{fontSize:11,fontWeight:"bold",
                                   color:hasWin?B.greenDark:hasMalus?B.orange:B.gray,flexShrink:0}}>
                                   {hasWin?"+0.5":hasMalus?"-1":"0"} pt
-                                </div>
+                                </div>}
                               </div>
                             );
                           })}
@@ -1662,18 +1676,20 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                     return (
                       <>
+                        {/* Coach schierato: PRIMA del totale */}
                         {coachOnField && coachBox}
-                        <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:coachOnField?16:10}}>
+                        <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                           <div>
                             <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
                             <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>
-                              Titolari · ×{et.weight} {et.label}{coachPts!==0?` · Coach ${coachPts>0?"+":""}${coachPts}`:``}
+                              Titolari · ×{et.weight} {et.label}{coachOnField&&coachPts!==0?` · Coach ${coachPts>0?"+":""}${coachPts}`:""}
                             </div>
                           </div>
                           <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>
                             {(tot+coachPts)>0?`+${(tot+coachPts).toFixed(1)}`:(tot+coachPts).toFixed(1)} pt
                           </span>
                         </div>
+                        {/* Coach in panchina: DOPO il totale, opaco */}
                         {!coachOnField && coachBox}
                       </>
                     );
