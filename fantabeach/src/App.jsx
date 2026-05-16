@@ -1399,15 +1399,17 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
               // Calcola partite di un atleta con punti per partita
               const calcPlayerMatches = (athlete) => {
-                // Cerca i risultati per player_id — matching diretto, zero ambiguità
                 const playerMatches = eventMatches.filter(m => m.player_id === athlete.id);
                 let grandTotal = 0;
                 const matchResults = playerMatches.map(m => {
-                  const totalPts = (m.base_pts || 0) + (m.bonus_pts || 0);
-                  grandTotal += totalPts;
-                  // Converti bonus_codes in extraBonuses (tutti tranne il primo che è base)
                   const codes = m.bonus_codes || [];
-                  const baseCodes = ["win20","win21","loss12","loss02","bye","forfait"];
+                  // Rimuovi coachWin/coachMalus dal calcolo atleta
+                  // Il bonus coach viene calcolato separatamente
+                  const coachWinPts = codes.includes("coachWin") ? 0.5 : 0;
+                  const coachMalusPts = codes.includes("coachMalus") ? 1 : 0;
+                  const totalPts = (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts + coachMalusPts;
+                  grandTotal += totalPts;
+                  const baseCodes = ["win20","win21","loss12","loss02","bye","forfait","coachWin","coachMalus"];
                   const extraBonuses = codes.filter(c => !baseCodes.includes(c));
                   return {
                     phase: m.phase,
@@ -1417,7 +1419,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     isBye: m.is_bye || false,
                     basePts: m.base_pts || 0,
                     extraBonuses,
-                    extraPts: m.bonus_pts || 0,
+                    extraPts: (m.bonus_pts || 0) - coachWinPts + coachMalusPts,
                     totalPts,
                   };
                 });
