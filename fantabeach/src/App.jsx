@@ -1598,75 +1598,73 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       const {grandTotal} = calcPlayerMatches(a);
                       tot += grandTotal * (et.weight||1) * (isCaptain(a) ? 1.3 : 1);
                     });
-                    return (
-                      <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                        <div>
-                          <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
-                          <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>Solo titolari · ×{et.weight} {et.label}</div>
-                        </div>
-                        <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
-                      </div>
-                    );
-                  })()}
-                  {/* Box Coach — partite e punti */}
-                  {currentCoach&&(()=>{
-                    const coachMatches = eventMatches.filter(m =>
-                      m.coach_id === currentCoach.id && !m.is_bye
-                    );
-                    // Raggruppa per match_index per mostrare una riga per partita
-                    const byMatch = {};
-                    coachMatches.forEach(m => {
-                      if (!byMatch[m.match_index]) byMatch[m.match_index] = m;
-                    });
-                    const uniqueMatches = Object.values(byMatch);
-                    const coachPts = uniqueMatches.reduce((s, m) => {
-                      const codes = m.bonus_codes || [];
-                      if (codes.includes("coachWin")) return s + 0.5;
-                      if (codes.includes("coachMalus")) return s - 1;
-                      return s;
-                    }, 0);
 
-                    return (
-                      <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
-                        <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,background:"rgba(245,166,35,0.15)"}}>
-                          <span style={{fontSize:20}}>🧢</span>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:12,fontWeight:"bold",color:"#7A4F00"}}>{currentCoach.name}</div>
-                            <div style={{fontSize:10,color:"#9A6700"}}>{uniqueMatches.length} partite seguite</div>
+                    // Box coach — partite e punti
+                    const coachBox = currentCoach ? (()=>{
+                      const coachMatches = eventMatches.filter(m =>
+                        m.coach_id === currentCoach.id && !m.is_bye
+                      );
+                      const byMatch = {};
+                      coachMatches.forEach(m => {
+                        if (!byMatch[m.match_index]) byMatch[m.match_index] = m;
+                      });
+                      const uniqueMatches = Object.values(byMatch);
+                      const coachPts = uniqueMatches.reduce((s, m) => {
+                        const codes = m.bonus_codes || [];
+                        if (codes.includes("coachWin")) return s + 0.5;
+                        if (codes.includes("coachMalus")) return s - 1;
+                        return s;
+                      }, 0);
+                      return (
+                        <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:12,overflow:"hidden",marginBottom:10}}>
+                          <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,background:"rgba(245,166,35,0.15)"}}>
+                            <span style={{fontSize:20}}>🧢</span>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:12,fontWeight:"bold",color:"#7A4F00"}}>{currentCoach.name}</div>
+                              <div style={{fontSize:10,color:"#9A6700"}}>{coachOnField?"Schierato":"In panchina"} · {uniqueMatches.length} partite</div>
+                            </div>
+                            <div style={{fontWeight:"bold",fontSize:16,color:coachPts>0?B.greenDark:coachPts<0?B.orange:"#7A4F00"}}>
+                              {coachPts>0?`+${coachPts}`:coachPts} pt
+                            </div>
                           </div>
-                          <div style={{fontWeight:"bold",fontSize:16,color:coachPts>0?B.greenDark:coachPts<0?B.orange:"#7A4F00"}}>
-                            {coachPts>0?`+${coachPts}`:coachPts} pt
-                          </div>
-                        </div>
-                        {uniqueMatches.length === 0
-                          ? <div style={{padding:"12px 14px",fontSize:11,color:B.gray}}>Nessuna partita registrata per questo coach</div>
-                          : uniqueMatches.map((m, i) => {
+                          {uniqueMatches.map((m, i) => {
                             const codes = m.bonus_codes || [];
                             const hasWin = codes.includes("coachWin");
                             const hasMalus = codes.includes("coachMalus");
-                            const pts = hasWin ? +0.5 : hasMalus ? -1 : 0;
-                            // Nomi coppia dall'opponent
                             const oppParts = (m.opponent||"").split(" - ");
                             const opp1 = oppParts[0]?.split(" ").slice(0,-1).join(" ") || oppParts[0] || "—";
                             const opp2 = oppParts[1]?.split(" ").slice(0,-1).join(" ") || oppParts[1] || "";
                             return (
-                              <div key={i} style={{padding:"8px 14px",borderTop:`1px solid ${B.yellow}44`,display:"flex",alignItems:"center",gap:8}}>
+                              <div key={i} style={{padding:"7px 14px",borderTop:`1px solid ${B.yellow}44`,display:"flex",alignItems:"center",gap:8}}>
                                 <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:"bold",
                                   background:m.result?.startsWith("2")?B.greenDark:B.orange,
                                   color:B.white,flexShrink:0}}>{m.result||"—"}</span>
-                                <div style={{flex:1,fontSize:11,color:B.gray}}>
-                                  {m.phase} vs {opp1}{opp2?` - ${opp2}`:""}
-                                </div>
+                                <div style={{flex:1,fontSize:11,color:B.gray}}>{m.phase} vs {opp1}{opp2?` - ${opp2}`:""}</div>
                                 <div style={{fontSize:11,fontWeight:"bold",
                                   color:hasWin?B.greenDark:hasMalus?B.orange:B.gray,flexShrink:0}}>
                                   {hasWin?"+0.5":hasMalus?"-1":"0"} pt
-                                  {hasWin?" ✓":hasMalus?" ✗":" —"}
                                 </div>
                               </div>
                             );
-                          })
-                        }
-                      </div>
+                          })}
+                        </div>
+                      );
+                    })() : null;
+
+                    return (
+                      <>
+                        {/* Se coach schierato: appare dopo i titolari ma prima del totale */}
+                        {coachOnField && coachBox}
+                        <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:coachOnField?16:10}}>
+                          <div>
+                            <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
+                            <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>Solo titolari · ×{et.weight} {et.label}</div>
+                          </div>
+                          <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
+                        </div>
+                        {/* Se coach in panchina: appare dopo il totale */}
+                        {!coachOnField && coachBox}
+                      </>
                     );
                   })()}
                 </div>
