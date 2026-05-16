@@ -1601,7 +1601,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       tot += grandTotal * (et.weight||1) * (isCaptain(a) ? 1.3 : 1);
                     });
 
-                    // Box coach — partite e punti
+                    // Calcola punti coach separatamente
+                    let coachPts = 0;
                     const coachBox = currentCoach ? (()=>{
                       const coachMatches = eventMatches.filter(m =>
                         m.coach_id === currentCoach.id && !m.is_bye
@@ -1611,7 +1612,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         if (!byMatch[m.match_index]) byMatch[m.match_index] = m;
                       });
                       const uniqueMatches = Object.values(byMatch);
-                      const coachPts = uniqueMatches.reduce((s, m) => {
+                      coachPts = uniqueMatches.reduce((s, m) => {
                         const codes = m.bonus_codes || [];
                         if (codes.includes("coachWin")) return s + 0.5;
                         if (codes.includes("coachMalus")) return s - 1;
@@ -1655,16 +1656,18 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                     return (
                       <>
-                        {/* Se coach schierato: appare dopo i titolari ma prima del totale */}
                         {coachOnField && coachBox}
                         <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:coachOnField?16:10}}>
                           <div>
                             <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Punteggio totale</div>
-                            <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>Solo titolari · ×{et.weight} {et.label}</div>
+                            <div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>
+                              Titolari · ×{et.weight} {et.label}{coachPts!==0?` · Coach ${coachPts>0?"+":""}${coachPts}`:``}
+                            </div>
                           </div>
-                          <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>{tot>0?`+${tot.toFixed(1)}`:tot.toFixed(1)} pt</span>
+                          <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>
+                            {(tot+coachPts)>0?`+${(tot+coachPts).toFixed(1)}`:(tot+coachPts).toFixed(1)} pt
+                          </span>
                         </div>
-                        {/* Se coach in panchina: appare dopo il totale */}
                         {!coachOnField && coachBox}
                       </>
                     );
