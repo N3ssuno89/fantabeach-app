@@ -993,6 +993,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   };
 
   const handleRemoveCoach = async () => {
+    if (!canSelectCoach()) return showNotif("Mercato coach chiuso!","error");
     if (!myCoach) return;
     const c = coachesList.find(x=>x.id===myCoach);
     const cost = c?.cost || 0;
@@ -1345,7 +1346,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{color:B.dark,fontWeight:"bold",fontSize:14}}>{currentCoach.name}</div>
                         <div style={{color:B.gray,fontSize:11}}>${currentCoach.cost} · {currentCoach.athletes.length} atleti seguiti</div>
                       </div>
-                      <button onClick={handleRemoveCoach} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${B.orange}`,background:B.orangePale,color:B.orange,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif"}}>Rimuovi</button>
+                      {canSelectCoach()&&<button onClick={handleRemoveCoach} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${B.orange}`,background:B.orangePale,color:B.orange,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif"}}>Rimuovi</button>}
                     </div>
                   </div>
                 )}
