@@ -3025,6 +3025,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
       const resultA = rowsA[0]?.result || "—";
       const winA = resultA.startsWith("2");
       const winB = !winA;
+      const myInMatch = matchRows.filter(r => myPlayerIds.has(r.player_id));
 
       return {
         phase: first.phase,
