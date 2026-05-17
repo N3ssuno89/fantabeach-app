@@ -46,6 +46,17 @@ exports.handler = async (event) => {
       throw new Error(`Supabase error: ${err}`);
     }
 
+    // Invia notifica globale chiusura mercato
+    await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
+      method: "POST",
+      headers: { ...supaHeaders, "Prefer": "return=minimal" },
+      body: JSON.stringify({
+        user_id: null,
+        type: "market_closing",
+        message: "⏰ Il mercato Market è chiuso! Riaprirà lunedì alle 09:00.",
+      }),
+    });
+
     const now = new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" });
     console.log(`[close-market] Mercato chiuso alle ${now}${isManual?" (manuale)":""}`);
 
