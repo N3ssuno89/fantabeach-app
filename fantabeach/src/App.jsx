@@ -363,14 +363,36 @@ function AuthScreen({ onAuth }) {
       let data;
       if (mode === "signup") {
         if (!username.trim()) { setError("Inserisci uno username"); setLoading(false); return; }
+        if (username.trim().length < 3) { setError("Username troppo corto (min 3 caratteri)"); setLoading(false); return; }
+        if (password.length < 6) { setError("Password troppo corta (min 6 caratteri)"); setLoading(false); return; }
         data = await supabase.signUp(email, password, username);
-        if (data.error) { setError(data.error.message || "Errore registrazione"); setLoading(false); return; }
+        if (data.error) {
+          const msg = data.error.message || "";
+          if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("email"))
+            setError("Email già registrata. Prova ad accedere.");
+          else if (msg.includes("username") || msg.includes("profiles_username_unique") || msg.includes("duplicate"))
+            setError("Username già in uso. Scegline un altro.");
+          else if (msg.includes("password") || msg.includes("weak"))
+            setError("Password troppo debole. Usa almeno 6 caratteri.");
+          else
+            setError("Errore registrazione. Riprova.");
+          setLoading(false); return;
+        }
         // Dopo signup, fai subito login
         data = await supabase.signIn(email, password);
       } else {
         data = await supabase.signIn(email, password);
       }
-      if (data.error) { setError(data.error.message || "Email o password errati"); setLoading(false); return; }
+      if (data.error) {
+        const msg = data.error.message || "";
+        if (msg.includes("Invalid login") || msg.includes("invalid_credentials") || msg.includes("wrong"))
+          setError("Email o password errati.");
+        else if (msg.includes("not found") || msg.includes("no user"))
+          setError("Nessun account trovato con questa email.");
+        else
+          setError("Errore di accesso. Riprova.");
+        setLoading(false); return;
+      }
       if (data.access_token) {
         saveToken(data.access_token, data.refresh_token);
         onAuth(data.access_token, data.refresh_token, data.user);
@@ -2357,6 +2379,34 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     showNotif("Errore sync risultati: " + e.message, "error");
                   }
                   setSyncResultsLoading(false);
+                }
+              },
+              {
+                icon:"🔔",
+                title:"Test Reminder Mercato",
+                desc:"Invia notifica 'mercato chiude oggi' (simula giovedì mattina)",
+                isOpen: null,
+                action: async () => {
+                  try {
+                    const res = await fetch("/.netlify/functions/market-reminder", {method:"POST"});
+                    const data = await res.json();
+                    if (data.skipped) showNotif("Mercato già chiuso — reminder non inviato", "error");
+                    else { showNotif("✓ Reminder inviato!"); loadNotifications(accessToken, authUser.id); }
+                  } catch(e) { showNotif("Errore: " + e.message, "error"); }
+                }
+              },
+              {
+                icon:"🔒",
+                title:"Test Chiusura Mercato",
+                desc:"Chiude il mercato e notifica tutti (simula giovedì sera)",
+                isOpen: null,
+                action: async () => {
+                  try {
+                    await fetch("/.netlify/functions/close-market", {method:"POST"});
+                    setLeagues(ls=>ls.map(l=>l.type==="market"?{...l,marketOpen:false}:l));
+                    showNotif("✓ Mercato chiuso e utenti notificati!");
+                    loadNotifications(accessToken, authUser.id);
+                  } catch(e) { showNotif("Errore: " + e.message, "error"); }
                 }
               },
             ].map((item,i)=>(
