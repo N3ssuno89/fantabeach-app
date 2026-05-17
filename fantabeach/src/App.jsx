@@ -940,13 +940,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const loadNotifications = async (token, userId) => {
     if (!token || !userId) return;
     try {
+      // Prende la data di creazione account dell'utente per filtrare notifiche globali precedenti
+      const userCreatedAt = authUser?.created_at || new Date(0).toISOString();
       const db = await supabase.from("notifications", token);
       const rows = await db.select("*",
         `&or=(user_id.eq.${userId},user_id.is.null)&order=created_at.desc&limit=20`);
       if (Array.isArray(rows)) {
-        // Filtra quelle già lette (per notifiche globali usiamo localStorage)
         const readIds = JSON.parse(localStorage.getItem(`fb_notif_read_${userId}`) || "[]");
-        const unread = rows.filter(n => !n.read && !readIds.includes(n.id));
+        const unread = rows.filter(n => {
+          if (n.read || readIds.includes(n.id)) return false;
+          // Le notifiche globali (user_id=null) le mostra solo se create DOPO la registrazione
+          if (!n.user_id && n.created_at < userCreatedAt) return false;
+          return true;
+        });
         setInAppNotifs(unread);
       }
     } catch(e) { /* silenzioso */ }
@@ -1323,7 +1329,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         )}
 
         <div style={{display:"flex",background:B.sandDark,borderRadius:"10px 10px 0 0",padding:"4px 4px 0",marginLeft:-16,marginRight:-16,paddingLeft:10,paddingRight:10}}>
-          {TABS.filter(t => t.id !== 5 || isAdmin).map(t=>(
+          {TABS.filter(t => t.id !== 4 || isAdmin).map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"7px 2px 10px",border:"none",cursor:"pointer",background:tab===t.id?B.white:"transparent",color:tab===t.id?B.greenDark:"#333333",borderRadius:"8px 8px 0 0",fontSize:9,fontFamily:"Georgia,serif",fontWeight:tab===t.id?"bold":"normal",transition:"all .15s",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
               <span style={{fontSize:16,lineHeight:1}}>{t.emoji}</span>
               <span>{t.label}</span>
@@ -2182,7 +2188,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         await ndb.insert({
                           user_id: req.user_id,
                           type: "approved",
-                          message: `✅ La tua iscrizione a ${req.league_id} è stata approvata! Puoi ora acquistare atleti.`,
+                          message: `✅ Iscrizione alla lega ${{"L001-F":"Classic Femminile","L001-M":"Classic Maschile","L002-F":"Market Femminile","L002-M":"Market Maschile"}[req.league_id]||req.league_id} approvata! Puoi ora acquistare atleti.`,
                         });
                       } catch(e) { /* silenzioso */ }
                       setPendingRequests(r=>r.filter(x=>x.id!==req.id));
@@ -2194,6 +2200,16 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     try {
                       const db = await supabase.from("user_leagues",accessToken);
                       await db.update({status:"rejected"},`id=eq.${req.id}`);
+                      // Notifica all'utente del rifiuto
+                      try {
+                        const ndb = await supabase.from("notifications", accessToken);
+                        const lgName = {"L001-F":"Classic Femminile","L001-M":"Classic Maschile","L002-F":"Market Femminile","L002-M":"Market Maschile"}[req.league_id]||req.league_id;
+                        await ndb.insert({
+                          user_id: req.user_id,
+                          type: "rejected",
+                          message: `❌ La tua richiesta di iscrizione alla lega ${lgName} non è stata accettata. Contatta l'admin per info.`,
+                        });
+                      } catch(e) { /* silenzioso */ }
                       setPendingRequests(r=>r.filter(x=>x.id!==req.id));
                       showNotif(`${req.username} rifiutato`,"error");
                     } catch(e){ showNotif("Errore rifiuto","error"); }
