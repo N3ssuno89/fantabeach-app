@@ -898,16 +898,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const showNotif = (msg, type="success") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),2800); };
 
-  const loadNotifications = async (token, userId) => {
-    if (!token || !userId) return;
-    try {
-      const db = await supabase.from("notifications", token);
-      const rows = await db.select("*",
-        `&or=(user_id.eq.${userId},user_id.is.null)&read=eq.false&order=created_at.desc&limit=20`);
-      if (Array.isArray(rows)) setInAppNotifs(rows);
-    } catch(e) { /* silenzioso */ }
-  };
-
   useEffect(() => {
     if (!accessToken || !authUser) {
       if (notifPollRef.current) clearInterval(notifPollRef.current);
