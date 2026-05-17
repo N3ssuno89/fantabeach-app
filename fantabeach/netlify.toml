@@ -3,17 +3,25 @@
   command = "npm run build"
   publish = "dist"
 
-[build.environment]
-  NODE_VERSION = "20"
-
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Chiude il mercato Market ogni giovedì alle 23:00 ora italiana
 [functions.close-market]
   schedule = "0 21 * * 4"
 
+# Reminder mercato chiude oggi — giovedì alle 10:00 ora italiana
+[functions.market-reminder]
+  schedule = "0 8 * * 4"
+  
+[build.environment]
+  NODE_VERSION = "20"
+  
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+
+
