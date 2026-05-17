@@ -18,7 +18,10 @@ const supabase = {
       method:"POST", headers: this._headers,
       body: JSON.stringify({ email, password, data: { username } })
     });
-    return r.json();
+    const json = await r.json();
+    if (!r.ok && !json.error) json.error = { message: json.msg || "Errore", status: r.status };
+    if (json.error) json.error.status = r.status;
+    return json;
   },
   async signIn(email, password) {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
@@ -365,17 +368,30 @@ function AuthScreen({ onAuth }) {
         if (!username.trim()) { setError("Inserisci uno username"); setLoading(false); return; }
         if (username.trim().length < 3) { setError("Username troppo corto (min 3 caratteri)"); setLoading(false); return; }
         if (password.length < 6) { setError("Password troppo corta (min 6 caratteri)"); setLoading(false); return; }
+        // Verifica preventiva username duplicato
+        try {
+          const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?username=eq.${encodeURIComponent(username.trim())}&select=id`, {
+            headers: { "apikey": SUPABASE_ANON, "Authorization": `Bearer ${SUPABASE_ANON}` }
+          });
+          const existing = await r.json();
+          if (Array.isArray(existing) && existing.length > 0) {
+            setError("Username già in uso. Scegline un altro.");
+            setLoading(false); return;
+          }
+        } catch(e) { /* silenzioso, continua */ }
         data = await supabase.signUp(email, password, username);
         if (data.error) {
           const msg = data.error.message || "";
-          if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("email"))
+          const code = data.error.code || data.error.status || "";
+          console.log("Signup error:", JSON.stringify(data.error));
+          if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("email") || code === "user_already_exists" || data.status === 422 || code === 422)
             setError("Email già registrata. Prova ad accedere.");
-          else if (msg.includes("username") || msg.includes("profiles_username_unique") || msg.includes("duplicate"))
+          else if (msg.includes("username") || msg.includes("profiles_username_unique") || msg.includes("duplicate") || data.status === 500 || code === 500)
             setError("Username già in uso. Scegline un altro.");
           else if (msg.includes("password") || msg.includes("weak"))
             setError("Password troppo debole. Usa almeno 6 caratteri.");
           else
-            setError("Errore registrazione. Riprova.");
+            setError(`Errore: ${msg || "Riprova."}`);
           setLoading(false); return;
         }
         // Dopo signup, fai subito login
