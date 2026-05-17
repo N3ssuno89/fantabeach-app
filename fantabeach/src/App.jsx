@@ -649,6 +649,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [joinTeamName, setJoinTeamName] = useState("");
   const [notif, setNotif]         = useState(null);
+  const [inAppNotifs, setInAppNotifs] = useState([]);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const notifPollRef = React.useRef(null);
   const [popup, setPopup]         = useState(null);
   const [search, setSearch]       = useState("");
   const [catFilter, setCatFilter] = useState("Tutti");
@@ -883,7 +886,39 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const myCoach  = coaches[leagueId];
   const myJoin   = joinStatus[leagueId];
 
+  const loadNotifications = async (token, userId) => {
+    if (!token || !userId) return;
+    try {
+      const db = await supabase.from("notifications", token);
+      const rows = await db.select("*",
+        `&or=(user_id.eq.${userId},user_id.is.null)&read=eq.false&order=created_at.desc&limit=20`);
+      if (Array.isArray(rows)) setInAppNotifs(rows);
+    } catch(e) { /* silenzioso */ }
+  };
+
   const showNotif = (msg, type="success") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),2800); };
+
+  const loadNotifications = async (token, userId) => {
+    if (!token || !userId) return;
+    try {
+      const db = await supabase.from("notifications", token);
+      const rows = await db.select("*",
+        `&or=(user_id.eq.${userId},user_id.is.null)&read=eq.false&order=created_at.desc&limit=20`);
+      if (Array.isArray(rows)) setInAppNotifs(rows);
+    } catch(e) { /* silenzioso */ }
+  };
+
+  useEffect(() => {
+    if (!accessToken || !authUser) {
+      if (notifPollRef.current) clearInterval(notifPollRef.current);
+      return;
+    }
+    loadNotifications(accessToken, authUser.id);
+    notifPollRef.current = setInterval(() => {
+      loadNotifications(accessToken, authUser.id);
+    }, 60000);
+    return () => { if(notifPollRef.current) clearInterval(notifPollRef.current); };
+  }, [accessToken, authUser?.id]);
   // Tappa in corso per questo genere (anno 2026)
   const tappaInCorso2026 = events.find(e =>
     e.status === "In corso" &&
@@ -1142,11 +1177,62 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{width:12,height:2,borderRadius:1,background:B.dark}}/>
           </button>
           <LogoFull/>
-          <div style={{background:B.white,border:`1px solid ${B.sandDeep}`,borderRadius:30,padding:"6px 14px",textAlign:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {/* Badge notifiche */}
+            <button onClick={()=>setShowNotifPanel(p=>!p)} style={{position:"relative",background:"none",border:"none",cursor:"pointer",padding:6}}>
+              <span style={{fontSize:20}}>🔔</span>
+              {inAppNotifs.length>0&&(
+                <span style={{position:"absolute",top:0,right:0,background:B.orange,color:B.white,
+                  borderRadius:"50%",width:16,height:16,fontSize:9,fontWeight:"bold",
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {inAppNotifs.length}
+                </span>
+              )}
+            </button>
+            <div style={{background:B.white,border:`1px solid ${B.sandDeep}`,borderRadius:30,padding:"6px 14px",textAlign:"center"}}>
               <div style={{color:B.yellow,fontWeight:"bold",fontSize:18,lineHeight:1}}>${budget}</div>
               <div style={{color:B.gray,fontSize:10}}>crediti</div>
             </div>
+          </div>
         </div>
+
+        {/* Pannello notifiche */}
+        {showNotifPanel&&(
+          <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,margin:"0 0 10px",overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${B.creamDark}`}}>
+              <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>🔔 Notifiche</div>
+              {inAppNotifs.length>0&&(
+                <button onClick={async()=>{
+                  try {
+                    const db = await supabase.from("notifications", accessToken);
+                    await db.update({read:true},`user_id=eq.${authUser.id}&read=eq.false`);
+                    // Marca anche le globali
+                    setInAppNotifs([]);
+                    setShowNotifPanel(false);
+                  } catch(e) { setInAppNotifs([]); setShowNotifPanel(false); }
+                }} style={{fontSize:10,color:B.gray,background:"none",border:"none",cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  Segna tutte come lette
+                </button>
+              )}
+            </div>
+            {inAppNotifs.length===0
+              ? <div style={{padding:"16px",textAlign:"center",color:B.gray,fontSize:12}}>Nessuna notifica</div>
+              : inAppNotifs.map((n,i)=>(
+                <div key={n.id} style={{padding:"10px 14px",borderBottom:i<inAppNotifs.length-1?`1px solid ${B.creamDark}`:"none",display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <span style={{fontSize:16,flexShrink:0}}>
+                    {n.type==="approved"?"✅":n.type==="market_closing"?"⏰":n.type==="scores_ready"?"🏆":"ℹ️"}
+                  </span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:B.dark}}>{n.message}</div>
+                    <div style={{fontSize:10,color:B.gray,marginTop:2}}>
+                      {n.created_at?new Date(n.created_at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""}
+                    </div>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        )}
 
         <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:10,scrollbarWidth:"none"}}>
           {leagues.map(l=>{
@@ -2038,6 +2124,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     try {
                       const db = await supabase.from("user_leagues",accessToken);
                       await db.update({status:"approved"},`id=eq.${req.id}`);
+                      // Invia notifica all'utente approvato
+                      try {
+                        const ndb = await supabase.from("notifications", accessToken);
+                        await ndb.insert({
+                          user_id: req.user_id,
+                          type: "approved",
+                          message: `✅ La tua iscrizione a ${req.league_id} è stata approvata! Puoi ora acquistare atleti.`,
+                        });
+                      } catch(e) { /* silenzioso */ }
                       setPendingRequests(r=>r.filter(x=>x.id!==req.id));
                       setTotalSquads(s=>s+1);
                       showNotif(`${req.username} approvato! ✓`);
@@ -2223,6 +2318,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
                     const msg = `✓ ${data.resultsGenerated} risultati salvati (${data.matchesProcessed} partite)`;
                     showNotif(msg);
+                    // Notifica globale punteggi disponibili
+                    try {
+                      const ndb = await supabase.from("notifications", accessToken);
+                      await ndb.insert({
+                        user_id: null, // globale per tutti
+                        type: "scores_ready",
+                        message: `🏆 Punteggi aggiornati! I risultati della tappa sono disponibili.`,
+                      });
+                    } catch(e) { /* silenzioso */ }
                     if (data.warnings && data.warnings.length > 0) {
                       console.warn("Sync warnings:", data.warnings);
                       setTimeout(() => showNotif(`⚠️ ${data.warnings.length} warning — vedi console`, "error"), 2000);
