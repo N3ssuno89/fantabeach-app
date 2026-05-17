@@ -891,8 +891,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     try {
       const db = await supabase.from("notifications", token);
       const rows = await db.select("*",
-        `&or=(user_id.eq.${userId},user_id.is.null)&read=eq.false&order=created_at.desc&limit=20`);
-      if (Array.isArray(rows)) setInAppNotifs(rows);
+        `&or=(user_id.eq.${userId},user_id.is.null)&order=created_at.desc&limit=20`);
+      if (Array.isArray(rows)) {
+        // Filtra quelle già lette (per notifiche globali usiamo localStorage)
+        const readIds = JSON.parse(localStorage.getItem(`fb_notif_read_${userId}`) || "[]");
+        const unread = rows.filter(n => !n.read && !readIds.includes(n.id));
+        setInAppNotifs(unread);
+      }
     } catch(e) { /* silenzioso */ }
   };
 
@@ -1193,13 +1198,19 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>🔔 Notifiche</div>
               {inAppNotifs.length>0&&(
                 <button onClick={async()=>{
+                  // Salva gli ID letti in localStorage (funziona anche per notifiche globali)
+                  const readIds = JSON.parse(localStorage.getItem(`fb_notif_read_${authUser.id}`) || "[]");
+                  const newReadIds = [...new Set([...readIds, ...inAppNotifs.map(n => n.id)])];
+                  localStorage.setItem(`fb_notif_read_${authUser.id}`, JSON.stringify(newReadIds));
+                  // Marca come lette quelle personali su Supabase
                   try {
                     const db = await supabase.from("notifications", accessToken);
-                    await db.update({read:true},`user_id=eq.${authUser.id}&read=eq.false`);
-                    // Marca anche le globali
-                    setInAppNotifs([]);
-                    setShowNotifPanel(false);
-                  } catch(e) { setInAppNotifs([]); setShowNotifPanel(false); }
+                    const personalIds = inAppNotifs.filter(n => n.user_id === authUser.id).map(n => n.id);
+                    if (personalIds.length > 0)
+                      await db.update({read:true}, `id=in.(${personalIds.join(",")})`);
+                  } catch(e) { /* silenzioso */ }
+                  setInAppNotifs([]);
+                  setShowNotifPanel(false);
                 }} style={{fontSize:10,color:B.gray,background:"none",border:"none",cursor:"pointer",fontFamily:"Georgia,serif"}}>
                   Segna tutte come lette
                 </button>
@@ -2227,8 +2238,27 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                           supabase.from("events", accessToken).then(db => db.select("*", "&order=anno.asc,id.asc")),
                           supabase.from("coaches", accessToken).then(db => db.select("*", "&active=eq.true&order=name.asc")),
                         ]);
-                        if (Array.isArray(evRes) && evRes.length > 0)
-                          setEvents(evRes.map(e => ({ ...e, date: e.date_start || "" })));
+                        if (Array.isArray(evRes) && evRes.length > 0) {
+                          const newEvents = evRes.map(e => ({ ...e, date: e.date_start || "" }));
+                          // Controlla se qualche tappa è passata a Completato
+                          const justCompleted = newEvents.filter(e =>
+                            e.status === "Completato" &&
+                            events.find(old => old.id === e.id && old.status !== "Completato")
+                          );
+                          if (justCompleted.length > 0 && accessToken) {
+                            try {
+                              const ndb = await supabase.from("notifications", accessToken);
+                              for (const ev of justCompleted) {
+                                await ndb.insert({
+                                  user_id: null,
+                                  type: "scores_ready",
+                                  message: `🏆 ${ev.name} completata! I punteggi sono ora disponibili in classifica.`,
+                                });
+                              }
+                            } catch(e) { /* silenzioso */ }
+                          }
+                          setEvents(newEvents);
+                        }
                         if (Array.isArray(coachRes) && coachRes.length > 0)
                           setCoachesList(coachRes.filter(c => c.active !== false).map(c => ({ ...c, athletes: [] })));
                       } catch(e) { console.warn("Refresh eventi/coach:", e.message); }
