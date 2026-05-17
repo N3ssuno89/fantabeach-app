@@ -2135,6 +2135,20 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     cacheAthletes(data.women || [], data.men || []);
                     setAthletesData({ women: newWomen, men: newMen });
 
+                    // Aggiorna eventi e coach da Supabase senza reload
+                    if (accessToken && authUser) {
+                      try {
+                        const [evRes, coachRes] = await Promise.all([
+                          supabase.from("events", accessToken).then(db => db.select("*", "&order=anno.asc,id.asc")),
+                          supabase.from("coaches", accessToken).then(db => db.select("*", "&active=eq.true&order=name.asc")),
+                        ]);
+                        if (Array.isArray(evRes) && evRes.length > 0)
+                          setEvents(evRes.map(e => ({ ...e, date: e.date_start || "" })));
+                        if (Array.isArray(coachRes) && coachRes.length > 0)
+                          setCoachesList(coachRes.filter(c => c.active !== false).map(c => ({ ...c, athletes: [] })));
+                      } catch(e) { console.warn("Refresh eventi/coach:", e.message); }
+                    }
+
                     const now = new Date().toLocaleString("it-IT", {
                       day:"2-digit", month:"2-digit",
                       hour:"2-digit", minute:"2-digit"
@@ -2204,6 +2218,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     }
                     // Ricarica classifica (forza aggiornamento cache)
                     loadStandings(accessToken, true);
+                    // Reset cache partite così si ricaricano al prossimo click
+                    setMatchResultsData({});
 
                     const msg = `✓ ${data.resultsGenerated} risultati salvati (${data.matchesProcessed} partite)`;
                     showNotif(msg);
