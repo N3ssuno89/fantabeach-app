@@ -257,29 +257,29 @@ const PRICE_RANGES = [
   {label:"> 100 $",        filter:a=>a.cost>=100,              bg:B.yellowPale,  color:"#7A4F00",  activeBg:"#7A4F00",    activeColor:B.white},
 ];
 
-// ─── LOGO FANTABEACH ─────────────────────────────────────────
+// ─── LOGO FANTABEACH (SVG vettoriale, sfondo trasparente) ────
 const LogoIcon = ({size=48}) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{display:"block",flexShrink:0}}>
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{display:"block",flexShrink:0}}>
     <defs>
-      <clipPath id="fb-circle"><circle cx="50" cy="50" r="47"/></clipPath>
+      <clipPath id="fb-clip"><circle cx="50" cy="50" r="46"/></clipPath>
     </defs>
-    {/* Sfondo verde scuro */}
-    <circle cx="50" cy="50" r="47" fill="#2D5C4F"/>
-    {/* Onda gialla — arco superiore */}
-    <path d="M 6 42 Q 18 8 50 14 Q 72 18 86 10 Q 94 6 97 18 Q 90 5 72 9 Q 50 12 30 22 Q 14 30 6 42 Z" fill="#F5A623" clipPath="url(#fb-circle)"/>
-    {/* Onda arancione — centro */}
-    <path d="M 3 55 Q 14 28 44 33 Q 65 36 82 20 Q 90 14 96 28 Q 86 14 68 26 Q 46 38 26 48 Q 12 54 3 64 Z" fill="#E8541A" clipPath="url(#fb-circle)"/>
-    {/* Onda rossa scura — sotto */}
-    <path d="M 3 65 Q 16 48 40 52 Q 64 56 82 40 Q 90 33 96 44 Q 84 34 64 48 Q 42 60 20 65 Q 10 68 3 74 Z" fill="#C0392B" clipPath="url(#fb-circle)"/>
-    {/* Bordo cerchio */}
-    <circle cx="50" cy="50" r="47" fill="none" stroke="#1E4035" strokeWidth="1.5"/>
+    {/* Verde scuro — riempie il fondo */}
+    <circle cx="50" cy="50" r="46" fill="#2A5C4E"/>
+    {/* Giallo-arancio — grande arco in alto a sinistra, come sole che sorge */}
+    <path d="M 4 50 C 4 22 22 4 50 4 C 62 4 72 8 80 16 C 68 18 56 26 50 36 C 44 44 38 52 20 56 C 12 58 6 54 4 50 Z" fill="#F5A623" clipPath="url(#fb-clip)"/>
+    {/* Arancione — onda larga diagonale al centro */}
+    <path d="M 4 50 C 6 54 12 58 20 56 C 38 52 44 44 50 36 C 56 26 68 18 80 16 C 88 22 94 34 96 46 C 80 42 68 50 58 60 C 48 68 36 72 16 68 C 8 66 4 60 4 56 Z" fill="#E8541A" clipPath="url(#fb-clip)"/>
+    {/* Rosso-arancio scuro — striscia sottile */}
+    <path d="M 4 56 C 4 60 8 66 16 68 C 36 72 48 68 58 60 C 68 50 80 42 96 46 C 96 52 94 58 90 64 C 76 58 64 64 54 72 C 44 80 30 82 12 76 C 6 74 4 66 4 62 Z" fill="#C0392B" clipPath="url(#fb-clip)"/>
+    {/* Verde scuro — grande onda concava in basso */}
+    <path d="M 4 62 C 4 66 6 74 12 76 C 30 82 44 80 54 72 C 64 64 76 58 90 64 C 86 76 76 88 62 94 C 50 98 36 96 24 90 C 10 82 4 74 4 68 Z" fill="#2A5C4E" clipPath="url(#fb-clip)"/>
   </svg>
 );
 
 // Logo completo: icona + "FantaBeach" sulla stessa riga
 const LogoFull = ({height=48}) => (
   <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-    <LogoIcon size={Math.round(height*1.15)}/>
+    <LogoIcon size={Math.round(height*1.1)}/>
     <span style={{fontFamily:"Georgia,'Times New Roman',serif",fontWeight:"bold",fontSize:Math.round(height*0.58),color:"#2D5C4F",letterSpacing:"-0.5px",whiteSpace:"nowrap",lineHeight:1}}>
       Fanta<span style={{color:"#E8541A"}}>Beach</span>
     </span>
