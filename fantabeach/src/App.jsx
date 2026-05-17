@@ -449,7 +449,7 @@ function AuthScreen({ onAuth }) {
         {mode==="signup" && (
           <div style={{textAlign:"center",marginTop:10,fontSize:11,color:B.gray,lineHeight:1.5}}>
             Continuando la registrazione, dichiari di aver letto e accettato i{" "}
-            <a href="https://docs.google.com/document/d/1hc6oN_0z3hKbD4wPMnAOg5ybgMSWHSXW/edit?usp=sharing&ouid=116340837676230201307&rtpof=true&sd=true"
+            <a href="https://drive.google.com/file/d/1qfO4zfRISXNkvClkwDcNlsb7Ztj-UQUX/view?usp=sharing"
               target="_blank" rel="noopener noreferrer"
               style={{color:B.greenDark,fontWeight:"bold",textDecoration:"underline"}}>
               Termini e Condizioni
@@ -459,7 +459,7 @@ function AuthScreen({ onAuth }) {
         )}
 
         <div style={{textAlign:"center",marginTop:10,fontSize:11,color:B.gray}}>
-          Fantasy game non ufficiale · Solo scopo ludico
+          Powered by Zioema
         </div>
       </div>
     </div>
