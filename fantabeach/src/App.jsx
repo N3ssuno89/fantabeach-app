@@ -28,7 +28,10 @@ const supabase = {
       method:"POST", headers: this._headers,
       body: JSON.stringify({ email, password })
     });
-    return r.json();
+    const json = await r.json();
+    if (!r.ok && !json.error) json.error = { message: "Email o password errati.", status: r.status };
+    if (json.error) json.error.status = r.status;
+    return json;
   },
   async signOut(accessToken) {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
@@ -414,13 +417,14 @@ function AuthScreen({ onAuth }) {
         data = await supabase.signIn(email, password);
       }
       if (data.error) {
-        const msg = data.error.message || "";
-        if (msg.includes("Invalid login") || msg.includes("invalid_credentials") || msg.includes("wrong"))
+        const msg = (data.error.message || data.error.error_description || data.error.msg || "").toLowerCase();
+        console.log("Login error:", JSON.stringify(data.error));
+        if (msg.includes("invalid") || msg.includes("credentials") || msg.includes("wrong") || msg.includes("password") || msg.includes("email"))
           setError("Email o password errati.");
         else if (msg.includes("not found") || msg.includes("no user"))
           setError("Nessun account trovato con questa email.");
-        else
-          setError("Errore di accesso. Riprova.");
+        else if (data.error)
+          setError("Email o password errati.");
         setLoading(false); return;
       }
       if (data.access_token) {
@@ -1277,9 +1281,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               ? <div style={{padding:"16px",textAlign:"center",color:B.gray,fontSize:12}}>Nessuna notifica</div>
               : inAppNotifs.map((n,i)=>(
                 <div key={n.id} style={{padding:"10px 14px",borderBottom:i<inAppNotifs.length-1?`1px solid ${B.creamDark}`:"none",display:"flex",gap:10,alignItems:"flex-start"}}>
-                  <span style={{fontSize:16,flexShrink:0}}>
-                    {n.type==="approved"?"✅":n.type==="market_closing"?"⏰":n.type==="scores_ready"?"🏆":"ℹ️"}
-                  </span>
+                  <span style={{fontSize:16,flexShrink:0,display:"none"}}/>
                   <div style={{flex:1}}>
                     <div style={{fontSize:12,color:B.dark}}>{n.message}</div>
                     <div style={{fontSize:10,color:B.gray,marginTop:2}}>
@@ -1493,7 +1495,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       <div style={{width:40,height:40,borderRadius:"50%",background:B.yellow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🧢</div>
                       <div style={{flex:1}}>
                         <div style={{color:B.dark,fontWeight:"bold",fontSize:14}}>{currentCoach.name}</div>
-                        <div style={{color:B.gray,fontSize:11}}>${currentCoach.cost} · {currentCoach.athletes.length} atleti seguiti</div>
+                        <div style={{color:B.gray,fontSize:11}}>${currentCoach.cost} · +0.5 pt per vittoria</div>
                       </div>
                       {canSelectCoach()&&<button onClick={handleRemoveCoach} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${B.orange}`,background:B.orangePale,color:B.orange,fontSize:11,fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif"}}>Rimuovi</button>}
                     </div>
@@ -1508,7 +1510,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{width:40,height:40,borderRadius:"50%",background:isSelected?B.greenDark:B.grayPale,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🧢</div>
                         <div style={{flex:1}}>
                           <div style={{color:B.dark,fontWeight:"bold",fontSize:13}}>{c.name}</div>
-                          <div style={{color:B.gray,fontSize:11,marginTop:2}}>{c.athletes.length} atleti · +0.5 pt/vittoria</div>
+                          <div style={{color:B.gray,fontSize:11,marginTop:2}}>+0.5 pt per vittoria</div>
                         </div>
                         <div style={{textAlign:"right",flexShrink:0}}>
                           <div style={{color:B.orange,fontWeight:"bold",fontSize:16}}>${c.cost}</div>
@@ -1913,9 +1915,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>Coach: {currentCoach.name}</div>
                         <div style={{fontSize:10,color:B.gray}}>+0.5 pt per ogni vittoria se schierato</div>
                       </div>
-                      {/* Toggle schierato/panchina */}
+                      {/* Toggle schierato/panchina — sempre disponibile se non tappa In corso */}
                       <button onClick={async ()=>{
-                        if (!canTrade()) return;
+                        if (tappaInCorso2026) return;
                         const newVal = !coachInField[leagueId];
                         setCoachInField(cf=>({...cf,[leagueId]:newVal}));
                         try {
@@ -2425,35 +2427,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   }
                   setSyncResultsLoading(false);
                 }
-              },
-              {
-                icon:"🔔",
-                title:"Test Reminder Mercato",
-                desc:"Invia notifica 'mercato chiude oggi' (simula giovedì mattina)",
-                isOpen: null,
-                action: async () => {
-                  try {
-                    const res = await fetch("/.netlify/functions/market-reminder", {method:"POST"});
-                    const data = await res.json();
-                    if (data.skipped) showNotif("Mercato già chiuso — reminder non inviato", "error");
-                    else { showNotif("✓ Reminder inviato!"); loadNotifications(accessToken, authUser.id); }
-                  } catch(e) { showNotif("Errore: " + e.message, "error"); }
-                }
-              },
-              {
-                icon:"🔒",
-                title:"Test Chiusura Mercato",
-                desc:"Chiude il mercato e notifica tutti (simula giovedì sera)",
-                isOpen: null,
-                action: async () => {
-                  try {
-                    await fetch("/.netlify/functions/close-market", {method:"POST"});
-                    setLeagues(ls=>ls.map(l=>l.type==="market"?{...l,marketOpen:false}:l));
-                    showNotif("✓ Mercato chiuso e utenti notificati!");
-                    loadNotifications(accessToken, authUser.id);
-                  } catch(e) { showNotif("Errore: " + e.message, "error"); }
-                }
-              },
+              }
             ].map((item,i)=>(
               <div key={i} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
                 <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
