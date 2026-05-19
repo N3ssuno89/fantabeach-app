@@ -354,7 +354,7 @@ function JoinGate({ myJoin, league, showJoinForm, setShowJoinForm, joinTeamName,
             onKeyDown={e=>e.key==="Enter"&&onJoinRequest()}
             autoFocus
             style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:14,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: compravendite lun 09:00 - gio 23:00."}</div>
+          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: compravendite lun 09:00 - gio 23:00. Mercato libero durante la settimana."}</div>
           <button onClick={onJoinRequest} style={{width:"100%",padding:"12px",background:B.greenDark,border:"none",borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",marginBottom:8}}>Invia Richiesta</button>
           <button onClick={()=>setShowJoinForm(false)} style={{width:"100%",padding:"10px",background:"transparent",border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>Annulla</button>
         </div>
@@ -2847,8 +2847,8 @@ function PageRegole({ onBack }) {
         {[
           {nome:"Classic F",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
           {nome:"Classic M",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
-          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Max 1 vendita per tappa."},
-          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Max 1 vendita per tappa."},
+          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
+          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
         ].map((l,i)=>(
           <div key={i} style={{padding:"10px 0",borderBottom:i<3?`1px solid ${B.creamDark}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
