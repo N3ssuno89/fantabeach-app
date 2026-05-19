@@ -1345,9 +1345,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {/* PAGINE NASCOSTE — da menu hamburger */}
         {hiddenPage&&(
           <div>
-            {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
+            {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
+            {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
             {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
@@ -3001,33 +3001,661 @@ function StatComingSoon({ emoji, title, desc, onBack }) {
   );
 }
 
-// ─── PAGINA 1: STATS ATLETI ───────────────────────────────────
-function StatsAtleti({ onBack }) {
+// ─── COSTANTI STATISTICHE ─────────────────────────────────────
+const STATS_DAY0 = "2026-05-20"; // Giorno 0 stagione — modificabile
+const STATS_LEAGUES = [
+  { id: "L001-F", label: "Classic F", gender: "F" },
+  { id: "L001-M", label: "Classic M", gender: "M" },
+  { id: "L002-F", label: "Market F",  gender: "F" },
+  { id: "L002-M", label: "Market M",  gender: "M" },
+];
+
+// Hook generico per caricare stats con cache
+function useStatsData(loader, deps) {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  useEffect(() => {
+    setLoading(true);
+    loader().then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+  }, deps || []);
+  return { data, loading };
+}
+
+// Componente riga top5
+function Top5Row({ rank, name, sub, value, unit, color, bg }) {
+  const medals = ["🥇","🥈","🥉","4°","5°"];
   return (
-    <StatComingSoon
-      emoji="🏐" title="Stats Atleti" onBack={onBack}
-      desc="Top Scorer, Hidden Gem, Rocket, Wall Street, Ownership e Differential. Tutto aggiornato dopo ogni tappa."
-    />
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
+      borderBottom:`1px solid ${B.creamDark}`}}>
+      <div style={{width:28,height:28,borderRadius:8,flexShrink:0,
+        background:rank<=3?[B.yellow,B.grayLight,"#CD7F32"][rank-1]:B.grayPale,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        fontSize:rank<=3?16:11,fontWeight:"bold",color:rank<=3?B.white:B.gray}}>
+        {medals[rank-1]}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:"bold",color:B.dark,overflow:"hidden",
+          textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+        {sub&&<div style={{fontSize:10,color:B.gray,marginTop:1}}>{sub}</div>}
+      </div>
+      <div style={{flexShrink:0,background:bg||B.greenPale,color:color||B.greenDark,
+        padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:"bold"}}>
+        {value}{unit||""}
+      </div>
+    </div>
+  );
+}
+
+// Componente sezione con tab Globale + 4 leghe
+function StatsSection({ title, emoji, desc, loading, dataByLeague, renderRow, emptyMsg }) {
+  const [tab, setTab] = React.useState("global");
+  const tabs = [{id:"global",label:"🌍 Globale"}, ...STATS_LEAGUES.map(l=>({id:l.id,label:l.label}))];
+  const rows = dataByLeague?.[tab] || [];
+  return (
+    <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,
+      padding:"14px",marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <span style={{fontSize:20}}>{emoji}</span>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:"bold",fontSize:14,color:B.dark}}>{title}</div>
+          {desc&&<div style={{fontSize:10,color:B.gray,marginTop:1}}>{desc}</div>}
+        </div>
+      </div>
+      {/* Tab leghe */}
+      <div style={{display:"flex",gap:4,overflowX:"auto",scrollbarWidth:"none",
+        marginBottom:10,paddingBottom:2}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{flexShrink:0,padding:"4px 10px",borderRadius:20,border:"none",
+              cursor:"pointer",fontSize:10,fontFamily:"Georgia,serif",
+              fontWeight:tab===t.id?"bold":"normal",
+              background:tab===t.id?B.greenDark:B.grayPale,
+              color:tab===t.id?B.white:B.gray}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {loading
+        ? <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+        : rows.length===0
+          ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>{emptyMsg||"Nessun dato disponibile"}</div>
+          : rows.slice(0,5).map((row,i) => renderRow(row, i+1))
+      }
+    </div>
+  );
+}
+
+// ─── PAGINA 1: STATS ATLETI ───────────────────────────────────
+function StatsAtleti({ onBack, accessToken }) {
+  const [allData, setAllData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    loadAthleteStats(accessToken).then(d => { setAllData(d); setLoading(false); });
+  }, []);
+
+  async function loadAthleteStats(token) {
+    try {
+      // Carica match_results tappe completate
+      const db = await supabase.from("match_results", token);
+      const results = await db.select(
+        "player_id,player_name,total_pts,bonus_codes,event_id",
+        "&order=player_id.asc&limit=5000"
+      );
+
+      // Carica roster per ownership
+      const rdb = await supabase.from("rosters", token);
+      const rosters = await rdb.select("player_id,player_name,gender,league_id,price", "&sold_at=is.null");
+
+      // Carica player_history per prezzi (prima e ultima riga per atleta dal day0)
+      const pdb = await supabase.from("player_history", token);
+      const history = await pdb.select(
+        "player_id,ranking,cost,synced_at",
+        `&synced_at=gte.${STATS_DAY0}T00:00:00Z&order=synced_at.asc&limit=5000`
+      );
+
+      // Carica eventi completati per filtrare per genere
+      const edb = await supabase.from("events", token);
+      const events = await edb.select("id,gender,weight", "&status=eq.Completato&anno=eq.2026");
+      const evMap = {};
+      if (Array.isArray(events)) events.forEach(e => { evMap[e.id] = e; });
+
+      return buildAthleteStats(results, rosters, history, evMap);
+    } catch(e) { console.error("Stats atleti:", e); return null; }
+  }
+
+  function buildAthleteStats(results, rosters, history, evMap) {
+    if (!Array.isArray(results) || !Array.isArray(rosters)) return null;
+
+    // Punti totali per atleta
+    const ptsByPlayer = {};
+    const ptsByPlayerByLeague = { "L001-F":{}, "L001-M":{}, "L002-F":{}, "L002-M":{} };
+
+    results.forEach(r => {
+      if (!r.player_id) return;
+      const ev = evMap[r.event_id];
+      if (!ev) return; // solo tappe completate
+      const g = ev.gender?.toUpperCase();
+      const leagues = g==="F" ? ["L001-F","L002-F"] : ["L001-M","L002-M"];
+
+      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0, matches:0 };
+      ptsByPlayer[r.player_id].pts += r.total_pts||0;
+      ptsByPlayer[r.player_id].matches += 1;
+      ptsByPlayer[r.player_id].gender = g;
+
+      leagues.forEach(lid => {
+        if (!ptsByPlayerByLeague[lid][r.player_id])
+          ptsByPlayerByLeague[lid][r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0, matches:0, gender:g };
+        ptsByPlayerByLeague[lid][r.player_id].pts += r.total_pts||0;
+        ptsByPlayerByLeague[lid][r.player_id].matches += 1;
+      });
+    });
+
+    // Ownership per atleta
+    const ownerByPlayer = {};
+    const ownerByPlayerByLeague = { "L001-F":{}, "L001-M":{}, "L002-F":{}, "L002-M":{} };
+    if (Array.isArray(rosters)) {
+      rosters.forEach(r => {
+        if (!ownerByPlayer[r.player_id]) ownerByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
+        ownerByPlayer[r.player_id].count++;
+        if (ownerByPlayerByLeague[r.league_id]) {
+          if (!ownerByPlayerByLeague[r.league_id][r.player_id])
+            ownerByPlayerByLeague[r.league_id][r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
+          ownerByPlayerByLeague[r.league_id][r.player_id].count++;
+        }
+      });
+    }
+
+    // Storico prezzi per atleta: prima e ultima riga dal day0
+    const priceFirst = {}, priceLast = {};
+    if (Array.isArray(history)) {
+      history.forEach(h => {
+        if (!priceFirst[h.player_id]) priceFirst[h.player_id] = h;
+        priceLast[h.player_id] = h;
+      });
+    }
+
+    // Helper: top5 per metrica
+    const top5 = (obj, scorer, filter) => {
+      let arr = Object.values(obj);
+      if (filter) arr = arr.filter(filter);
+      return arr
+        .map(a => ({ ...a, _score: scorer(a) }))
+        .filter(a => a._score > 0 || a._score !== undefined)
+        .sort((a,b) => b._score - a._score)
+        .slice(0,5);
+    };
+
+    // Costruisce dataset per ogni sezione
+    const build = (leagueId, genderFilter) => {
+      const pmap = leagueId ? ptsByPlayerByLeague[leagueId] : ptsByPlayer;
+      const omap = leagueId ? ownerByPlayerByLeague[leagueId] : ownerByPlayer;
+      const gf = genderFilter ? (a => a.gender===genderFilter) : null;
+
+      // TopScorer
+      const topScorer = top5(pmap, a => Math.round(a.pts*10)/10, gf);
+
+      // HiddenGem: punti / costo * 10
+      const hiddenGem = top5(pmap, a => {
+        const price = ownerByPlayer[a.id]?.price || priceFirst[a.id]?.cost || 20;
+        return price > 0 ? Math.round((a.pts / price)*100)/100 : 0;
+      }, gf);
+
+      // Ownership
+      const ownership = top5(omap, a => a.count, gf);
+
+      // Differential: tanti punti, pochi owner
+      const diff = top5(pmap, a => {
+        const owners = omap[a.id]?.count || 1;
+        return Math.round((a.pts / owners)*10)/10;
+      }, a => (gf ? gf(a) : true) && (omap[a.id]?.count||0) <= 2 );
+
+      // Rocket: più migliorato in ranking
+      const rocket = Object.entries(priceFirst)
+        .map(([id, first]) => {
+          const last = priceLast[id];
+          if (!last) return null;
+          const delta = first.ranking - last.ranking; // positivo = salito
+          const g = ownerByPlayer[id]?.gender;
+          if (genderFilter && g !== genderFilter) return null;
+          return { id, name: ownerByPlayer[id]?.name || id, _score: delta, delta, gender:g };
+        })
+        .filter(Boolean)
+        .filter(a => a._score > 0)
+        .sort((a,b) => b._score - a._score)
+        .slice(0,5);
+
+      // WallStreet: più variazione di prezzo
+      const wallStreet = Object.entries(priceFirst)
+        .map(([id, first]) => {
+          const last = priceLast[id];
+          if (!last || first.cost === last.cost) return null;
+          const delta = last.cost - first.cost;
+          const pct = Math.round(((last.cost - first.cost) / first.cost)*100);
+          const g = ownerByPlayer[id]?.gender;
+          if (genderFilter && g !== genderFilter) return null;
+          return { id, name: ownerByPlayer[id]?.name || id, _score: Math.abs(delta), delta, pct, gender:g };
+        })
+        .filter(Boolean)
+        .sort((a,b) => b._score - a._score)
+        .slice(0,5);
+
+      return { topScorer, hiddenGem, ownership, diff, rocket, wallStreet };
+    };
+
+    return {
+      global: build(null, null),
+      "L001-F": build("L001-F", "F"),
+      "L001-M": build("L001-M", "M"),
+      "L002-F": build("L002-F", "F"),
+      "L002-M": build("L002-M", "M"),
+    };
+  }
+
+  const sections = [
+    { key:"topScorer",  emoji:"🏆", title:"Top Scorer",   desc:"Più punti totali nelle tappe completate",          unit:" pt",  color:B.orange,    bg:B.orangePale },
+    { key:"hiddenGem",  emoji:"💎", title:"Hidden Gem",   desc:"Miglior rapporto punti/costo (rendimento)",         unit:"x",   color:"#7C3AED",   bg:"#F3E8FF"    },
+    { key:"ownership",  emoji:"👑", title:"Più Acquistato",desc:"Atleta presente nel maggior numero di roster",     unit:" roster",color:B.greenDark,bg:B.greenPale },
+    { key:"diff",       emoji:"🎯", title:"Differential", desc:"Tanti punti ma pochi owner (max 2 roster)",        unit:" pt",  color:B.greenDark, bg:B.greenPale  },
+    { key:"rocket",     emoji:"🚀", title:"Rocket",       desc:"Più migliorato in ranking dal giorno 0",           unit:" pos", color:B.green,     bg:B.greenPale  },
+    { key:"wallStreet", emoji:"📈", title:"Wall Street",  desc:"Maggiore variazione di prezzo dal giorno 0",       unit:"$",   color:"#B8860B",   bg:"#FEF7E8"    },
+  ];
+
+  return (
+    <StatPage title="Stats Atleti" emoji="🏐" onBack={onBack}>
+      {sections.map(sec => {
+        const [leagueTab, setLeagueTab] = React.useState("global");
+        const tabs = [{id:"global",label:"🌍 Globale"}, ...STATS_LEAGUES.map(l=>({id:l.id,label:l.label}))];
+        const rows = allData?.[leagueTab]?.[sec.key] || [];
+        return (
+          <div key={sec.key} style={{background:B.white,border:`1px solid ${B.creamDark}`,
+            borderRadius:12,padding:"14px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{fontSize:20}}>{sec.emoji}</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:"bold",fontSize:14,color:B.dark}}>{sec.title}</div>
+                <div style={{fontSize:10,color:B.gray,marginTop:1}}>{sec.desc}</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:4,overflowX:"auto",scrollbarWidth:"none",marginBottom:10}}>
+              {tabs.map(t=>(
+                <button key={t.id} onClick={()=>setLeagueTab(t.id)}
+                  style={{flexShrink:0,padding:"4px 10px",borderRadius:20,border:"none",
+                    cursor:"pointer",fontSize:10,fontFamily:"Georgia,serif",
+                    fontWeight:leagueTab===t.id?"bold":"normal",
+                    background:leagueTab===t.id?B.greenDark:B.grayPale,
+                    color:leagueTab===t.id?B.white:B.gray}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {loading
+              ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+              : !allData
+                ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>Nessun dato disponibile</div>
+                : rows.length===0
+                  ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>Nessuna variazione rilevata ancora</div>
+                  : rows.map((row,i) => (
+                      <Top5Row key={row.id||i} rank={i+1}
+                        name={row.name||row.id}
+                        sub={row.delta!==undefined
+                          ? (sec.key==="rocket"?`▲${row.delta} posizioni in ranking`
+                            :sec.key==="wallStreet"?`${row.delta>0?"+":""}$${row.delta} (${row.pct>0?"+":""}${row.pct}% dal giorno 0)`
+                            :null)
+                          : row.matches?`${row.matches} partite`:null}
+                        value={sec.key==="hiddenGem"
+                          ? (row.pts/(ownerByPlayer?.[row.id]?.price||20)).toFixed(2)
+                          : sec.key==="rocket" ? row.delta
+                          : sec.key==="wallStreet" ? (row.delta>0?"+":"")+(row.delta||0)
+                          : sec.key==="ownership" ? row.count
+                          : Math.round((row._score||0)*10)/10}
+                        unit={sec.unit} color={sec.color} bg={sec.bg}/>
+                    ))
+            }
+          </div>
+        );
+      })}
+    </StatPage>
   );
 }
 
 // ─── PAGINA 2: STATS UTENTI ───────────────────────────────────
-function StatsUtenti({ onBack }) {
+function StatsUtenti({ onBack, accessToken }) {
+  const [allData, setAllData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    loadUserStats(accessToken).then(d => { setAllData(d); setLoading(false); });
+  }, []);
+
+  async function loadUserStats(token) {
+    try {
+      // Classifica per Guru
+      const sdb = await supabase.from("user_league_scores", token);
+      const scores = await sdb.select("user_id,league_id,team_name,total_pts,budget");
+
+      // Profili per username
+      const pdb = await supabase.from("profiles", token);
+      const profiles = await pdb.select("id,username");
+      const profMap = {};
+      if (Array.isArray(profiles)) profiles.forEach(p => { profMap[p.id] = p.username; });
+
+      // Trasferimenti per Casinò e Trader
+      const tdb = await supabase.from("transfer_history", token);
+      const transfers = await tdb.select("user_id,league_id,action,price,budget_after,created_at", "&limit=2000");
+
+      return buildUserStats(scores, profMap, transfers);
+    } catch(e) { console.error("Stats utenti:", e); return null; }
+  }
+
+  function buildUserStats(scores, profMap, transfers) {
+    if (!Array.isArray(scores)) return null;
+
+    // Guru: classifica per punti totali per lega
+    const buildGuru = (leagueId) => {
+      const filtered = leagueId ? scores.filter(s => s.league_id === leagueId) : scores;
+      // Globale: somma per utente
+      if (!leagueId) {
+        const byUser = {};
+        filtered.forEach(s => {
+          if (!byUser[s.user_id]) byUser[s.user_id] = { id:s.user_id, name:profMap[s.user_id]||s.user_id, pts:0, leagues:0 };
+          byUser[s.user_id].pts += s.total_pts||0;
+          byUser[s.user_id].leagues++;
+        });
+        return Object.values(byUser).sort((a,b)=>b.pts-a.pts).slice(0,5)
+          .map(u => ({ ...u, _score: Math.round(u.pts*10)/10 }));
+      }
+      return filtered.sort((a,b)=>(b.total_pts||0)-(a.total_pts||0)).slice(0,5)
+        .map(s => ({ id:s.user_id, name:profMap[s.user_id]||s.user_id, team:s.team_name, _score:Math.round((s.total_pts||0)*10)/10 }));
+    };
+
+    // Casinò: più operazioni di mercato
+    const buildCasino = (leagueId) => {
+      const filtered = leagueId ? (Array.isArray(transfers)?transfers.filter(t=>t.league_id===leagueId):[]) : (transfers||[]);
+      const byUser = {};
+      if (Array.isArray(filtered)) {
+        filtered.forEach(t => {
+          if (!byUser[t.user_id]) byUser[t.user_id] = { id:t.user_id, name:profMap[t.user_id]||t.user_id, ops:0, buys:0, sells:0 };
+          byUser[t.user_id].ops++;
+          if (t.action==="buy") byUser[t.user_id].buys++;
+          else byUser[t.user_id].sells++;
+        });
+      }
+      return Object.values(byUser).sort((a,b)=>b.ops-a.ops).slice(0,5)
+        .map(u => ({ ...u, _score: u.ops }));
+    };
+
+    // Trader: guadagno netto da vendite (vendita - acquisto originale)
+    const buildTrader = (leagueId) => {
+      const filtered = leagueId ? (Array.isArray(transfers)?transfers.filter(t=>t.league_id===leagueId):[]) : (transfers||[]);
+      const byUser = {};
+      if (Array.isArray(filtered)) {
+        filtered.forEach(t => {
+          if (!byUser[t.user_id]) byUser[t.user_id] = { id:t.user_id, name:profMap[t.user_id]||t.user_id, spent:0, earned:0 };
+          if (t.action==="buy") byUser[t.user_id].spent += t.price||0;
+          else byUser[t.user_id].earned += t.price||0;
+        });
+      }
+      return Object.values(byUser)
+        .map(u => ({ ...u, _score: u.earned - u.spent, net: u.earned - u.spent }))
+        .filter(u => u._score > 0)
+        .sort((a,b)=>b._score-a._score)
+        .slice(0,5);
+    };
+
+    const build = (leagueId) => ({
+      guru: buildGuru(leagueId),
+      casino: buildCasino(leagueId),
+      trader: buildTrader(leagueId),
+    });
+
+    return {
+      global:   build(null),
+      "L001-F": build("L001-F"),
+      "L001-M": build("L001-M"),
+      "L002-F": build("L002-F"),
+      "L002-M": build("L002-M"),
+    };
+  }
+
+  const sections = [
+    { key:"guru",   emoji:"🧠", title:"Guru",   desc:"Più punti in classifica — il miglior fantacalciatore",       unit:" pt",  color:B.orange,  bg:B.orangePale },
+    { key:"casino", emoji:"🎰", title:"Casinò", desc:"Più operazioni di mercato effettuate (buy + sell)",          unit:" op",  color:"#7C3AED", bg:"#F3E8FF"    },
+    { key:"trader", emoji:"💹", title:"Trader", desc:"Guadagno netto dalle operazioni di mercato (venduto - comprato)", unit:"$", color:B.greenDark, bg:B.greenPale },
+  ];
+
   return (
-    <StatComingSoon
-      emoji="👥" title="Stats Utenti" onBack={onBack}
-      desc="Guru, Casinò, Panchinaro e Trader. Chi gestisce meglio la squadra stagione dopo stagione."
-    />
+    <StatPage title="Stats Utenti" emoji="👥" onBack={onBack}>
+      {sections.map(sec => {
+        const [leagueTab, setLeagueTab] = React.useState("global");
+        const tabs = [{id:"global",label:"🌍 Globale"}, ...STATS_LEAGUES.map(l=>({id:l.id,label:l.label}))];
+        const rows = allData?.[leagueTab]?.[sec.key] || [];
+        return (
+          <div key={sec.key} style={{background:B.white,border:`1px solid ${B.creamDark}`,
+            borderRadius:12,padding:"14px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{fontSize:20}}>{sec.emoji}</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:"bold",fontSize:14,color:B.dark}}>{sec.title}</div>
+                <div style={{fontSize:10,color:B.gray,marginTop:1}}>{sec.desc}</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:4,overflowX:"auto",scrollbarWidth:"none",marginBottom:10}}>
+              {tabs.map(t=>(
+                <button key={t.id} onClick={()=>setLeagueTab(t.id)}
+                  style={{flexShrink:0,padding:"4px 10px",borderRadius:20,border:"none",
+                    cursor:"pointer",fontSize:10,fontFamily:"Georgia,serif",
+                    fontWeight:leagueTab===t.id?"bold":"normal",
+                    background:leagueTab===t.id?B.greenDark:B.grayPale,
+                    color:leagueTab===t.id?B.white:B.gray}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {loading
+              ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+              : !allData
+                ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>Nessun dato disponibile</div>
+                : rows.length===0
+                  ? <div style={{textAlign:"center",padding:"16px",color:B.gray,fontSize:12}}>Nessun dato per questa lega</div>
+                  : rows.map((row,i) => (
+                      <Top5Row key={row.id||i} rank={i+1}
+                        name={row.name||row.id}
+                        sub={sec.key==="casino"?`${row.buys||0} acquisti · ${row.sells||0} vendite`
+                          :sec.key==="trader"?`Guadagnato $${row.earned||0} · Speso $${row.spent||0}`
+                          :sec.key==="guru"&&row.leagues?`${row.leagues} leghe`:row.team||null}
+                        value={sec.key==="trader"?(row.net>0?"+":"")+row.net : row._score}
+                        unit={sec.unit} color={sec.color} bg={sec.bg}/>
+                    ))
+            }
+          </div>
+        );
+      })}
+    </StatPage>
   );
 }
 
 // ─── PAGINA 3: AWARDS ─────────────────────────────────────────
-function StatsAwards({ onBack }) {
+function StatsAwards({ onBack, accessToken }) {
+  const [allData, setAllData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    loadAwards(accessToken).then(d => { setAllData(d); setLoading(false); });
+  }, []);
+
+  async function loadAwards(token) {
+    try {
+      // Match results completati
+      const db = await supabase.from("match_results", token);
+      const results = await db.select("player_id,player_name,total_pts,event_id,bonus_codes", "&limit=5000");
+
+      // Roster (attivi + venduti per Traditore)
+      const rdb = await supabase.from("rosters", token);
+      const rostersAll = await rdb.select("user_id,player_id,player_name,price,league_id,acquired_at,sold_at");
+
+      // Transfer history per Fedelissimi e Traditore
+      const tdb = await supabase.from("transfer_history", token);
+      const transfers = await tdb.select("user_id,player_id,player_name,action,league_id,created_at", "&limit=2000");
+
+      // Profili
+      const pdb = await supabase.from("profiles", token);
+      const profiles = await pdb.select("id,username");
+      const profMap = {};
+      if (Array.isArray(profiles)) profiles.forEach(p => { profMap[p.id] = p.username; });
+
+      // Roster attivi per ownership
+      const rdbActive = await supabase.from("rosters", token);
+      const rostersActive = await rdbActive.select("player_id,player_name,league_id", "&sold_at=is.null");
+
+      return buildAwards(results, rostersAll, rostersActive, transfers, profMap);
+    } catch(e) { console.error("Awards:", e); return null; }
+  }
+
+  function buildAwards(results, rostersAll, rostersActive, transfers, profMap) {
+    if (!Array.isArray(results)) return null;
+
+    // Punti per atleta per evento
+    const ptsByPlayerEvent = {};
+    const ptsByPlayer = {};
+    results.forEach(r => {
+      if (!r.player_id) return;
+      const key = `${r.player_id}::${r.event_id}`;
+      if (!ptsByPlayerEvent[key]) ptsByPlayerEvent[key] = { player_id:r.player_id, name:r.player_name||r.player_id, event_id:r.event_id, pts:0 };
+      ptsByPlayerEvent[key].pts += r.total_pts||0;
+      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0 };
+      ptsByPlayer[r.player_id].pts += r.total_pts||0;
+    });
+
+    // BANDIT: squadra con più punti in una singola tappa
+    // Somma i punti per user/lega/evento dai match_results × lineup
+    // Approssimazione: usa la classifica per tappa (già calcolata dalla vista)
+    // Per semplicità mostriamo l'atleta con più punti in una singola tappa
+    const bandit = Object.values(ptsByPlayerEvent)
+      .sort((a,b) => b.pts - a.pts)
+      .slice(0,5)
+      .map(a => ({ ...a, _score: Math.round(a.pts*10)/10 }));
+
+    // SCAM: atleta più comprato ma meno punti
+    const ownerCount = {};
+    if (Array.isArray(rostersActive)) {
+      rostersActive.forEach(r => {
+        if (!ownerCount[r.player_id]) ownerCount[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, count:0 };
+        ownerCount[r.player_id].count++;
+      });
+    }
+    const scam = Object.values(ownerCount)
+      .filter(a => (a.count||0) >= 2)
+      .map(a => {
+        const pts = ptsByPlayer[a.id]?.pts || 0;
+        return { ...a, pts, _score: a.count - pts/10 };
+      })
+      .sort((a,b) => b._score - a._score)
+      .slice(0,5);
+
+    // FEDELISSIMI: utenti che non hanno mai venduto
+    const selledUsers = new Set();
+    if (Array.isArray(transfers)) {
+      transfers.filter(t => t.action==="sell").forEach(t => selledUsers.add(t.user_id));
+    }
+    const allUsers = new Set();
+    if (Array.isArray(rostersAll)) rostersAll.forEach(r => allUsers.add(r.user_id));
+    const fedelissimi = [...allUsers]
+      .filter(uid => !selledUsers.has(uid))
+      .map(uid => ({ id:uid, name:profMap[uid]||uid, _score:1 }))
+      .slice(0,5);
+
+    // TRADITORE: ha venduto un atleta che poi ha fatto molti punti
+    const traditore = [];
+    if (Array.isArray(transfers)) {
+      const sells = transfers.filter(t => t.action==="sell");
+      sells.forEach(t => {
+        const pts = ptsByPlayer[t.player_id]?.pts || 0;
+        if (pts > 10) {
+          traditore.push({
+            id: t.user_id,
+            name: profMap[t.user_id]||t.user_id,
+            player: ptsByPlayer[t.player_id]?.name || t.player_name || t.player_id,
+            pts,
+            _score: pts,
+          });
+        }
+      });
+    }
+    traditore.sort((a,b) => b._score - a._score);
+    const tradiUnique = [];
+    const seen = new Set();
+    traditore.forEach(t => { if (!seen.has(t.id)) { seen.add(t.id); tradiUnique.push(t); } });
+
+    return { bandit, scam, fedelissimi, traditore: tradiUnique.slice(0,5) };
+  }
+
+  const awards = [
+    {
+      key:"bandit", emoji:"💣", title:"The Bandit",
+      desc:"L'atleta con il punteggio più alto in una singola tappa",
+      color:B.orange, bg:B.orangePale,
+      renderRow:(row,i) => <Top5Row key={row.player_id||i} rank={i}
+        name={row.name} sub={`Tappa: ${row.event_id}`}
+        value={row._score} unit=" pt" color={B.orange} bg={B.orangePale}/>
+    },
+    {
+      key:"scam", emoji:"🙈", title:"The Scam",
+      desc:"L'atleta più comprato ma con i punti più bassi — la fregatura del mercato",
+      color:"#DC2626", bg:"#FEE2E2",
+      renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
+        name={row.name} sub={`${row.count} roster · ${Math.round(row.pts*10)/10} pt totali`}
+        value={row.count} unit=" roster" color={"#DC2626"} bg={"#FEE2E2"}/>
+    },
+    {
+      key:"fedelissimi", emoji:"❤️", title:"Fedelissimi",
+      desc:"Chi non ha mai venduto un atleta — lealtà assoluta",
+      color:B.greenDark, bg:B.greenPale,
+      renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
+        name={row.name} sub="Nessuna vendita in stagione"
+        value="🏅" unit="" color={B.greenDark} bg={B.greenPale}/>
+    },
+    {
+      key:"traditore", emoji:"🗡️", title:"Il Traditore",
+      desc:"Ha venduto un atleta che poi ha fatto molti punti",
+      color:"#7C3AED", bg:"#F3E8FF",
+      renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
+        name={row.name} sub={`Ha venduto ${row.player} (${Math.round(row.pts*10)/10} pt dopo)`}
+        value={Math.round(row.pts*10)/10} unit=" pt persi" color={"#7C3AED"} bg={"#F3E8FF"}/>
+    },
+  ];
+
   return (
-    <StatComingSoon
-      emoji="🏅" title="Awards" onBack={onBack}
-      desc="The Bandit, The Scam, Fedelissimi e Traditore. I premi speciali della stagione assegnati a fine anno."
-    />
+    <StatPage title="Awards" emoji="🏅" onBack={onBack}>
+      <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:10,
+        padding:"10px 13px",marginBottom:14,fontSize:12,color:"#7A4F00"}}>
+        🏅 Gli Awards sono calcolati automaticamente dai dati reali della stagione.
+        Aggiornati dopo ogni Sync Risultati.
+      </div>
+      {awards.map(award => (
+        <div key={award.key} style={{background:B.white,border:`1px solid ${B.creamDark}`,
+          borderRadius:12,padding:"14px",marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:22}}>{award.emoji}</span>
+            <div>
+              <div style={{fontWeight:"bold",fontSize:14,color:B.dark}}>{award.title}</div>
+              <div style={{fontSize:10,color:B.gray,marginTop:1}}>{award.desc}</div>
+            </div>
+          </div>
+          {loading
+            ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+            : !allData
+              ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:12}}>Nessun dato disponibile</div>
+              : (allData[award.key]||[]).length===0
+                ? <div style={{textAlign:"center",padding:"12px",color:B.gray,fontSize:12}}>Nessun dato ancora</div>
+                : (allData[award.key]||[]).map((row,i) => award.renderRow(row, i+1))
+          }
+        </div>
+      ))}
+    </StatPage>
   );
 }
 
