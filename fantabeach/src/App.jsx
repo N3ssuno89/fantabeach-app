@@ -1345,9 +1345,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {/* PAGINE NASCOSTE — da menu hamburger */}
         {hiddenPage&&(
           <div>
-            {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
-            {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
-            {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken}/>}
+            {hiddenPage==="stats-atleti"&&isAdmin&&<StatsAtleti onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
+            {hiddenPage==="stats-utenti"&&isAdmin&&<StatsUtenti onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
+            {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
             {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
@@ -3086,7 +3086,11 @@ function StatsSection({ title, emoji, desc, loading, dataByLeague, renderRow, em
 }
 
 // ─── PAGINA 1: STATS ATLETI ───────────────────────────────────
-function StatsAtleti({ onBack, accessToken }) {
+function StatsAtleti({ onBack, accessToken, athletesData }) {
+  // Costruisce nameMap da athletes_data (fonte completa e affidabile)
+  const allAthletesList = [...(athletesData?.women||[]), ...(athletesData?.men||[])];
+  const globalNameMap = {};
+  allAthletesList.forEach(a => { if (a.id && a.name) globalNameMap[a.id] = a.name; });
   const [allData, setAllData] = React.useState(null);
   const [ownerMap, setOwnerMap] = React.useState({});
   const [loading, setLoading] = React.useState(true);
@@ -3135,7 +3139,9 @@ function StatsAtleti({ onBack, accessToken }) {
       const evMap = {};
       if (Array.isArray(events)) events.forEach(e => { evMap[e.id] = e; });
 
-      return buildAthleteStats(results, rosters, history, evMap, nameMap);
+      // Merge nameMap: priorità a globalNameMap (più completo) poi nameMap da DB
+      const mergedNameMap = { ...nameMap, ...globalNameMap };
+      return buildAthleteStats(results, rosters, history, evMap, mergedNameMap);
     } catch(e) { console.error("Stats atleti:", e); return null; }
   }
 
@@ -3496,7 +3502,10 @@ function StatsUtenti({ onBack, accessToken }) {
 }
 
 // ─── PAGINA 3: AWARDS ─────────────────────────────────────────
-function StatsAwards({ onBack, accessToken }) {
+function StatsAwards({ onBack, accessToken, athletesData }) {
+  const allAthletesList = [...(athletesData?.women||[]), ...(athletesData?.men||[])];
+  const globalNameMap = {};
+  allAthletesList.forEach(a => { if (a.id && a.name) globalNameMap[a.id] = a.name; });
   const [allData, setAllData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -3507,9 +3516,15 @@ function StatsAwards({ onBack, accessToken }) {
 
   async function loadAwards(token) {
     try {
-      // Match results completati
+      // Match results — filtra per eventi 2026 tramite join lato app
+      // Prima carica gli event_id 2026
+      const evdb0 = await supabase.from("events", token);
+      const evList0 = await evdb0.select("id", "&anno=eq.2026&status=eq.Completato");
+      const ev2026ids = Array.isArray(evList0) ? evList0.map(e => `"${e.id}"`).join(",") : "";
       const db = await supabase.from("match_results", token);
-      const results = await db.select("player_id,player_name,total_pts,event_id,bonus_codes", "&limit=5000");
+      const results = ev2026ids
+        ? await db.select("player_id,player_name,total_pts,event_id,bonus_codes", `&event_id=in.(${ev2026ids})&limit=5000`)
+        : [];
 
       // Mappa nomi atleti da player_history (più affidabile di match_results.player_name)
       const phdb = await supabase.from("player_history", token);
@@ -3540,7 +3555,8 @@ function StatsAwards({ onBack, accessToken }) {
       const evList = await evdb2.select("id,name", "&anno=eq.2026");
       const evMap = {};
       if (Array.isArray(evList)) evList.forEach(e => { evMap[e.id] = e; });
-      return buildAwards(results, rostersAll, rostersActive, transfers, profMap, nameMap, evMap);
+      const mergedNameMap = { ...nameMap, ...globalNameMap };
+      return buildAwards(results, rostersAll, rostersActive, transfers, profMap, mergedNameMap, evMap);
     } catch(e) { console.error("Awards:", e); return null; }
   }
 
