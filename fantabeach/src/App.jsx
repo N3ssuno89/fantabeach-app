@@ -3101,35 +3101,45 @@ function StatsAtleti({ onBack, accessToken }) {
 
   async function loadAthleteStats(token) {
     try {
-      // Carica match_results tappe completate
+      // Carica match_results tappe completate 2026
       const db = await supabase.from("match_results", token);
       const results = await db.select(
         "player_id,player_name,total_pts,bonus_codes,event_id",
         "&order=player_id.asc&limit=5000"
       );
 
-      // Carica roster per ownership
+      // Carica roster per ownership (include anche venduti per nameMap)
       const rdb = await supabase.from("rosters", token);
       const rosters = await rdb.select("player_id,player_name,gender,league_id,price", "&sold_at=is.null");
 
-      // Carica player_history per prezzi (prima e ultima riga per atleta dal day0)
+      // Carica player_history per prezzi dal day0
       const pdb = await supabase.from("player_history", token);
       const history = await pdb.select(
-        "player_id,ranking,cost,synced_at",
+        "player_id,player_name,ranking,cost,synced_at",
         `&synced_at=gte.${STATS_DAY0}T00:00:00Z&order=synced_at.asc&limit=5000`
       );
 
-      // Carica eventi completati per filtrare per genere
+      // Carica tutti i roster (anche venduti) per nameMap completo
+      const rdbAll = await supabase.from("rosters", token);
+      const rostersAll = await rdbAll.select("player_id,player_name,gender", "");
+
+      // Costruisce nameMap da tutte le fonti disponibili
+      const nameMap = {};
+      if (Array.isArray(rostersAll)) rostersAll.forEach(r => { if (r.player_name && !nameMap[r.player_id]) nameMap[r.player_id] = r.player_name; });
+      if (Array.isArray(history)) history.forEach(r => { if (r.player_name && !nameMap[r.player_id]) nameMap[r.player_id] = r.player_name; });
+      if (Array.isArray(results)) results.forEach(r => { if (r.player_name && !nameMap[r.player_id]) nameMap[r.player_id] = r.player_name; });
+
+      // Carica eventi completati 2026 per filtrare per genere
       const edb = await supabase.from("events", token);
-      const events = await edb.select("id,gender,weight", "&status=eq.Completato&anno=eq.2026");
+      const events = await edb.select("id,gender,weight,name", "&status=eq.Completato&anno=eq.2026");
       const evMap = {};
       if (Array.isArray(events)) events.forEach(e => { evMap[e.id] = e; });
 
-      return buildAthleteStats(results, rosters, history, evMap);
+      return buildAthleteStats(results, rosters, history, evMap, nameMap);
     } catch(e) { console.error("Stats atleti:", e); return null; }
   }
 
-  function buildAthleteStats(results, rosters, history, evMap) {
+  function buildAthleteStats(results, rosters, history, evMap, nameMap={}) {
     if (!Array.isArray(results) || !Array.isArray(rosters)) return null;
 
     // Punti totali per atleta
@@ -3143,14 +3153,14 @@ function StatsAtleti({ onBack, accessToken }) {
       const g = ev.gender?.toUpperCase();
       const leagues = g==="F" ? ["L001-F","L002-F"] : ["L001-M","L002-M"];
 
-      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0, matches:0 };
+      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, pts:0, matches:0 };
       ptsByPlayer[r.player_id].pts += r.total_pts||0;
       ptsByPlayer[r.player_id].matches += 1;
       ptsByPlayer[r.player_id].gender = g;
 
       leagues.forEach(lid => {
         if (!ptsByPlayerByLeague[lid][r.player_id])
-          ptsByPlayerByLeague[lid][r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0, matches:0, gender:g };
+          ptsByPlayerByLeague[lid][r.player_id] = { id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, pts:0, matches:0, gender:g };
         ptsByPlayerByLeague[lid][r.player_id].pts += r.total_pts||0;
         ptsByPlayerByLeague[lid][r.player_id].matches += 1;
       });
@@ -3161,11 +3171,11 @@ function StatsAtleti({ onBack, accessToken }) {
     const ownerByPlayerByLeague = { "L001-F":{}, "L001-M":{}, "L002-F":{}, "L002-M":{} };
     if (Array.isArray(rosters)) {
       rosters.forEach(r => {
-        if (!ownerByPlayer[r.player_id]) ownerByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
+        if (!ownerByPlayer[r.player_id]) ownerByPlayer[r.player_id] = { id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
         ownerByPlayer[r.player_id].count++;
         if (ownerByPlayerByLeague[r.league_id]) {
           if (!ownerByPlayerByLeague[r.league_id][r.player_id])
-            ownerByPlayerByLeague[r.league_id][r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
+            ownerByPlayerByLeague[r.league_id][r.player_id] = { id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, count:0, gender:r.gender, price:r.price };
           ownerByPlayerByLeague[r.league_id][r.player_id].count++;
         }
       });
@@ -3223,7 +3233,7 @@ function StatsAtleti({ onBack, accessToken }) {
           const delta = first.ranking - last.ranking; // positivo = salito
           const g = ownerByPlayer[id]?.gender;
           if (genderFilter && g !== genderFilter) return null;
-          return { id, name: ownerByPlayer[id]?.name || id, _score: delta, delta, gender:g };
+          return { id, name: nameMap[id] || ownerByPlayer[id]?.name || id, _score: delta, delta, gender:g };
         })
         .filter(Boolean)
         .filter(a => a._score > 0)
@@ -3239,7 +3249,7 @@ function StatsAtleti({ onBack, accessToken }) {
           const pct = Math.round(((last.cost - first.cost) / first.cost)*100);
           const g = ownerByPlayer[id]?.gender;
           if (genderFilter && g !== genderFilter) return null;
-          return { id, name: ownerByPlayer[id]?.name || id, _score: Math.abs(delta), delta, pct, gender:g };
+          return { id, name: nameMap[id] || ownerByPlayer[id]?.name || id, _score: Math.abs(delta), delta, pct, gender:g };
         })
         .filter(Boolean)
         .sort((a,b) => b._score - a._score)
@@ -3349,9 +3359,10 @@ function StatsUtenti({ onBack, accessToken }) {
       const profMap = {};
       if (Array.isArray(profiles)) profiles.forEach(p => { profMap[p.id] = p.username; });
 
-      // Trasferimenti per Casinò e Trader
+      // Trasferimenti per Casinò e Trader — solo 2026
       const tdb = await supabase.from("transfer_history", token);
-      const transfers = await tdb.select("user_id,league_id,action,price,budget_after,created_at", "&limit=2000");
+      const transfers = await tdb.select("user_id,league_id,action,price,budget_after,created_at",
+        "&created_at=gte.2026-01-01T00:00:00Z&limit=2000");
 
       return buildUserStats(scores, profMap, transfers);
     } catch(e) { console.error("Stats utenti:", e); return null; }
@@ -3406,8 +3417,8 @@ function StatsUtenti({ onBack, accessToken }) {
         });
       }
       return Object.values(byUser)
+        .filter(u => u.earned > 0) // almeno una vendita
         .map(u => ({ ...u, _score: u.earned - u.spent, net: u.earned - u.spent }))
-        .filter(u => u._score > 0)
         .sort((a,b)=>b._score-a._score)
         .slice(0,5);
     };
@@ -3617,7 +3628,7 @@ function StatsAwards({ onBack, accessToken }) {
       desc:"L'atleta con il punteggio più alto in una singola tappa",
       color:B.orange, bg:B.orangePale,
       renderRow:(row,i) => <Top5Row key={row.player_id||i} rank={i}
-        name={row.name} sub={`Tappa ${row.event_id?.replace("E","")}: ${row.tappaName||row.event_id}`}
+        name={row.name} sub={`${row.tappaName && row.tappaName !== row.event_id ? row.tappaName : ("Tappa " + (row.event_id||"").replace(/^E0*/,""))}`}
         value={row._score} unit=" pt" color={B.orange} bg={B.orangePale}/>
     },
     {
