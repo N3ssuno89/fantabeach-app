@@ -3088,11 +3088,15 @@ function StatsSection({ title, emoji, desc, loading, dataByLeague, renderRow, em
 // ─── PAGINA 1: STATS ATLETI ───────────────────────────────────
 function StatsAtleti({ onBack, accessToken }) {
   const [allData, setAllData] = React.useState(null);
+  const [ownerMap, setOwnerMap] = React.useState({});
   const [loading, setLoading] = React.useState(true);
 
   useEffect(() => {
     if (!accessToken) return;
-    loadAthleteStats(accessToken).then(d => { setAllData(d); setLoading(false); });
+    loadAthleteStats(accessToken).then(d => {
+      if (d) { setAllData(d.stats); setOwnerMap(d.ownerMap||{}); }
+      setLoading(false);
+    });
   }, []);
 
   async function loadAthleteStats(token) {
@@ -3245,11 +3249,14 @@ function StatsAtleti({ onBack, accessToken }) {
     };
 
     return {
-      global: build(null, null),
-      "L001-F": build("L001-F", "F"),
-      "L001-M": build("L001-M", "M"),
-      "L002-F": build("L002-F", "F"),
-      "L002-M": build("L002-M", "M"),
+      stats: {
+        global: build(null, null),
+        "L001-F": build("L001-F", "F"),
+        "L001-M": build("L001-M", "M"),
+        "L002-F": build("L002-F", "F"),
+        "L002-M": build("L002-M", "M"),
+      },
+      ownerMap: ownerByPlayer,
     };
   }
 
@@ -3305,7 +3312,7 @@ function StatsAtleti({ onBack, accessToken }) {
                             :null)
                           : row.matches?`${row.matches} partite`:null}
                         value={sec.key==="hiddenGem"
-                          ? (row.pts/(ownerByPlayer?.[row.id]?.price||20)).toFixed(2)
+                          ? (row.pts/(ownerMap?.[row.id]?.price||20)).toFixed(2)
                           : sec.key==="rocket" ? row.delta
                           : sec.key==="wallStreet" ? (row.delta>0?"+":"")+(row.delta||0)
                           : sec.key==="ownership" ? row.count
@@ -3493,6 +3500,12 @@ function StatsAwards({ onBack, accessToken }) {
       const db = await supabase.from("match_results", token);
       const results = await db.select("player_id,player_name,total_pts,event_id,bonus_codes", "&limit=5000");
 
+      // Mappa nomi atleti da player_history (più affidabile di match_results.player_name)
+      const phdb = await supabase.from("player_history", token);
+      const phRows = await phdb.select("player_id,player_name", "&order=synced_at.desc&limit=2000");
+      const nameMap = {};
+      if (Array.isArray(phRows)) phRows.forEach(r => { if (r.player_name && !nameMap[r.player_id]) nameMap[r.player_id] = r.player_name; });
+
       // Roster (attivi + venduti per Traditore)
       const rdb = await supabase.from("rosters", token);
       const rostersAll = await rdb.select("user_id,player_id,player_name,price,league_id,acquired_at,sold_at");
@@ -3511,11 +3524,16 @@ function StatsAwards({ onBack, accessToken }) {
       const rdbActive = await supabase.from("rosters", token);
       const rostersActive = await rdbActive.select("player_id,player_name,league_id", "&sold_at=is.null");
 
-      return buildAwards(results, rostersAll, rostersActive, transfers, profMap);
+      // Carica events per nomi tappe
+      const evdb2 = await supabase.from("events", token);
+      const evList = await evdb2.select("id,name", "&anno=eq.2026");
+      const evMap = {};
+      if (Array.isArray(evList)) evList.forEach(e => { evMap[e.id] = e; });
+      return buildAwards(results, rostersAll, rostersActive, transfers, profMap, nameMap, evMap);
     } catch(e) { console.error("Awards:", e); return null; }
   }
 
-  function buildAwards(results, rostersAll, rostersActive, transfers, profMap) {
+  function buildAwards(results, rostersAll, rostersActive, transfers, profMap, nameMap={}, evMap={}) {
     if (!Array.isArray(results)) return null;
 
     // Punti per atleta per evento
@@ -3524,9 +3542,9 @@ function StatsAwards({ onBack, accessToken }) {
     results.forEach(r => {
       if (!r.player_id) return;
       const key = `${r.player_id}::${r.event_id}`;
-      if (!ptsByPlayerEvent[key]) ptsByPlayerEvent[key] = { player_id:r.player_id, name:r.player_name||r.player_id, event_id:r.event_id, pts:0 };
+      if (!ptsByPlayerEvent[key]) ptsByPlayerEvent[key] = { player_id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, event_id:r.event_id, tappaName:evMap[r.event_id]?.name||r.event_id, pts:0 };
       ptsByPlayerEvent[key].pts += r.total_pts||0;
-      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:r.player_name||r.player_id, pts:0 };
+      if (!ptsByPlayer[r.player_id]) ptsByPlayer[r.player_id] = { id:r.player_id, name:nameMap[r.player_id]||r.player_name||r.player_id, pts:0 };
       ptsByPlayer[r.player_id].pts += r.total_pts||0;
     });
 
@@ -3578,7 +3596,7 @@ function StatsAwards({ onBack, accessToken }) {
           traditore.push({
             id: t.user_id,
             name: profMap[t.user_id]||t.user_id,
-            player: ptsByPlayer[t.player_id]?.name || t.player_name || t.player_id,
+            player: nameMap[t.player_id] || ptsByPlayer[t.player_id]?.name || t.player_name || t.player_id,
             pts,
             _score: pts,
           });
@@ -3590,7 +3608,7 @@ function StatsAwards({ onBack, accessToken }) {
     const seen = new Set();
     traditore.forEach(t => { if (!seen.has(t.id)) { seen.add(t.id); tradiUnique.push(t); } });
 
-    return { bandit, scam, fedelissimi, traditore: tradiUnique.slice(0,5) };
+    return { bandit, scam, traditore: tradiUnique.slice(0,5) };
   }
 
   const awards = [
@@ -3599,7 +3617,7 @@ function StatsAwards({ onBack, accessToken }) {
       desc:"L'atleta con il punteggio più alto in una singola tappa",
       color:B.orange, bg:B.orangePale,
       renderRow:(row,i) => <Top5Row key={row.player_id||i} rank={i}
-        name={row.name} sub={`Tappa: ${row.event_id}`}
+        name={row.name} sub={`Tappa ${row.event_id?.replace("E","")}: ${row.tappaName||row.event_id}`}
         value={row._score} unit=" pt" color={B.orange} bg={B.orangePale}/>
     },
     {
@@ -3609,15 +3627,7 @@ function StatsAwards({ onBack, accessToken }) {
       renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
         name={row.name} sub={`${row.count} roster · ${Math.round(row.pts*10)/10} pt totali`}
         value={row.count} unit=" roster" color={"#DC2626"} bg={"#FEE2E2"}/>
-    },
-    {
-      key:"fedelissimi", emoji:"❤️", title:"Fedelissimi",
-      desc:"Chi non ha mai venduto un atleta — lealtà assoluta",
-      color:B.greenDark, bg:B.greenPale,
-      renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
-        name={row.name} sub="Nessuna vendita in stagione"
-        value="🏅" unit="" color={B.greenDark} bg={B.greenPale}/>
-    },
+    }
     {
       key:"traditore", emoji:"🗡️", title:"Il Traditore",
       desc:"Ha venduto un atleta che poi ha fatto molti punti",
