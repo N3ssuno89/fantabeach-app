@@ -3627,7 +3627,7 @@ function StatsAwards({ onBack, accessToken }) {
       renderRow:(row,i) => <Top5Row key={row.id||i} rank={i}
         name={row.name} sub={`${row.count} roster · ${Math.round(row.pts*10)/10} pt totali`}
         value={row.count} unit=" roster" color={"#DC2626"} bg={"#FEE2E2"}/>
-    }
+    },
     {
       key:"traditore", emoji:"🗡️", title:"Il Traditore",
       desc:"Ha venduto un atleta che poi ha fatto molti punti",
@@ -3677,16 +3677,35 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
   const photo = ATHLETE_PHOTOS[a.id];
   const [fullHistory, setFullHistory] = React.useState(null);
 
-  // Carica storico prezzi completo da player_history
+  // Carica storico prezzi: 1 punto per giorno, max 30 giorni
   useEffect(() => {
     if (!accessToken || !a.id) return;
     const load = async () => {
       try {
         const db = await supabase.from("player_history", accessToken);
+        // Prende tutte le righe ordinate per data — poi deduplicha per giorno lato JS
         const rows = await db.select("cost,ranking,synced_at",
-          `&player_id=eq.${a.id}&order=synced_at.asc&limit=20`);
+          `&player_id=eq.${a.id}&order=synced_at.asc&limit=500`);
         if (Array.isArray(rows) && rows.length > 0) {
-          setFullHistory(rows);
+          // Deduplica: tieni solo L'ULTIMA riga per ogni giorno
+          const byDay = {};
+          rows.forEach(r => {
+            const day = (r.synced_at || "").slice(0, 10); // "2026-05-13"
+            byDay[day] = r; // sovrascrive → tieni l'ultima del giorno
+          });
+          // Ordina per giorno e prendi max 30
+          const deduplicated = Object.values(byDay)
+            .sort((a, b) => a.synced_at.localeCompare(b.synced_at))
+            .slice(-30);
+          // Forza l'ultimo punto al valore corrente dell'atleta
+          if (deduplicated.length > 0) {
+            deduplicated[deduplicated.length - 1] = {
+              ...deduplicated[deduplicated.length - 1],
+              cost: a.cost, // valore corrente
+              ranking: a.ranking,
+            };
+          }
+          setFullHistory(deduplicated);
         }
       } catch(e) { /* silenzioso */ }
     };
@@ -3695,10 +3714,15 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
 
   // Grafico storico prezzi
   const historyData = fullHistory
-    ? fullHistory.map(r => ({ cost: r.cost, label: new Date(r.synced_at).toLocaleDateString("it-IT", {day:"2-digit",month:"2-digit"}) }))
-    : (a.costHistory || [a.cost]).map((c,i,arr) => ({
+    ? fullHistory.map((r, i, arr) => ({
+        cost: r.cost,
+        label: new Date(r.synced_at).toLocaleDateString("it-IT", {day:"2-digit",month:"2-digit"}),
+        isCurrent: i === arr.length - 1,
+      }))
+    : (a.costHistory || [a.cost]).map((c, i, arr) => ({
         cost: c,
-        label: i === arr.length-1 ? "Ora" : `Sync ${i+1}`
+        label: i === arr.length-1 ? "Ora" : `Sync ${i+1}`,
+        isCurrent: i === arr.length - 1,
       }));
 
   const costs = historyData.map(h => h.cost);
@@ -3774,35 +3798,55 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           Andamento Prezzo {fullHistory===null&&<span style={{fontSize:9,color:B.gray,fontWeight:"normal"}}>⏳</span>}
         </div>
         {(() => {
-          const W = 300, H = 110, PAD = 24;
+          // Dimensioni responsive — usa viewBox largo, si scala al 100% del contenitore
+          const W = 360, H = 120, PAD = 28;
           const innerW = W - PAD * 2;
-          const px = (i) => PAD + (i / Math.max(historyData.length - 1, 1)) * innerW;
-          const py = (v) => H - 22 - ((v - minV) / range) * (H - 44);
+          const n = historyData.length;
+          const px = (i) => PAD + (i / Math.max(n - 1, 1)) * innerW;
+          const py = (v) => H - 26 - ((v - minV) / range) * (H - 50);
           const pts = historyData.map((h,i) => `${px(i)},${py(h.cost)}`).join(" ");
-          const area = `${PAD},${H-22} ${pts} ${px(historyData.length-1)},${H-22}`;
+          const area = `${PAD},${H-26} ${pts} ${px(n-1)},${H-26}`;
+
+          // Mostra label solo primo, ultimo e punti con cambio valore
+          const showLabel = (i) => {
+            if (i === 0 || i === n-1) return true;
+            return historyData[i].cost !== historyData[i-1].cost;
+          };
+
           return (
             <>
-              <svg width="100%" height="auto" viewBox={`0 0 ${W} ${H}`}
+              <svg width="100%" viewBox={`0 0 ${W} ${H}`}
                 preserveAspectRatio="xMidYMid meet"
-                style={{display:"block",maxHeight:"140px"}}>
+                style={{display:"block",overflow:"visible"}}>
                 <polygon points={area} fill={B.greenDark} fillOpacity="0.07"/>
-                <polyline points={pts} fill="none" stroke={B.greenDark} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                {historyData.map((h,i)=>(
-                  <g key={i}>
-                    <circle cx={px(i)} cy={py(h.cost)} r="4" fill={i===historyData.length-1?B.orange:B.greenDark}/>
-                    <text x={px(i)} y={py(h.cost)-8} textAnchor="middle" fontSize="9" fill={B.dark} fontFamily="Georgia,serif" fontWeight="bold">${h.cost}</text>
-                  </g>
-                ))}
+                <polyline points={pts} fill="none" stroke={B.greenDark} strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"/>
+                {historyData.map((h,i)=>{
+                  const isLast = i === n-1;
+                  const changed = i > 0 && h.cost !== historyData[i-1].cost;
+                  // Mostra cerchio su tutti i punti ma più piccolo sui punti invariati
+                  const r = (isLast || changed) ? 5 : 2.5;
+                  const fillColor = isLast ? B.orange : B.greenDark;
+                  return (
+                    <g key={i}>
+                      <circle cx={px(i)} cy={py(h.cost)} r={r} fill={fillColor}/>
+                      {/* Mostra etichetta $ solo su primo, ultimo e cambio */}
+                      {(i===0 || isLast || changed) && (
+                        <text x={px(i)} y={py(h.cost)-9}
+                          textAnchor={i===0?"start":isLast?"end":"middle"}
+                          fontSize="9" fill={isLast?B.orange:B.dark}
+                          fontFamily="Georgia,serif" fontWeight="bold">
+                          ${h.cost}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
               </svg>
-              <div style={{display:"flex",marginTop:6}}>
-                {historyData.map((h,i)=>(
-                  <div key={i} style={{
-                    flex:1, textAlign: i===0?"left": i===historyData.length-1?"right":"center",
-                    fontSize:10, fontWeight:i===historyData.length-1?"bold":"normal",
-                    color:i===historyData.length-1?B.orange:B.gray,
-                    paddingLeft: i===0?"4px":0, paddingRight: i===historyData.length-1?"4px":0
-                  }}>{h.label}</div>
-                ))}
+              {/* Label date — solo primo e ultimo */}
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:4,paddingLeft:PAD-4,paddingRight:PAD-4}}>
+                <div style={{fontSize:10,color:B.gray}}>{historyData[0]?.label}</div>
+                <div style={{fontSize:10,color:B.orange,fontWeight:"bold"}}>{historyData[n-1]?.label} (ora)</div>
               </div>
             </>
           );
