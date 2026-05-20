@@ -222,6 +222,82 @@ exports.handler = async (event) => {
       else console.error("Events upsert error:", await res.text());
     }
 
+    // ── Snapshot lineup quando tappa passa a "In corso" ──
+    // Legge eventi precedenti per rilevare cambio status Planned → In corso
+    let snapshotsSaved = 0;
+    try {
+      const supaHeaders = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+      };
+
+      // Prende gli eventi che ora sono "In corso"
+      const inCorsoEvents = events.filter(e => e.status === "In corso");
+
+      for (const event of inCorsoEvents) {
+        // Controlla se lo snapshot esiste già per questo event_id
+        const checkRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/lineup_history?event_id=eq.${event.id}&limit=1&select=id`,
+          { headers: supaHeaders }
+        );
+        const existing = await checkRes.json();
+        if (Array.isArray(existing) && existing.length > 0) continue; // già salvato
+
+        // Determina il genere della lega in base al genere dell'evento
+        const leagueIds = event.gender === "F"
+          ? ["L001-F", "L002-F"]
+          : ["L001-M", "L002-M"];
+
+        for (const leagueId of leagueIds) {
+          // Legge tutte le lineup correnti per questa lega
+          const lineupsRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/lineups?league_id=eq.${leagueId}&select=user_id,player_id,role,saved_at`,
+            { headers: supaHeaders }
+          );
+          const lineups = await lineupsRes.json();
+          if (!Array.isArray(lineups) || lineups.length === 0) continue;
+
+          // Deduplica: per ogni user_id+player_id prende il ruolo più recente
+          const dedup = {};
+          lineups.forEach(l => {
+            const key = `${l.user_id}::${l.player_id}`;
+            if (!dedup[key] || l.saved_at > dedup[key].saved_at) dedup[key] = l;
+          });
+
+          // Recupera nomi atleti da rosters
+          const playerIds = [...new Set(Object.values(dedup).map(l => l.player_id))];
+          const rostersRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/rosters?player_id=in.(${playerIds.join(",")})&select=player_id,player_name&limit=500`,
+            { headers: supaHeaders }
+          );
+          const rosterRows = await rostersRes.json();
+          const nameMap = {};
+          if (Array.isArray(rosterRows)) rosterRows.forEach(r => { if (r.player_name) nameMap[r.player_id] = r.player_name; });
+
+          // Crea snapshot
+          const snapshots = Object.values(dedup).map(l => ({
+            user_id: l.user_id,
+            league_id: leagueId,
+            event_id: event.id,
+            player_id: l.player_id,
+            player_name: nameMap[l.player_id] || null,
+            role: l.role,
+          }));
+
+          if (snapshots.length > 0) {
+            const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/lineup_history`, {
+              method: "POST",
+              headers: { ...supaHeaders, "Prefer": "return=minimal" },
+              body: JSON.stringify(snapshots),
+            });
+            if (insertRes.ok) snapshotsSaved += snapshots.length;
+            else console.error("Snapshot error:", await insertRes.text());
+          }
+        }
+      }
+    } catch(e) { console.warn("Errore snapshot lineup:", e.message); }
+
     // ── Coach — legge da COACHES_DB e salva su Supabase ──
     const coachRows = coachesRes?.data?.values || [];
     const coachHeader = (coachRows[0] || []).map(h => (h||"").trim().toLowerCase());
@@ -264,6 +340,7 @@ exports.handler = async (event) => {
         savedCount,
         eventsSaved,
         coachesSaved,
+        snapshotsSaved,
         updatedAt: new Date().toISOString(),
       }),
     };
