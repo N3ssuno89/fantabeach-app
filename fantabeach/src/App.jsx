@@ -2748,7 +2748,36 @@ function PageRegole({ onBack }) {
         <Row label="Sconfitta 0-2"   value="0 pt"  color={B.gray}      bg={B.grayPale}/>
         <Row label="BYE (tavolino)"  value="+4 pt" color={B.greenDark} bg={B.greenPale}/>
         <InfoBox>
-          <b>Bonus set perso di misura:</b> se un set viene perso con 2 punti di scarto (es. 21-19, 23-21, 25-23) nei primi due set, si guadagna +0.5 pt extra. Non vale nel tie-break.
+          I punti vengono assegnati per ogni partita giocata. Un'atleta che gioca 5 partite accumula i punti di tutte e 5.
+        </InfoBox>
+      </div>
+
+      {/* Bonus */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
+        <Section title="✨ Bonus"/>
+        <Row label="🎯 Set perso di misura" value="+0.5 pt" color={"#7C3AED"} bg={"#F3E8FF"}/>
+        <InfoBox color={"#7C3AED"} bg={"#F3E8FF"}>
+          <b>Quando scatta:</b> un set viene perso con ≤2 punti di scarto nei <b>primi 2 set</b> (non nel tie-break).<br/>
+          <b>A chi va:</b> alla coppia che ha <b>perso</b> quel set, non a chi lo ha vinto.<br/>
+          <b>Esempi:</b><br/>
+          ✅ Perdi il 1° set 19-21 → <b>+0.5 pt</b> (scarto = 2)<br/>
+          ✅ Perdi il 2° set 23-25 → <b>+0.5 pt</b> (scarto = 2)<br/>
+          ❌ Perdi il 1° set 18-21 → <b>0 pt</b> (scarto = 3)<br/>
+          ❌ Perdi il 3° set 13-15 → <b>0 pt</b> (tie-break, non vale)<br/>
+          ❌ Vinci il set 21-19 → <b>0 pt</b> (vale solo per chi perde il set)<br/>
+          <b>Caso 2-1:</b> in una partita vinta 2-1, se il set perso dalla coppia vincente è 19-21, <b>la coppia vincente</b> prende +0.5 per quel set oltre ai +3 pt base.
+        </InfoBox>
+      </div>
+
+      {/* Malus */}
+      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
+        <Section title="⚠️ Malus"/>
+        <Row label="🤕 Forfait in una partita"    value="-1 pt"  color={B.orange} bg={B.orangePale}/>
+        <Row label="❌ Assente all'intera tappa"   value="-3 pt"  color={B.red}    bg={"#FDF0EB"}/>
+        <InfoBox>
+          <b>Forfait partita:</b> l'atleta era iscritto alla tappa ma non si presenta a una singola partita (infortunio, ritiro durante la gara). Malus -1 pt per quella partita.<br/><br/>
+          <b>Assenza tappa:</b> l'atleta non è presente alla tappa intera (non si è iscritto o si è ritirato prima). Malus -3 pt totali per la tappa.<br/><br/>
+          <b>Esempio:</b> hai Gottardi in formazione. Si infortuna al sabato e non gioca i quarti → -1 pt per quella partita. Se non si presenta alla tappa → -3 pt.
         </InfoBox>
       </div>
 
