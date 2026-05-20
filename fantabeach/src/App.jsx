@@ -1187,7 +1187,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         league_id: leagueId,
         status: "pending",
         team_name: joinTeamName.trim(),
-        budget: (selLeague && ["L001-F","L001-M"].includes(selLeague)) ? 450 : 400,
+        budget: ["L001-F","L001-M"].includes(league.id) ? 450 : 400,
       }, "user_id,league_id");
     } catch(e) { console.error("Errore salvataggio iscrizione:", e); }
   };
@@ -1353,7 +1353,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
             {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="history"&&<StoricoPage onBack={()=>setHiddenPage(null)} accessToken={accessToken} league={leagues.find(l=>l.id===selLeague)} authUser={authUser}/>}
+            {hiddenPage==="history"&&<StoricoPage onBack={()=>setHiddenPage(null)} accessToken={accessToken} league={leagues.find(l=>l.id===leagueId)} authUser={authUser}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
           </div>
