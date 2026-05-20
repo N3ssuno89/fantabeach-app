@@ -2761,11 +2761,17 @@ function PageRegole({ onBack }) {
         <Row label="★ Capitano"             value="×1.3"   color={B.yellow}   bg={B.yellowPale}/>
         <Row label="🧢 Coach vittoria"       value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
         <InfoBox>
-          <b>Set perso di misura (+0.5 pt):</b> scatta se un set viene perso con ≤2 punti di scarto nei primi 2 set (non nel tie-break). Va alla coppia che perde il set.<br/>
-          ✅ Perdi il 1° set 19-21 → +0.5 pt &nbsp;❌ Perdi il 1° set 18-21 → 0 pt &nbsp;❌ 3° set 13-15 → 0 pt (tie-break)<br/><br/>
-          <b>Capitano (×1.3):</b> i punti del capitano vengono moltiplicati per 1.3 dopo il moltiplicatore tappa. Si cumula con il moltiplicatore Gold/Silver ecc.<br/>
-          Esempio Gold: 4 pt × 1.3 (Gold) × 1.3 (capitano) = 6.76 pt<br/><br/>
-          <b>Coach vittoria (+0.5 pt):</b> per ogni partita vinta dalla coppia del tuo coach, guadagni +0.5 pt — ma solo se il coach è schierato (non in panchina).
+          <b>Set perso di misura (+0.5 pt)</b><br/>
+          Si guadagna +0.5 pt se si perde un set con esattamente 2 punti di scarto. Vale solo nei primi due set, non nel tie-break. Il bonus va alla coppia che ha perso quel set.<br/><br/>
+          ✅ Perdi il 1° set 19-21 → <b>+0.5 pt</b> (scarto = 2)<br/>
+          ✅ Perdi il 2° set 21-23 → <b>+0.5 pt</b> (scarto = 2)<br/>
+          ✅ Perdi il 2° set 23-25 → <b>+0.5 pt</b> (scarto = 2)<br/>
+          ❌ Perdi il 1° set 18-21 → <b>0 pt</b> (scarto = 3, non basta)<br/>
+          ❌ Perdi il 1° set 15-21 → <b>0 pt</b> (scarto troppo grande)<br/>
+          ❌ Vinci il set 21-19 → <b>0 pt</b> (vale solo per chi perde il set)<br/>
+          ❌ Perdi il 3° set 13-15 → <b>0 pt</b> (tie-break, non vale mai)<br/><br/>
+          <b>Capitano (×1.3):</b> moltiplicatore sul punteggio del capitano. Si cumula con il moltiplicatore tappa.<br/><br/>
+          <b>Coach vittoria (+0.5 pt):</b> +0.5 pt per ogni partita vinta dalla coppia del tuo coach, solo se schierato.
         </InfoBox>
       </div>
 
@@ -2819,7 +2825,7 @@ function PageRegole({ onBack }) {
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="🧢 Coach"/>
         <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:6}}>
-          Il coach è <b>opzionale</b> e costa 5 crediti. Puoi sceglierlo dal mercato nella tab Coach.
+          Il coach è <b>opzionale</b>. Puoi sceglierlo dal mercato nella tab Coach.
         </div>
         {[
           {l:"Costo",          v:"5 crediti"},
