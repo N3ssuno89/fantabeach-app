@@ -1535,21 +1535,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===1&&(
           myJoin!=="APPROVED"?<JoinGate myJoin={myJoin} league={league} showJoinForm={showJoinForm} setShowJoinForm={setShowJoinForm} joinTeamName={joinTeamName} setJoinTeamName={setJoinTeamName} onJoinRequest={handleJoinRequest}/>:(
           <div>
-            {/* Vista punti: tappa In corso oppure ultima tappa Completata */}
+            {/* Vista punti durante tappa in corso */}
             {(()=>{
-              // 1. Cerca tappa In corso per questo genere
-              const tappaInCorso = events.find(e => e.status==="In corso" && (e.gender||"").toUpperCase()===league.gender);
-
-              // 2. Se nessuna in corso, cerca l'ultima Completata per questo genere
-              const tappaCompletate = events
-                .filter(e => e.status==="Completato" && (e.gender||"").toUpperCase()===league.gender && (e.anno||2026)===2026)
-                .sort((a,b) => (b.date_start||b.date||"").localeCompare(a.date_start||a.date||""));
-              const ultimaCompletata = tappaCompletate[0] || null;
-
-              // 3. Evento da mostrare: in corso ha priorità, poi ultima completata
-              const activeEvent = tappaInCorso || ultimaCompletata;
-              const isCompletata = !tappaInCorso && !!ultimaCompletata;
-
+              const activeEvent = events.find(e => e.status==="In corso" && (e.gender||"").toUpperCase()===league.gender);
               if (!activeEvent || roster.length===0) return null;
 
               // Carica i risultati da Supabase se non ancora caricati
@@ -1594,13 +1582,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
               return (
                 <div>
-                  {/* Header tappa — compatto, differenziato per stato */}
-                  <div style={{background:isCompletata?B.greenDark:"#C0392B",borderRadius:12,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,color:B.white}}>
+                  {/* Header tappa — compatto, non ripetitivo */}
+                  <div style={{background:B.greenDark,borderRadius:12,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,color:B.white}}>
                     <div style={{flex:1}}>
-                      <div style={{fontWeight:"bold",fontSize:15}}>{isCompletata?"✅":"🔴"} {activeEvent.name}</div>
-                      <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>
-                        {isCompletata?"Tappa completata — risultati finali":"Mercato bloccato durante la tappa"}
-                      </div>
+                      <div style={{fontWeight:"bold",fontSize:15}}>🔴 {activeEvent.name}</div>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>Mercato bloccato durante la tappa</div>
                     </div>
                     <div style={{background:et.bg,color:et.color,padding:"4px 10px",borderRadius:8,fontSize:12,fontWeight:"bold"}}>×{et.weight}</div>
                   </div>
