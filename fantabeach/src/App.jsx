@@ -2728,6 +2728,15 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
 
+  // Guard: se league non è disponibile mostra errore
+  if (!league) return (
+    <StatPage title="Storico Punteggi" emoji="📊" onBack={onBack}>
+      <div style={{textAlign:"center",padding:32,color:B.gray,fontSize:13}}>
+        Seleziona una lega prima di aprire lo Storico Punteggi.
+      </div>
+    </StatPage>
+  );
+
   useEffect(() => {
     if (!accessToken || !league || !authUser) return;
     loadStorico(accessToken, league, authUser.id).then(d => {
@@ -2738,22 +2747,6 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
 
   async function loadStorico(token, league, userId) {
     try {
-      const supabase_local = {
-        from: (table, tok) => ({
-          select: async (cols, params = "") => {
-            const r = await fetch(
-              `${typeof SUPABASE_URL !== "undefined" ? SUPABASE_URL : ""}` +
-              `/rest/v1/${table}?select=${cols}${params}`,
-              { headers: {
-                "apikey": typeof SUPABASE_ANON !== "undefined" ? SUPABASE_ANON : "",
-                "Authorization": `Bearer ${tok}`,
-              }}
-            );
-            return r.json();
-          }
-        })
-      };
-
       // Tappe completate per questo genere
       const evdb = await supabase.from("events", token);
       const events = await evdb.select("id,name,weight,type,status,gender,date_start",
