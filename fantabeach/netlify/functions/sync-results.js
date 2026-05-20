@@ -288,8 +288,9 @@ exports.handler = async (event) => {
       const fase     = row[2]?.trim();
       const coppiaA  = row[4]?.trim();
       const coppiaB  = row[5]?.trim();
-      const coachAIn = ["SI","1","YES","TRUE"].includes((row[12] || "").trim().toUpperCase());
-      const coachBIn = ["SI","1","YES","TRUE"].includes((row[13] || "").trim().toUpperCase());
+      // Coach sempre presente — solo bonus, nessun malus
+      const coachAIn = true;
+      const coachBIn = true;
       const forfeit  = (row[14] || "").trim().toUpperCase();
 
       if (!eventId || !fase || !coppiaA) return;
