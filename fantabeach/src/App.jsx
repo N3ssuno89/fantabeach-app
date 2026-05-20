@@ -2769,17 +2769,7 @@ function PageRegole({ onBack }) {
         </InfoBox>
       </div>
 
-      {/* Malus */}
-      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
-        <Section title="⚠️ Malus"/>
-        <Row label="🤕 Forfait in una partita"    value="-1 pt"  color={B.orange} bg={B.orangePale}/>
-        <Row label="❌ Assente all'intera tappa"   value="-3 pt"  color={B.red}    bg={"#FDF0EB"}/>
-        <InfoBox>
-          <b>Forfait partita:</b> l'atleta era iscritto alla tappa ma non si presenta a una singola partita (infortunio, ritiro durante la gara). Malus -1 pt per quella partita.<br/><br/>
-          <b>Assenza tappa:</b> l'atleta non è presente alla tappa intera (non si è iscritto o si è ritirato prima). Malus -3 pt totali per la tappa.<br/><br/>
-          <b>Esempio:</b> hai Gottardi in formazione. Si infortuna al sabato e non gioca i quarti → -1 pt per quella partita. Se non si presenta alla tappa → -3 pt.
-        </InfoBox>
-      </div>
+      {/* Malus Coach rimosso — solo bonus */}
 
       {/* Moltiplicatori tappa */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
@@ -2829,22 +2819,24 @@ function PageRegole({ onBack }) {
         <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:10}}>
           Puoi nominare <b>1 solo capitano</b> tra i 3 titolari. I suoi punti vengono moltiplicati per <b>×1.3</b> dopo l'applicazione del moltiplicatore tappa.
         </div>
-        <Row label="Moltiplicatore"              value="×1.3"  color={B.greenDark} bg={B.greenPale}/>
-        <Row label="Forfait in una partita"       value="-1 pt" color={B.orange}    bg={B.orangePale}/>
-        <Row label="Assente all'intera tappa"     value="-3 pt" color={B.red}       bg="#FDF0EB"/>
+        <Row label="Moltiplicatore" value="×1.3" color={B.greenDark} bg={B.greenPale}/>
+        <InfoBox>
+          Il moltiplicatore ×1.3 si applica <b>solo al capitano</b> e si cumula con il moltiplicatore tappa.<br/>
+          Esempio Silver: capitano vince 2-0 → 4 pt × 1.0 (Silver) × 1.3 (capitano) = 5.2 pt<br/>
+          Esempio Gold: capitano vince 2-0 → 4 pt × 1.3 (Gold) × 1.3 (capitano) = 6.76 pt
+        </InfoBox>
       </div>
 
       {/* Coach */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="🧢 Coach"/>
         <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:10}}>
-          Il coach è <b>opzionale</b> e costa 5 crediti. Se presente fisicamente alla tappa e la sua coppia vince, ottieni punti bonus. Se non presente, si applicano i malus.
+          Il coach è <b>opzionale</b> e costa 5 crediti. Se la sua coppia vince una partita ottieni un bonus.
         </div>
-        <Row label="Vittoria della sua coppia"     value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
-        <Row label="Presente ma non in panchina"   value="-1 pt"   color={B.orange}    bg={B.orangePale}/>
-        <Row label="Assente all'intera tappa"      value="-2 pt"   color={B.red}       bg="#FDF0EB"/>
+        <Row label="Vittoria della sua coppia" value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
         <InfoBox>
-          Se il coach segue due coppie contemporaneamente e va in panchina solo con una, l'altra riceve il malus "non in panchina".
+          Il bonus si applica per ogni vittoria della coppia allenata dal tuo coach.<br/>
+          <b>Ricorda:</b> i punti coach contano solo se lo hai schierato (toggle "Schierato" nella tab Squadra). Se è in panchina non porta né bonus né malus.
         </InfoBox>
       </div>
 
