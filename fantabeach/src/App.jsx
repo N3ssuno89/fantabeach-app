@@ -2773,7 +2773,7 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
         // Usa lineup corrente per tutte le tappe
         const ldb = await supabase.from("lineups", token);
         const lineups = await ldb.select("player_id,role,saved_at",
-          `&user_id=eq.${userId}&league_id=eq.${league.id}&role=in.(titolare,capitano,riserva)`);
+          `&user_id=eq.${userId}&league_id=eq.${league.id}&order=saved_at.desc&limit=50`);
         if (Array.isArray(lineups)) {
           // Deduplicazione: ruolo più recente per player
           const dedup = {};
@@ -2810,6 +2810,7 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
       const tappe = events.map(ev => {
         const myLineup = (lineupMap[ev.id] || []).filter(l => ["titolare","capitano"].includes(l.role));
         const evResults = Array.isArray(results) ? results.filter(r => r.event_id === ev.id) : [];
+        console.log(`[Storico] Tappa ${ev.id} (${ev.name}): lineup=${myLineup.length} atleti, partite=${evResults.length}`);
 
         // Punti per atleta
         const atletiPts = myLineup.map(l => {
@@ -2846,6 +2847,7 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
             return { phase: p.phase, risultato, pts: Math.round(pts*100)/100, bonusLabel };
           });
 
+          console.log(`  Atleta ${l.player_id} (${l.role}): ${partiteList.length} partite, tot=${Math.round(totaleAtleta*100)/100}`);
           return {
             player_id: l.player_id,
             name: nameMap[l.player_id] || l.player_name || l.player_id,
