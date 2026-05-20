@@ -694,7 +694,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     }
     setStandingsLoading(false);
   };
-  const [budgets, setBudgets]     = useState({"L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400});
+  const [budgets, setBudgets]     = useState({"L001-F":450,"L001-M":450,"L002-F":400,"L002-M":400});
   const [rosters, setRosters]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [lineups, setLineups]     = useState({"L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[]});
   const [captains, setCaptains]   = useState({"L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null});
@@ -890,7 +890,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             const adb = await supabase.from("user_leagues", token);
             await Promise.all(leaguesToJoin.map(lid =>
               adb.upsert({ user_id: userId, league_id: lid, status: "approved",
-                team_name: username, budget: 400 }, "user_id,league_id")
+                team_name: username,
+                budget: ["L001-F","L001-M"].includes(lid) ? 450 : 400
+              }, "user_id,league_id")
                 .then(() => { newJoin[lid] = "APPROVED"; })
             ));
           }
@@ -1185,7 +1187,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         league_id: leagueId,
         status: "pending",
         team_name: joinTeamName.trim(),
-        budget: 400,
+        budget: (selLeague && ["L001-F","L001-M"].includes(selLeague)) ? 450 : 400,
       }, "user_id,league_id");
     } catch(e) { console.error("Errore salvataggio iscrizione:", e); }
   };
@@ -1351,6 +1353,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
             {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="history"&&<StoricoPage onBack={()=>setHiddenPage(null)} accessToken={accessToken} league={leagues.find(l=>l.id===selLeague)} authUser={authUser}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
           </div>
@@ -2503,6 +2506,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 {[
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
+                  {icon:"📊", label:"Storico Punteggi", sub:"Punti per tappa e dettaglio partite", sec:"history"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
                   {icon:"📄", label:"Termini",          sub:"Regolamento ufficiale",    sec:"terms"},
@@ -2719,6 +2723,264 @@ function PagePremi({ onBack }) {
 }
 
 // ─── PAGINA REGOLE ────────────────────────────────────────────
+// ─── STORICO PUNTEGGI ────────────────────────────────────────
+function StoricoPage({ onBack, accessToken, league, authUser }) {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  useEffect(() => {
+    if (!accessToken || !league || !authUser) return;
+    loadStorico(accessToken, league, authUser.id).then(d => {
+      setData(d);
+      setLoading(false);
+    });
+  }, [league?.id]);
+
+  async function loadStorico(token, league, userId) {
+    try {
+      const supabase_local = {
+        from: (table, tok) => ({
+          select: async (cols, params = "") => {
+            const r = await fetch(
+              `${typeof SUPABASE_URL !== "undefined" ? SUPABASE_URL : ""}` +
+              `/rest/v1/${table}?select=${cols}${params}`,
+              { headers: {
+                "apikey": typeof SUPABASE_ANON !== "undefined" ? SUPABASE_ANON : "",
+                "Authorization": `Bearer ${tok}`,
+              }}
+            );
+            return r.json();
+          }
+        })
+      };
+
+      // Tappe completate per questo genere
+      const evdb = await supabase.from("events", token);
+      const events = await evdb.select("id,name,weight,type,status,gender,date_start",
+        `&status=eq.Completato&anno=eq.2026&gender=eq.${league.gender}&order=date_start.asc`);
+      if (!Array.isArray(events) || events.length === 0) return { events: [], tappe: [] };
+
+      const eventIds = events.map(e => `"${e.id}"`).join(",");
+
+      // Lineup storica (da lineup_history se disponibile, altrimenti da lineups)
+      const lhdb = await supabase.from("lineup_history", token);
+      const lhRows = await lhdb.select("event_id,player_id,player_name,role",
+        `&user_id=eq.${userId}&league_id=eq.${league.id}&event_id=in.(${eventIds})`);
+
+      // Fallback su lineups correnti se lineup_history è vuota
+      const useHistory = Array.isArray(lhRows) && lhRows.length > 0;
+      let lineupMap = {}; // event_id → [{player_id, role, player_name}]
+
+      if (useHistory) {
+        lhRows.forEach(l => {
+          if (!lineupMap[l.event_id]) lineupMap[l.event_id] = [];
+          lineupMap[l.event_id].push(l);
+        });
+      } else {
+        // Usa lineup corrente per tutte le tappe
+        const ldb = await supabase.from("lineups", token);
+        const lineups = await ldb.select("player_id,role,saved_at",
+          `&user_id=eq.${userId}&league_id=eq.${league.id}&role=in.(titolare,capitano,riserva)`);
+        if (Array.isArray(lineups)) {
+          // Deduplicazione: ruolo più recente per player
+          const dedup = {};
+          lineups.forEach(l => {
+            if (!dedup[l.player_id] || l.saved_at > dedup[l.player_id].saved_at) dedup[l.player_id] = l;
+          });
+          events.forEach(e => { lineupMap[e.id] = Object.values(dedup); });
+        }
+      }
+
+      // Match results per tutti gli eventi
+      const mrdb = await supabase.from("match_results", token);
+      const results = await mrdb.select("event_id,player_id,player_name,base_pts,bonus_pts,total_pts,bonus_codes,phase,match_index",
+        `&event_id=in.(${eventIds})&order=event_id.asc,match_index.asc`);
+
+      // Roster per nomi atleti
+      const rdb = await supabase.from("rosters", token);
+      const roster = await rdb.select("player_id,player_name",
+        `&user_id=eq.${userId}&league_id=eq.${league.id}`);
+      const nameMap = {};
+      if (Array.isArray(roster)) roster.forEach(r => { if (r.player_name) nameMap[r.player_id] = r.player_name; });
+
+      // Coach selezionato
+      const csdb = await supabase.from("coach_selections", token);
+      const coachSel = await csdb.select("coach_id,coach_name,in_field",
+        `&user_id=eq.${userId}&league_id=eq.${league.id}`);
+      const coachId = Array.isArray(coachSel) && coachSel[0]?.in_field ? coachSel[0]?.coach_id : null;
+      const coachName = Array.isArray(coachSel) && coachSel[0]?.coach_name || null;
+
+      // Costruisce dati per ogni tappa
+      const PHASE_ORDER = ["QUALI 1","QUALI 2","POOL 1","POOL 2","POOL 3","BYE POOL",
+        "ROUND OF 16","ROUND OF 12","ROUND OF 8","QUARTI","SEMIFINALE","FINALE 3","FINALE 1"];
+
+      const tappe = events.map(ev => {
+        const myLineup = (lineupMap[ev.id] || []).filter(l => ["titolare","capitano"].includes(l.role));
+        const evResults = Array.isArray(results) ? results.filter(r => r.event_id === ev.id) : [];
+
+        // Punti per atleta
+        const atletiPts = myLineup.map(l => {
+          const playerResults = evResults.filter(r => r.player_id === l.player_id);
+          // Raggruppa per partita (match_index)
+          const partite = {};
+          playerResults.forEach(r => {
+            if (!partite[r.match_index]) partite[r.match_index] = { phase: r.phase, match_index: r.match_index, rows: [] };
+            partite[r.match_index].rows.push(r);
+          });
+          const partiteList = Object.values(partite).sort((a,b) => {
+            const ai = PHASE_ORDER.indexOf(a.phase?.toUpperCase());
+            const bi = PHASE_ORDER.indexOf(b.phase?.toUpperCase());
+            return (ai===-1?99:ai) - (bi===-1?99:bi);
+          });
+
+          let totaleAtleta = 0;
+          const partiteCalc = partiteList.map(p => {
+            const row = p.rows[0] || {};
+            const basePts = row.base_pts || 0;
+            const bonusPts = row.bonus_pts || 0;
+            const codes = row.bonus_codes || [];
+            const netBonus = bonusPts
+              - (codes.includes("coachWin") ? 0.5 : 0)
+              + (codes.includes("coachMalus") ? 1.0 : 0);
+            const mult = l.role === "capitano" ? 1.3 : 1.0;
+            const pts = (basePts + netBonus) * ev.weight * mult;
+            totaleAtleta += pts;
+            // Descrizione risultato
+            const risultato = codes.includes("win20") ? "2-0 ✓" : codes.includes("win21") ? "2-1 ✓" :
+              codes.includes("loss12") ? "1-2 ✗" : codes.includes("loss02") ? "0-2 ✗" :
+              codes.includes("bye") ? "BYE" : "—";
+            const bonusLabel = codes.includes("closeSet") ? " 🎯" : "";
+            return { phase: p.phase, risultato, pts: Math.round(pts*100)/100, bonusLabel };
+          });
+
+          return {
+            player_id: l.player_id,
+            name: nameMap[l.player_id] || l.player_name || l.player_id,
+            role: l.role,
+            partite: partiteCalc,
+            totale: Math.round(totaleAtleta*100)/100,
+          };
+        });
+
+        // Punti coach
+        let coachPts = 0;
+        let coachVittorie = 0;
+        if (coachId) {
+          // Deduplicato per match_index
+          const coachMatches = {};
+          evResults.forEach(r => {
+            if (!r.bonus_codes) return;
+            if (!coachMatches[r.match_index]) coachMatches[r.match_index] = r;
+          });
+          Object.values(coachMatches).forEach(r => {
+            if ((r.bonus_codes || []).includes("coachWin")) { coachPts += 0.5; coachVittorie++; }
+          });
+        }
+
+        const totTappa = atletiPts.reduce((s,a) => s+a.totale, 0) + coachPts;
+
+        return {
+          event: ev,
+          atleti: atletiPts,
+          coachPts: Math.round(coachPts*100)/100,
+          coachVittorie,
+          coachName,
+          totale: Math.round(totTappa*100)/100,
+          usedHistory: useHistory,
+        };
+      });
+
+      const totStagione = tappe.reduce((s,t) => s+t.totale, 0);
+      return { tappe, totStagione: Math.round(totStagione*100)/100 };
+    } catch(e) { console.error("StoricoPage:", e); return null; }
+  }
+
+  const typeColors = { Silver:B.grayLight, Gold:B.yellow, CoppaItalia:B.orange, Finale:B.red };
+
+  return (
+    <StatPage title={`Storico · ${league?.name||""}`} emoji="📊" onBack={onBack}>
+      {loading && <div style={{textAlign:"center",padding:32,color:B.gray}}>⏳ Caricamento storico...</div>}
+      {!loading && !data && <div style={{textAlign:"center",padding:32,color:B.gray}}>Nessun dato disponibile</div>}
+      {!loading && data && data.tappe.length===0 && (
+        <div style={{textAlign:"center",padding:32,color:B.gray,fontSize:13}}>
+          Nessuna tappa completata ancora. Qui vedrai il dettaglio dei punteggi dopo ogni tappa.
+        </div>
+      )}
+      {!loading && data && data.tappe.map((t, ti) => (
+        <div key={t.event.id} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,marginBottom:14,overflow:"hidden"}}>
+          {/* Header tappa */}
+          <div style={{background:B.greenDark,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontWeight:"bold",fontSize:15,color:B.white}}>{t.event.name}</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>
+                {t.event.type} · ×{t.event.weight}
+                {!t.usedHistory && ti===0 ? " · formazione attuale (nessuno storico)" : ""}
+              </div>
+            </div>
+            <div style={{background:"rgba(255,255,255,.15)",borderRadius:8,padding:"6px 12px",textAlign:"center"}}>
+              <div style={{fontWeight:"bold",fontSize:18,color:B.white}}>{t.totale}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>pt tappa</div>
+            </div>
+          </div>
+
+          {/* Atleti */}
+          <div style={{padding:"10px 14px"}}>
+            {t.atleti.map((a,ai) => (
+              <div key={a.player_id} style={{marginBottom:ai<t.atleti.length-1?10:0}}>
+                {/* Nome atleta */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {a.role==="capitano"&&<span style={{background:B.yellow,color:B.dark,fontSize:9,padding:"1px 5px",borderRadius:10,fontWeight:"bold"}}>★ CAP</span>}
+                    <span style={{fontSize:13,fontWeight:"bold",color:B.dark}}>{a.name}</span>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:"bold",color:B.greenDark}}>{a.totale} pt</span>
+                </div>
+                {/* Partite */}
+                {a.partite.map((p,pi) => (
+                  <div key={pi} style={{display:"flex",justifyContent:"space-between",
+                    padding:"3px 8px",background:pi%2===0?B.creamDark:B.white,borderRadius:4,marginBottom:1}}>
+                    <span style={{fontSize:11,color:B.gray}}>{p.phase}{p.bonusLabel}</span>
+                    <span style={{fontSize:11,color:B.gray}}>{p.risultato}</span>
+                    <span style={{fontSize:11,fontWeight:"bold",color:p.pts>0?B.greenDark:B.gray}}>
+                      {p.pts>0?`+${p.pts}`:p.pts} pt
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Coach */}
+            {t.coachPts > 0 && (
+              <div style={{marginTop:8,padding:"6px 8px",background:B.yellowPale,borderRadius:6,
+                display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,color:B.dark}}>🧢 {t.coachName||"Coach"} · {t.coachVittorie} vitt.</span>
+                <span style={{fontSize:12,fontWeight:"bold",color:B.greenDark}}>+{t.coachPts} pt</span>
+              </div>
+            )}
+
+            {/* Totale tappa */}
+            <div style={{marginTop:8,padding:"8px",background:B.greenPale,borderRadius:6,
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              borderTop:`2px solid ${B.greenDark}`}}>
+              <span style={{fontSize:12,fontWeight:"bold",color:B.greenDark}}>Totale tappa</span>
+              <span style={{fontSize:14,fontWeight:"bold",color:B.greenDark}}>{t.totale} pt</span>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Totale stagione */}
+      {!loading && data && data.tappe.length > 0 && (
+        <div style={{background:B.greenDark,borderRadius:12,padding:"14px 16px",
+          display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontWeight:"bold",fontSize:14,color:B.white}}>🏆 Totale Stagione</span>
+          <span style={{fontWeight:"bold",fontSize:20,color:B.yellow}}>{data.totStagione} pt</span>
+        </div>
+      )}
+    </StatPage>
+  );
+}
+
 function PageRegole({ onBack }) {
   const Row = ({label,value,color,bg}) => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${B.creamDark}`}}>
@@ -2919,7 +3181,7 @@ function PageTermini({ onBack }) {
       {[
         {n:"1",t:"Natura del gioco",d:"FantaBeach è un gioco fantasy non ufficiale basato sui risultati reali del Campionato Italiano Assoluto di Beach Volley FIPAV 2026. Non ha alcun rapporto ufficiale con la FIPAV."},
         {n:"2",t:"Iscrizioni",d:"Le iscrizioni aprono il 18 maggio 2026 e chiudono il 25 maggio 2026 alle 23:59. Il costo è di 10€ per singola lega. Dopo la chiusura non è possibile iscriversi."},
-        {n:"3",t:"Crediti fantasy",d:"I crediti fantasy (es. $400 budget) non hanno alcun valore monetario reale. Sono un sistema interno di gioco e non possono essere convertiti in denaro."},
+        {n:"3",t:"Crediti fantasy",d:"I crediti fantasy (es. $400-$450 budget) non hanno alcun valore monetario reale. Sono un sistema interno di gioco e non possono essere convertiti in denaro."},
         {n:"4",t:"Premi fisici",d:"I premi fisici (AirPods, canotta, borsone) vengono consegnati solo se la lega raggiunge le soglie minime di iscritti previste dal regolamento. In assenza del numero minimo, il premio non viene assegnato."},
         {n:"5",t:"Correzioni punteggi",d:"L'admin può correggere errori nei punteggi entro 48 ore dalla pubblicazione ufficiale dei risultati FIPAV. Oltre questo termine, i punteggi sono definitivi."},
         {n:"6",t:"Casi particolari",d:"In caso di forfait, ritiro, infortuni o situazioni non previste dal regolamento, l'admin prende una decisione discrezionale ispirandosi allo spirito del gioco. La decisione è definitiva."},
