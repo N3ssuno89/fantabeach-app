@@ -659,7 +659,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
               user_id: s.user_id,
               user: profileMap[s.user_id] || s.user_id.slice(0,8),
               team: s.team_name || profileMap[s.user_id] || "Squadra",
-              pts: Math.round((s.total_pts || 0) * 10) / 10,
+              pts: Math.round((s.total_pts || 0) * 100) / 100,
               budget: Math.round(s.budget || 0),
               events_played: s.events_played || 0,
               rank,
@@ -709,6 +709,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const notifPollRef = React.useRef(null);
   const [popup, setPopup]         = useState(null);
   const [search, setSearch]       = useState("");
+  const [coachSearch, setCoachSearch] = useState("");
   const [catFilter, setCatFilter] = useState("Tutti");
   const [priceFilter, setPriceFilter] = useState(0);
   const [visibleCount, setVisibleCount] = useState(30);
@@ -1387,7 +1388,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
             {marketTab==="athletes"&&(
               <div>
-                <input placeholder="🔍 Cerca atleta..." value={search} onChange={e=>{setSearch(e.target.value);setVisibleCount(30);}} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:13,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+                <div style={{position:"relative",marginBottom:8}}>
+                  <input placeholder="🔍 Cerca atleta..." value={search} onChange={e=>{setSearch(e.target.value);setVisibleCount(30);}}
+                    style={{width:"100%",padding:"10px 36px 10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:13,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box"}}/>
+                  {search&&(
+                    <button onClick={()=>{setSearch("");setVisibleCount(30);}}
+                      style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:B.gray,padding:"2px 6px",lineHeight:1}}>✕</button>
+                  )}
+                </div>
 
                 <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,scrollbarWidth:"none",marginBottom:6}}>
                   {["Tutti",...CATEGORIES.map(c=>c.label)].map(label=>{
@@ -1485,7 +1493,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {marketTab==="coaches"&&(
               <div>
                 <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}33`,borderRadius:10,padding:"10px 13px",marginBottom:12,fontSize:12,color:B.greenDark}}>
-                  Il coach è opzionale (${5} crediti). Se la sua coppia vince ottieni +0.5 pt per partita.
+                  Il coach è opzionale. Se la sua coppia vince ottieni +0.5 pt per partita.
                 </div>
 
                 {currentCoach&&(
@@ -1502,8 +1510,18 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   </div>
                 )}
 
+                {/* Search coach */}
+                <div style={{position:"relative",marginBottom:12}}>
+                  <input placeholder="🔍 Cerca coach..." value={coachSearch} onChange={e=>setCoachSearch(e.target.value)}
+                    style={{width:"100%",padding:"10px 36px 10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:13,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box"}}/>
+                  {coachSearch&&(
+                    <button onClick={()=>setCoachSearch("")}
+                      style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:B.gray,padding:"2px 6px",lineHeight:1}}>✕</button>
+                  )}
+                </div>
+
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {coachesList.filter(c => c.active !== false).map(c=>{
+                  {coachesList.filter(c => c.active !== false).filter(c => !coachSearch || c.name.toLowerCase().includes(coachSearch.toLowerCase())).map(c=>{
                     const isSelected = myCoach===c.id;
                     return(
                       <div key={c.id} style={{background:isSelected?B.greenPale:B.white,border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,borderLeft:`3px solid ${isSelected?B.greenDark:B.creamDark}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
@@ -1682,7 +1700,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                                 </div>
                                 <div style={{textAlign:"right"}}>
                                   <div style={{fontSize:18,fontWeight:"bold",color:totalTappa>0?B.greenDark:totalTappa<0?B.orange:B.gray}}>
-                                    {totalTappa>0?`+${totalTappa.toFixed(1)}`:totalTappa===0?"—":totalTappa.toFixed(1)} pt
+                                    {totalTappa>0?`+${totalTappa.toFixed(2)}`:totalTappa===0?"—":totalTappa.toFixed(2)} pt
                                   </div>
                                   {isCapt&&<div style={{fontSize:9,color:B.yellow}}>★ ×1.3 cap</div>}
                                 </div>
@@ -1728,16 +1746,16 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                                 </div>
                                 <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:B.gray,marginBottom:2}}>
                                   <span>{et.label} ×{et.weight}</span>
-                                  <span style={{color:et.color,fontWeight:"bold"}}>{(grandTotal*(et.weight||1))>0?`+${(grandTotal*(et.weight||1)).toFixed(1)}`:(grandTotal*(et.weight||1)).toFixed(1)} pt</span>
+                                  <span style={{color:et.color,fontWeight:"bold"}}>{(grandTotal*(et.weight||1))>0?`+${(grandTotal*(et.weight||1)).toFixed(2)}`:(grandTotal*(et.weight||1)).toFixed(2)} pt</span>
                                 </div>
                                 {isCapt&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:B.gray,marginBottom:2}}>
                                   <span>★ Capitano ×1.3</span>
-                                  <span style={{color:B.yellow,fontWeight:"bold"}}>+{((grandTotal*(et.weight||1))*0.3).toFixed(1)} pt</span>
+                                  <span style={{color:B.yellow,fontWeight:"bold"}}>+{((grandTotal*(et.weight||1))*0.3).toFixed(2)} pt</span>
                                 </div>}
                                 <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:"bold",paddingTop:6,borderTop:`1px solid ${B.sandDeep}`,marginTop:2}}>
                                   <span style={{color:B.dark}}>Totale tappa</span>
                                   <span style={{color:totalTappa>0?B.greenDark:totalTappa<0?B.orange:B.gray}}>
-                                    {totalTappa>0?`+${totalTappa.toFixed(1)}`:totalTappa===0?"—":totalTappa.toFixed(1)} pt
+                                    {totalTappa>0?`+${totalTappa.toFixed(2)}`:totalTappa===0?"—":totalTappa.toFixed(2)} pt
                                   </span>
                                 </div>
                               </div>
@@ -1834,7 +1852,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                             </div>
                           </div>
                           <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>
-                            {(tot+coachPts)>0?`+${(tot+coachPts).toFixed(1)}`:(tot+coachPts).toFixed(1)} pt
+                            {(tot+coachPts)>0?`+${(tot+coachPts).toFixed(2)}`:(tot+coachPts).toFixed(2)} pt
                           </span>
                         </div>
                       </>
