@@ -1641,15 +1641,17 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     )}
                   </div>
 
-                  {/* Legenda */}
+                  {/* Legenda bonus */}
                   <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:12}}>
-                    <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>Legenda bonus/malus</div>
+                    <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1.5,textTransform:"uppercase",color:B.greenDark,marginBottom:6}}>Legenda bonus</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {Object.entries(BONUS_META).filter(([k])=>k!=="win20"&&k!=="win21"&&k!=="loss02"&&k!=="loss12"&&k!=="bye").map(([k,m])=>(
-                        <span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,background:m.bg,color:m.color,fontSize:9,padding:"2px 7px",borderRadius:20,border:`1px solid ${m.color}22`}}>
-                          {m.icon} {m.pts!==undefined?(m.pts>0?`+${m.pts}`:`${m.pts}`):`×${m.mult}`} {m.label}
-                        </span>
-                      ))}
+                      {Object.entries(BONUS_META)
+                        .filter(([k]) => ["closeSet","captain","coachWin"].includes(k))
+                        .map(([k,m])=>(
+                          <span key={k} style={{display:"inline-flex",alignItems:"center",gap:3,background:m.bg,color:m.color,fontSize:9,padding:"2px 7px",borderRadius:20,border:`1px solid ${m.color}22`}}>
+                            {m.icon} {m.pts!==undefined?(m.pts>0?`+${m.pts}`:`${m.pts}`):`×${m.mult}`} {m.label}
+                          </span>
+                        ))}
                     </div>
                   </div>
 
@@ -2756,16 +2758,14 @@ function PageRegole({ onBack }) {
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="✨ Bonus"/>
         <Row label="🎯 Set perso di misura" value="+0.5 pt" color={"#7C3AED"} bg={"#F3E8FF"}/>
-        <InfoBox color={"#7C3AED"} bg={"#F3E8FF"}>
-          <b>Quando scatta:</b> un set viene perso con ≤2 punti di scarto nei <b>primi 2 set</b> (non nel tie-break).<br/>
-          <b>A chi va:</b> alla coppia che ha <b>perso</b> quel set, non a chi lo ha vinto.<br/>
-          <b>Esempi:</b><br/>
-          ✅ Perdi il 1° set 19-21 → <b>+0.5 pt</b> (scarto = 2)<br/>
-          ✅ Perdi il 2° set 23-25 → <b>+0.5 pt</b> (scarto = 2)<br/>
-          ❌ Perdi il 1° set 18-21 → <b>0 pt</b> (scarto = 3)<br/>
-          ❌ Perdi il 3° set 13-15 → <b>0 pt</b> (tie-break, non vale)<br/>
-          ❌ Vinci il set 21-19 → <b>0 pt</b> (vale solo per chi perde il set)<br/>
-          <b>Caso 2-1:</b> in una partita vinta 2-1, se il set perso dalla coppia vincente è 19-21, <b>la coppia vincente</b> prende +0.5 per quel set oltre ai +3 pt base.
+        <Row label="★ Capitano"             value="×1.3"   color={B.yellow}   bg={B.yellowPale}/>
+        <Row label="🧢 Coach vittoria"       value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
+        <InfoBox>
+          <b>Set perso di misura (+0.5 pt):</b> scatta se un set viene perso con ≤2 punti di scarto nei primi 2 set (non nel tie-break). Va alla coppia che perde il set.<br/>
+          ✅ Perdi il 1° set 19-21 → +0.5 pt &nbsp;❌ Perdi il 1° set 18-21 → 0 pt &nbsp;❌ 3° set 13-15 → 0 pt (tie-break)<br/><br/>
+          <b>Capitano (×1.3):</b> i punti del capitano vengono moltiplicati per 1.3 dopo il moltiplicatore tappa. Si cumula con il moltiplicatore Gold/Silver ecc.<br/>
+          Esempio Gold: 4 pt × 1.3 (Gold) × 1.3 (capitano) = 6.76 pt<br/><br/>
+          <b>Coach vittoria (+0.5 pt):</b> per ogni partita vinta dalla coppia del tuo coach, guadagni +0.5 pt — ma solo se il coach è schierato (non in panchina).
         </InfoBox>
       </div>
 
@@ -2813,30 +2813,27 @@ function PageRegole({ onBack }) {
         </InfoBox>
       </div>
 
-      {/* Capitano */}
-      <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
-        <Section title="★ Capitano"/>
-        <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:10}}>
-          Puoi nominare <b>1 solo capitano</b> tra i 3 titolari. I suoi punti vengono moltiplicati per <b>×1.3</b> dopo l'applicazione del moltiplicatore tappa.
-        </div>
-        <Row label="Moltiplicatore" value="×1.3" color={B.greenDark} bg={B.greenPale}/>
-        <InfoBox>
-          Il moltiplicatore ×1.3 si applica <b>solo al capitano</b> e si cumula con il moltiplicatore tappa.<br/>
-          Esempio Silver: capitano vince 2-0 → 4 pt × 1.0 (Silver) × 1.3 (capitano) = 5.2 pt<br/>
-          Esempio Gold: capitano vince 2-0 → 4 pt × 1.3 (Gold) × 1.3 (capitano) = 6.76 pt
-        </InfoBox>
-      </div>
+      {/* Capitano — già nella sezione Bonus sopra */}
 
       {/* Coach */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="🧢 Coach"/>
-        <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:10}}>
-          Il coach è <b>opzionale</b> e costa 5 crediti. Se la sua coppia vince una partita ottieni un bonus.
+        <div style={{fontSize:12,color:B.dark,lineHeight:1.7,marginBottom:6}}>
+          Il coach è <b>opzionale</b> e costa 5 crediti. Puoi sceglierlo dal mercato nella tab Coach.
         </div>
-        <Row label="Vittoria della sua coppia" value="+0.5 pt" color={B.greenDark} bg={B.greenPale}/>
+        {[
+          {l:"Costo",          v:"5 crediti"},
+          {l:"Bonus vittoria", v:"+0.5 pt per partita vinta"},
+          {l:"Se in panchina", v:"Nessun bonus"},
+        ].map((r,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${B.creamDark}`}}>
+            <span style={{fontSize:12,color:B.gray}}>{r.l}</span>
+            <span style={{fontSize:12,fontWeight:"bold",color:B.dark}}>{r.v}</span>
+          </div>
+        ))}
         <InfoBox>
-          Il bonus si applica per ogni vittoria della coppia allenata dal tuo coach.<br/>
-          <b>Ricorda:</b> i punti coach contano solo se lo hai schierato (toggle "Schierato" nella tab Squadra). Se è in panchina non porta né bonus né malus.
+          Il bonus coach (+0.5 pt per vittoria) è già incluso nella sezione Bonus qui sopra.
+          Per attivarlo devi schierare il coach nella tab Squadra — il toggle "Panchina" non genera né bonus né malus.
         </InfoBox>
       </div>
 
