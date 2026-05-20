@@ -2753,7 +2753,7 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
         `&status=eq.Completato&anno=eq.2026&gender=eq.${league.gender}&order=date_start.asc`);
       if (!Array.isArray(events) || events.length === 0) return { events: [], tappe: [] };
 
-      const eventIds = events.map(e => `"${e.id}"`).join(",");
+      const eventIds = events.map(e => e.id).join(",");
 
       // Lineup storica (da lineup_history se disponibile, altrimenti da lineups)
       const lhdb = await supabase.from("lineup_history", token);
@@ -2855,17 +2855,17 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
           };
         });
 
-        // Punti coach
+        // Punti coach — deduplicato per match_index (stesso metodo della vista SQL)
         let coachPts = 0;
         let coachVittorie = 0;
         if (coachId) {
-          // Deduplicato per match_index
-          const coachMatches = {};
+          // Prende solo partite dove il coach_id corrisponde al nostro coach
+          // e deduplicato per match_index (4 righe per partita nel DB)
+          const coachMatchSeen = new Set();
           evResults.forEach(r => {
             if (!r.bonus_codes) return;
-            if (!coachMatches[r.match_index]) coachMatches[r.match_index] = r;
-          });
-          Object.values(coachMatches).forEach(r => {
+            if (coachMatchSeen.has(r.match_index)) return; // già contato
+            coachMatchSeen.add(r.match_index);
             if ((r.bonus_codes || []).includes("coachWin")) { coachPts += 0.5; coachVittorie++; }
           });
         }
