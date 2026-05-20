@@ -54,7 +54,7 @@ exports.handler = async (event) => {
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "RANKING_IMPORT_W!A:D" }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "EVENTS_DB!A:K" })
         .catch(() => ({ data: { values: [] } })),
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "COACHES_DB!A:D" })
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "COACHES_DB!A:E" })
         .catch(() => ({ data: { values: [] } })),
     ]);
 
@@ -226,12 +226,15 @@ exports.handler = async (event) => {
     const coachRows = coachesRes?.data?.values || [];
     const coachHeader = (coachRows[0] || []).map(h => (h||"").trim().toLowerCase());
     const ci = n => { const i = coachHeader.indexOf(n); return i >= 0 ? i : null; };
-    const coaches = coachRows.slice(1).filter(r => r[0]?.trim()).map(row => ({
-      id:     row[ci("coach id") ?? 0]?.trim() || row[0]?.trim(),
-      name:   `${row[ci("cognome") ?? 2]?.trim() || ""} ${row[ci("nome") ?? 1]?.trim() || ""}`.trim(),
-      cost:   5,
-      active: true,
-    })).filter(c => c.id);
+    const coaches = coachRows.slice(1).filter(r => r[0]?.trim()).map(row => {
+      const costVal = parseInt(row[ci("costo") ?? 4]?.trim() || "0", 10);
+      return {
+        id:     row[ci("coach id") ?? 0]?.trim() || row[0]?.trim(),
+        name:   `${row[ci("cognome") ?? 2]?.trim() || ""} ${row[ci("nome") ?? 1]?.trim() || ""}`.trim(),
+        cost:   costVal > 0 ? costVal : 5, // usa il valore del foglio, fallback 5
+        active: true,
+      };
+    }).filter(c => c.id);
 
     let coachesSaved = 0;
     if (coaches.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
