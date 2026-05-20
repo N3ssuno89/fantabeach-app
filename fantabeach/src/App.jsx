@@ -1353,7 +1353,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="stats-awards"&&isAdmin&&<StatsAwards onBack={()=>setHiddenPage(null)} accessToken={accessToken} athletesData={athletes_data}/>}
             {hiddenPage==="profile"&&<PageProfilo authUser={authUser} isAdmin={isAdmin} joinStatus={joinStatus} teamNames={teamNames} accessToken={accessToken} leagueId={leagueId} onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="history"&&<StoricoPage onBack={()=>setHiddenPage(null)} accessToken={accessToken} league={leagues.find(l=>l.id===leagueId)} authUser={authUser}/>}
+            {hiddenPage==="history"&&<StoricoPage key={leagueId} onBack={()=>setHiddenPage(null)} accessToken={accessToken} league={leagues.find(l=>l.id===leagueId)||leagues[0]} leagueId={leagueId} authUser={authUser}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
           </div>
@@ -2724,7 +2724,7 @@ function PagePremi({ onBack }) {
 
 // ─── PAGINA REGOLE ────────────────────────────────────────────
 // ─── STORICO PUNTEGGI ────────────────────────────────────────
-function StoricoPage({ onBack, accessToken, league, authUser }) {
+function StoricoPage({ onBack, accessToken, league, leagueId, authUser }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -2737,20 +2737,27 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
     </StatPage>
   );
 
+  // Ogni cambio di leagueId ricrea il componente grazie a key={leagueId} nel parent
+  // Quindi useEffect gira UNA SOLA VOLTA per montaggio
   useEffect(() => {
-    if (!accessToken || !league || !authUser) return;
-    loadStorico(accessToken, league, authUser.id).then(d => {
+    if (!accessToken || !leagueId || !authUser) return;
+    const gender = leagueId.endsWith("-F") ? "F" : "M";
+    const leagueForLoad = { ...league, gender, id: leagueId };
+    setLoading(true);
+    setData(null);
+    loadStorico(accessToken, leagueForLoad, authUser.id).then(d => {
       setData(d);
       setLoading(false);
     });
-  }, [league?.id]);
+  }, []); // [] = solo al montaggio, il componente viene rimontato ad ogni cambio lega
 
   async function loadStorico(token, league, userId) {
     try {
+      const gender = league.id.endsWith("-F") ? "F" : "M";
       // Tappe completate per questo genere
       const evdb = await supabase.from("events", token);
       const events = await evdb.select("id,name,weight,type,status,gender,date_start",
-        `&status=eq.Completato&anno=eq.2026&gender=eq.${league.gender}&order=date_start.asc`);
+        `&status=eq.Completato&anno=eq.2026&gender=eq.${gender}&order=date_start.asc`);
       if (!Array.isArray(events) || events.length === 0) return { events: [], tappe: [] };
 
       const eventIds = events.map(e => e.id).join(",");
@@ -2784,10 +2791,10 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
         }
       }
 
-      // Match results per tutti gli eventi
+      // Match results per tutti gli eventi — limit alto per sicurezza
       const mrdb = await supabase.from("match_results", token);
       const results = await mrdb.select("event_id,player_id,player_name,base_pts,bonus_pts,total_pts,bonus_codes,phase,match_index",
-        `&event_id=in.(${eventIds})&order=event_id.asc,match_index.asc`);
+        `&event_id=in.(${eventIds})&order=event_id.asc,match_index.asc&limit=5000`);
 
       // Roster per nomi atleti
       const rdb = await supabase.from("rosters", token);
@@ -2796,10 +2803,10 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
       const nameMap = {};
       if (Array.isArray(roster)) roster.forEach(r => { if (r.player_name) nameMap[r.player_id] = r.player_name; });
 
-      // Coach selezionato
+      // Coach selezionato — ordina per selected_at desc per prendere il più recente
       const csdb = await supabase.from("coach_selections", token);
       const coachSel = await csdb.select("coach_id,coach_name,in_field",
-        `&user_id=eq.${userId}&league_id=eq.${league.id}`);
+        `&user_id=eq.${userId}&league_id=eq.${league.id}&order=selected_at.desc&limit=1`);
       const coachId = Array.isArray(coachSel) && coachSel[0]?.in_field ? coachSel[0]?.coach_id : null;
       const coachName = Array.isArray(coachSel) && coachSel[0]?.coach_name || null;
 
@@ -2810,7 +2817,6 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
       const tappe = events.map(ev => {
         const myLineup = (lineupMap[ev.id] || []).filter(l => ["titolare","capitano"].includes(l.role));
         const evResults = Array.isArray(results) ? results.filter(r => r.event_id === ev.id) : [];
-        console.log(`[Storico] Tappa ${ev.id} (${ev.name}): lineup=${myLineup.length} atleti, partite=${evResults.length}`);
 
         // Punti per atleta
         const atletiPts = myLineup.map(l => {
@@ -2847,7 +2853,6 @@ function StoricoPage({ onBack, accessToken, league, authUser }) {
             return { phase: p.phase, risultato, pts: Math.round(pts*100)/100, bonusLabel };
           });
 
-          console.log(`  Atleta ${l.player_id} (${l.role}): ${partiteList.length} partite, tot=${Math.round(totaleAtleta*100)/100}`);
           return {
             player_id: l.player_id,
             name: nameMap[l.player_id] || l.player_name || l.player_id,
