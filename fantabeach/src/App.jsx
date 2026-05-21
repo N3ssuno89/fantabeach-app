@@ -2822,11 +2822,12 @@ function PageRegole({ onBack }) {
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px",marginBottom:12}}>
         <Section title="👕 Roster e formazione"/>
         {[
-          {l:"Budget iniziale",  v:"400 crediti"},
+          {l:"Budget iniziale Classic",v:"450 crediti"},
+          {l:"Budget iniziale Market", v:"400 crediti"},
           {l:"Atleti nel roster",v:"5 esatti"},
           {l:"Titolari",         v:"3 per tappa"},
           {l:"Capitano",         v:"1 tra i titolari"},
-          {l:"Coach",            v:"Opzionale — 5 crediti"},
+          {l:"Coach",            v:"Opzionale"},
           {l:"Deadline formazione",v:"Giovedì ore 23:00"},
         ].map((r,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${B.creamDark}`}}>
