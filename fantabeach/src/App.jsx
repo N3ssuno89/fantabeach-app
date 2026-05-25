@@ -475,7 +475,6 @@ function AuthScreen({ onAuth }) {
           <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
             <LogoFull height={76}/>
           </div>
-          <div style={{fontSize:13,color:B.gray}}>Fantasy Beach Volley 2026</div>
         </div>
 
         {mode !== "forgot" && (
@@ -725,7 +724,6 @@ function ResetPasswordScreen({ token, onDone }) {
           <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
             <LogoFull height={76}/>
           </div>
-          <div style={{fontSize:13,color:B.gray}}>Fantasy Beach Volley 2026</div>
         </div>
 
         {success ? (
