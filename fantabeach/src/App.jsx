@@ -874,7 +874,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       // ── Leghe utente ──
       if (Array.isArray(leaguesRes)) {
         const newJoin = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
-        const newBudgets = { "L001-F":400,"L001-M":400,"L002-F":400,"L002-M":400 };
+        const newBudgets = { "L001-F":450,"L001-M":450,"L002-F":400,"L002-M":400 };
         const newTeamNames = {};
         leaguesRes.forEach(ul => {
           newJoin[ul.league_id] = ul.status === "approved" ? "APPROVED" : ul.status === "pending" ? "PENDING" : null;
@@ -2922,7 +2922,7 @@ function PageTermini({ onBack }) {
       {[
         {n:"1",t:"Natura del gioco",d:"FantaBeach è un gioco fantasy non ufficiale basato sui risultati reali del Campionato Italiano Assoluto di Beach Volley FIPAV 2026. Non ha alcun rapporto ufficiale con la FIPAV."},
         {n:"2",t:"Iscrizioni",d:"Le iscrizioni aprono il 18 maggio 2026 e chiudono il 25 maggio 2026 alle 23:59. Il costo è di 10€ per singola lega. Dopo la chiusura non è possibile iscriversi."},
-        {n:"3",t:"Crediti fantasy",d:"I crediti fantasy (es. $400-$450 budget) non hanno alcun valore monetario reale. Sono un sistema interno di gioco e non possono essere convertiti in denaro."},
+        {n:"3",t:"Crediti fantasy",d:"I crediti fantasy ($450 per le leghe Classic, $400 per le leghe Market) non hanno alcun valore monetario reale. Sono un sistema interno di gioco e non possono essere convertiti in denaro."},
         {n:"4",t:"Premi fisici",d:"I premi fisici (AirPods, canotta, borsone) vengono consegnati solo se la lega raggiunge le soglie minime di iscritti previste dal regolamento. In assenza del numero minimo, il premio non viene assegnato."},
         {n:"5",t:"Correzioni punteggi",d:"L'admin può correggere errori nei punteggi entro 48 ore dalla pubblicazione ufficiale dei risultati FIPAV. Oltre questo termine, i punteggi sono definitivi."},
         {n:"6",t:"Casi particolari",d:"In caso di forfait, ritiro, infortuni o situazioni non previste dal regolamento, l'admin prende una decisione discrezionale ispirandosi allo spirito del gioco. La decisione è definitiva."},
