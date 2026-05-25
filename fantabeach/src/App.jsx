@@ -39,6 +39,16 @@ const supabase = {
       headers: { ...this._headers, "Authorization": `Bearer ${accessToken}` }
     });
   },
+  async updatePassword(accessToken, newPassword) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method:"PUT",
+      headers: { ...this._headers, "Authorization": `Bearer ${accessToken}` },
+      body: JSON.stringify({ password: newPassword })
+    });
+    const json = await r.json();
+    if (!r.ok) json.error = json.error || { message: json.msg || "Errore aggiornamento password" };
+    return json;
+  },
   async refreshToken(refreshToken) {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
       method:"POST", headers: this._headers,
@@ -370,12 +380,28 @@ function JoinGate({ myJoin, league, showJoinForm, setShowJoinForm, joinTeamName,
 
 // ─── SCHERMATA LOGIN / REGISTRAZIONE ──────────────────────────
 function AuthScreen({ onAuth }) {
-  const [mode, setMode]       = useState("login"); // "login" | "signup"
+  const [mode, setMode]       = useState("login"); // "login" | "signup" | "forgot"
   const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) { setError("Inserisci la tua email per il reset."); return; }
+    setLoading(true); setError("");
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() })
+      });
+      // Supabase risponde sempre 200 anche se l'email non esiste (sicurezza)
+      setResetSent(true);
+    } catch(e) { setError("Errore di rete. Riprova."); }
+    setLoading(false);
+  };
 
   const handleSubmit = async () => {
     setError(""); setLoading(true);
@@ -452,32 +478,43 @@ function AuthScreen({ onAuth }) {
           <div style={{fontSize:13,color:B.gray}}>Fantasy Beach Volley 2026</div>
         </div>
 
-        <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {["login","signup"].map(m=>(
-            <button key={m} onClick={()=>{setMode(m);setError("");}}
-              style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${mode===m?B.green:B.grayLight}`,
-                background:mode===m?B.greenPale:"transparent",color:mode===m?B.greenDark:B.gray,
-                fontWeight:mode===m?"bold":"normal",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              {m==="login"?"Accedi":"Registrati"}
-            </button>
-          ))}
-        </div>
+        {mode !== "forgot" && (
+          <div style={{display:"flex",gap:8,marginBottom:20}}>
+            {["login","signup"].map(m=>(
+              <button key={m} onClick={()=>{setMode(m);setError("");setResetSent(false);}}
+                style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${mode===m?B.green:B.grayLight}`,
+                  background:mode===m?B.greenPale:"transparent",color:mode===m?B.greenDark:B.gray,
+                  fontWeight:mode===m?"bold":"normal",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                {m==="login"?"Accedi":"Registrati"}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "forgot" && (
+          <div style={{marginBottom:16}}>
+            <div style={{fontWeight:"bold",fontSize:16,color:B.dark,marginBottom:4}}>🔑 Reset password</div>
+          </div>
+        )}
 
         {mode==="signup" && (
           <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} style={inp}/>
         )}
         <input placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} style={inp}/>
-        <input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&handleSubmit()} style={{...inp,marginBottom:error?8:16}}/>
+        {mode !== "forgot" && (
+          <input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&handleSubmit()} style={{...inp,marginBottom:error?8:16}}/>
+        )}
 
         {error && <div style={{fontSize:12,color:B.red,marginBottom:12,padding:"8px 12px",background:"#FDF0EB",borderRadius:8}}>{error}</div>}
 
-        <button onClick={handleSubmit} disabled={loading}
-          style={{width:"100%",padding:"12px",background:loading?B.grayLight:B.greenDark,border:"none",
-            borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:loading?"not-allowed":"pointer",
-            fontFamily:"Georgia,serif"}}>
-          {loading?"Attendere...":(mode==="login"?"Accedi":"Crea Account")}
-        </button>
+        {mode !== "forgot" && (
+          <button onClick={handleSubmit} disabled={loading}
+            style={{width:"100%",padding:"12px",background:loading?B.grayLight:B.greenDark,border:"none",
+              borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:loading?"not-allowed":"pointer",
+              fontFamily:"Georgia,serif"}}>
+            {loading?"Attendere...":(mode==="login"?"Accedi":"Crea Account")}
+          </button>
+        )}
 
         {mode==="signup" && (
           <div style={{textAlign:"center",marginTop:10,fontSize:11,color:B.gray,lineHeight:1.5}}>
@@ -488,6 +525,55 @@ function AuthScreen({ onAuth }) {
               Termini e Condizioni
             </a>
             {" "}di FantaBeach.
+          </div>
+        )}
+
+        {mode==="login" && !resetSent && (
+          <div style={{textAlign:"center",marginTop:8}}>
+            <button onClick={()=>{setMode("forgot");setError("");setResetSent(false);}}
+              style={{background:"none",border:"none",cursor:"pointer",fontSize:12,
+                color:B.gray,fontFamily:"Georgia,serif",textDecoration:"underline",padding:4}}>
+              Password dimenticata?
+            </button>
+          </div>
+        )}
+
+        {mode==="forgot" && (
+          <div style={{marginTop:8}}>
+            {resetSent ? (
+              <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}44`,borderRadius:10,
+                padding:"12px 14px",textAlign:"center",fontSize:13,color:B.greenDark,lineHeight:1.6}}>
+                ✅ <strong>Email inviata!</strong><br/>
+                Controlla la tua casella (anche spam).<br/>
+                Il link per il reset è valido 1 ora.
+              </div>
+            ) : (
+              <div>
+                <p style={{margin:"0 0 10px",fontSize:13,color:B.gray,lineHeight:1.6}}>
+                  Inserisci la tua email e ti manderemo un link per reimpostare la password.
+                </p>
+                <button onClick={handleForgotPassword} disabled={loading}
+                  style={{width:"100%",padding:"12px",background:loading?B.grayLight:B.orange,
+                    border:"none",borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,
+                    cursor:loading?"not-allowed":"pointer",fontFamily:"Georgia,serif",marginBottom:8}}>
+                  {loading?"Invio in corso...":"📧 Invia link di reset"}
+                </button>
+                <button onClick={()=>{setMode("login");setError("");setResetSent(false);}}
+                  style={{width:"100%",padding:"10px",background:"transparent",
+                    border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,
+                    fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  ← Torna al login
+                </button>
+              </div>
+            )}
+            {resetSent && (
+              <button onClick={()=>{setMode("login");setResetSent(false);setError("");}}
+                style={{width:"100%",marginTop:10,padding:"10px",background:"transparent",
+                  border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,
+                  fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                ← Torna al login
+              </button>
+            )}
           </div>
         )}
 
@@ -505,6 +591,21 @@ export default function FantaBeachApp() {
   const [authUser, setAuthUser]       = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [athletesReady, setAthletesReady] = useState(false);
+  const [recoveryToken, setRecoveryToken] = useState(null); // token per reset password
+
+  // Rileva token di recovery dall'URL hash al caricamento
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("type=recovery")) {
+      const params = new URLSearchParams(hash.replace("#", ""));
+      const token = params.get("access_token");
+      if (token) {
+        setRecoveryToken(token);
+        // Pulisce l'URL senza ricaricare la pagina
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, []);
 
   // Carica atleti reali dall'API al mount
   useEffect(() => {
@@ -582,8 +683,100 @@ export default function FantaBeachApp() {
     </div>
   );
 
+  if (recoveryToken) return <ResetPasswordScreen token={recoveryToken} onDone={() => setRecoveryToken(null)}/>;
   if (!accessToken) return <AuthScreen onAuth={handleAuth}/>;
   return <FantaBeach accessToken={accessToken} authUser={authUser} onLogout={handleLogout}/>;
+}
+
+// ─── RESET PASSWORD SCREEN ───────────────────────────────────────
+function ResetPasswordScreen({ token, onDone }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm]   = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [success, setSuccess]   = useState(false);
+
+  const handleReset = async () => {
+    if (!password || password.length < 6) { setError("La password deve essere di almeno 6 caratteri."); return; }
+    if (password !== confirm) { setError("Le password non corrispondono."); return; }
+    setLoading(true); setError("");
+    try {
+      const data = await supabase.updatePassword(token, password);
+      if (data.error) {
+        setError(data.error.message || "Errore durante il reset. Riprova.");
+      } else {
+        setSuccess(true);
+      }
+    } catch(e) { setError("Errore di rete. Riprova."); }
+    setLoading(false);
+  };
+
+  const inp = {
+    width:"100%", padding:"11px 14px", borderRadius:10,
+    border:`1px solid ${B.grayLight}`, background:B.white, color:B.dark,
+    fontSize:14, fontFamily:"Georgia,serif", outline:"none",
+    boxSizing:"border-box", marginBottom:10,
+  };
+
+  return (
+    <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:B.sand,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:B.white,borderRadius:20,padding:"32px 24px",maxWidth:360,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.08)"}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
+            <LogoFull height={76}/>
+          </div>
+          <div style={{fontSize:13,color:B.gray}}>Fantasy Beach Volley 2026</div>
+        </div>
+
+        {success ? (
+          <div>
+            <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}44`,borderRadius:12,
+              padding:"20px",textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:32,marginBottom:8}}>✅</div>
+              <div style={{fontWeight:"bold",fontSize:16,color:B.greenDark,marginBottom:6}}>Password aggiornata!</div>
+              <div style={{fontSize:13,color:B.gray,lineHeight:1.6}}>Ora puoi accedere con la tua nuova password.</div>
+            </div>
+            <button onClick={onDone}
+              style={{width:"100%",padding:"12px",background:B.greenDark,border:"none",
+                borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:"pointer",
+                fontFamily:"Georgia,serif"}}>
+              Vai al login →
+            </button>
+          </div>
+        ) : (
+          <div>
+            <h2 style={{margin:"0 0 6px",fontSize:20,color:B.dark}}>🔑 Nuova password</h2>
+            <p style={{margin:"0 0 20px",fontSize:13,color:B.gray,lineHeight:1.6}}>
+              Scegli una nuova password per il tuo account FantaBeach.
+            </p>
+            <input placeholder="Nuova password (min. 6 caratteri)" type="password"
+              value={password} onChange={e=>setPassword(e.target.value)} style={inp}/>
+            <input placeholder="Conferma nuova password" type="password"
+              value={confirm} onChange={e=>setConfirm(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleReset()}
+              style={{...inp,marginBottom:error?8:16}}/>
+            {error && <div style={{fontSize:12,color:B.red,marginBottom:12,padding:"8px 12px",background:"#FDF0EB",borderRadius:8}}>{error}</div>}
+            <button onClick={handleReset} disabled={loading}
+              style={{width:"100%",padding:"12px",background:loading?B.grayLight:B.orange,border:"none",
+                borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,
+                cursor:loading?"not-allowed":"pointer",fontFamily:"Georgia,serif",marginBottom:8}}>
+              {loading?"Salvataggio...":"Salva nuova password"}
+            </button>
+            <button onClick={onDone}
+              style={{width:"100%",padding:"10px",background:"transparent",
+                border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,
+                fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              Annulla
+            </button>
+          </div>
+        )}
+
+        <div style={{textAlign:"center",marginTop:16,fontSize:11,color:B.gray}}>
+          Powered by Zioema
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── COMPONENTE PRINCIPALE ─────────────────────────────────────
