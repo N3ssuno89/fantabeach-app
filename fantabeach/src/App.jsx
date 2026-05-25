@@ -470,7 +470,7 @@ function AuthScreen({ onAuth }) {
 
   return (
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:B.sand,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:B.white,borderRadius:20,padding:"32px 24px",maxWidth:360,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.08)"}}>
+      <div style={{background:B.white,borderRadius:20,padding:"32px 28px",maxWidth:420,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.08)"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
             <LogoFull height={76}/>
@@ -720,7 +720,7 @@ function ResetPasswordScreen({ token, onDone }) {
 
   return (
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:B.sand,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:B.white,borderRadius:20,padding:"32px 24px",maxWidth:420,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.08)"}}>
+      <div style={{background:B.white,borderRadius:20,padding:"32px 24px",maxWidth:360,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.08)"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
             <LogoFull height={76}/>
