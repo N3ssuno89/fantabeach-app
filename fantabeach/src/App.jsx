@@ -445,7 +445,9 @@ function AuthScreen({ onAuth }) {
       if (data.error) {
         const msg = (data.error.message || data.error.error_description || data.error.msg || "").toLowerCase();
         console.log("Login error:", JSON.stringify(data.error));
-        if (msg.includes("invalid") || msg.includes("credentials") || msg.includes("wrong") || msg.includes("password") || msg.includes("email"))
+        if (msg.includes("email not confirmed") || msg.includes("not confirmed") || msg.includes("confirmation"))
+          setError("📧 Controlla la tua email! Clicca il link di conferma per attivare l'account. Se non la trovi, controlla anche la cartella spam.");
+        else if (msg.includes("invalid") || msg.includes("credentials") || msg.includes("wrong") || msg.includes("password") || msg.includes("email"))
           setError("Email o password errati.");
         else if (msg.includes("not found") || msg.includes("no user"))
           setError("Nessun account trovato con questa email.");
