@@ -437,8 +437,22 @@ function AuthScreen({ onAuth }) {
             setError(`Errore: ${msg || "Riprova."}`);
           setLoading(false); return;
         }
-        // Dopo signup, fai subito login
-        data = await supabase.signIn(email, password);
+        // Supabase restituisce identities=[] se l'email è già registrata (senza errore esplicito)
+        if (data.user?.identities?.length === 0) {
+          setError("Email già registrata. Prova ad accedere.");
+          setLoading(false); return;
+        }
+        // Signup riuscito
+        // Se Supabase ha conferma email DISABILITATA → access_token diretto → login immediato
+        // Se Supabase ha conferma email ATTIVA → nessun token → mostra messaggio controlla email
+        if (data.access_token) {
+          saveToken(data.access_token, data.refresh_token);
+          onAuth(data.access_token, data.refresh_token, data.user);
+          return;
+        }
+        setError("✅ Registrazione completata! Controlla la tua email (anche spam) e clicca il link di conferma per accedere.");
+        setLoading(false);
+        return;
       } else {
         data = await supabase.signIn(email, password);
       }
@@ -506,7 +520,7 @@ function AuthScreen({ onAuth }) {
             onKeyDown={e=>e.key==="Enter"&&handleSubmit()} style={{...inp,marginBottom:error?8:16}}/>
         )}
 
-        {error && <div style={{fontSize:12,color:B.red,marginBottom:12,padding:"8px 12px",background:"#FDF0EB",borderRadius:8}}>{error}</div>}
+        {error && <div style={{fontSize:12,color:error.startsWith("✅")?B.greenDark:B.red,marginBottom:12,padding:"8px 12px",background:error.startsWith("✅")?B.greenPale:"#FDF0EB",borderRadius:8}}>{error}</div>}
 
         {mode !== "forgot" && (
           <button onClick={handleSubmit} disabled={loading}
