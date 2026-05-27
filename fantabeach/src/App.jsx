@@ -973,7 +973,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
         supabase.from("lineups", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
-        supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=name.asc")),
+        supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=cost.desc,name.asc")), 
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
         supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("league_settings", token).then(db => db.select("*")),
@@ -2550,7 +2550,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       try {
                         const [evRes, coachRes] = await Promise.all([
                           supabase.from("events", accessToken).then(db => db.select("*", "&order=anno.asc,id.asc")),
-                          supabase.from("coaches", accessToken).then(db => db.select("*", "&active=eq.true&order=name.asc")),
+                          supabase.from("coaches", accessToken).then(db => db.select("*", "&active=eq.true&order=cost.desc,name.asc")),
                         ]);
                         if (Array.isArray(evRes) && evRes.length > 0) {
                           const newEvents = evRes.map(e => ({ ...e, date: e.date_start || "" }));
