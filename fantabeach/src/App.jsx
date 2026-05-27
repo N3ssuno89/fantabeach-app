@@ -1135,6 +1135,22 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
           }
         });
+        // Filtra lineup: tieni solo atleti presenti nel roster attivo
+        // Evita che atleti venduti rimangano contati come titolari (bug "Max 3 titolari")
+        const rosterIds = {};
+        if (Array.isArray(rosterRes)) {
+          rosterRes.forEach(r => {
+            if (!rosterIds[r.league_id]) rosterIds[r.league_id] = new Set();
+            rosterIds[r.league_id].add(r.player_id);
+          });
+        }
+        Object.keys(newLineups).forEach(lid => {
+          if (rosterIds[lid]) {
+            newLineups[lid] = newLineups[lid].filter(id => rosterIds[lid].has(id));
+            if (newCaptains[lid] && !rosterIds[lid].has(newCaptains[lid]))
+              newCaptains[lid] = null;
+          }
+        });
         setLineups(newLineups);
         setCaptains(newCaptains);
       }
