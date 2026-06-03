@@ -914,6 +914,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [inAppNotifs, setInAppNotifs] = useState([]);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const notifPollRef = React.useRef(null);
+  const tradingRef = React.useRef(false); // blocca click doppi su buy/sell
   const [popup, setPopup]         = useState(null);
   const [search, setSearch]       = useState("");
   const [coachSearch, setCoachSearch] = useState("");
@@ -973,7 +974,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
         supabase.from("lineups", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
-        supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=cost.desc,name.asc")), 
+        supabase.from("coaches", token).then(db => db.select("*", "&active=eq.true&order=cost.desc,name.asc")),
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
         supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("league_settings", token).then(db => db.select("*")),
@@ -1254,6 +1255,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     if (roster.length>=5) return showNotif("Hai già 5 atleti nel roster!","error");
     if (budget<a.cost)    return showNotif("Crediti insufficienti!","error");
     if (isOwned(a))       return showNotif("Atleta già nel roster!","error");
+    if (tradingRef.current) return; // blocca doppio click
+    tradingRef.current = true;
     // Aggiorna UI ottimisticamente
     setRosters(r=>({...r,[leagueId]:[...r[leagueId],{...a}]}));
     setBudgets(b=>({...b,[leagueId]:b[leagueId]-a.cost}));
@@ -1268,10 +1271,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       const tdb = await supabase.from("transfer_history", accessToken);
       await tdb.insert({ user_id:authUser.id, league_id:leagueId, player_id:a.id, player_name:a.name, action:"buy", price:a.cost, budget_after:newBudget });
     } catch(e) { console.error("Errore acquisto:", e); }
+    finally { tradingRef.current = false; }
   };
 
   const handleSell = async (a) => {
     if (!canTrade()) return showNotif(league.type==="classic"?"Iscrizioni chiuse!":"Mercato chiuso!","error");
+    if (!isOwned(a)) return; // blocca vendita di atleta non nel roster (double-click, stato stale)
+    if (tradingRef.current) return; // blocca doppio click
+    tradingRef.current = true;
     // Aggiorna UI ottimisticamente
     setRosters(r=>({...r,[leagueId]:r[leagueId].filter(x=>x.id!==a.id)}));
     setLineups(l=>({...l,[leagueId]:l[leagueId].filter(id=>id!==a.id)}));
@@ -1289,6 +1296,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       const tdb = await supabase.from("transfer_history", accessToken);
       await tdb.insert({ user_id:authUser.id, league_id:leagueId, player_id:a.id, player_name:a.name, action:"sell", price:a.cost, budget_after:newBudget });
     } catch(e) { console.error("Errore vendita:", e); }
+    finally { tradingRef.current = false; }
   };
 
   const handleBuyCoach = async (c) => {
@@ -1297,6 +1305,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     const prev = coachesList.find(x=>x.id===myCoach);
     const prevCost = prev?.cost || 0;
     if (budget - prevCost < c.cost) return showNotif("Crediti insufficienti!","error");
+    if (tradingRef.current) return; // blocca doppio click
+    tradingRef.current = true;
     // Aggiorna stato locale
     if (myCoach) setBudgets(b=>({...b,[leagueId]:b[leagueId]+prevCost}));
     setCoaches(ch=>({...ch,[leagueId]:c.id}));
@@ -1312,6 +1322,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       const newBudget = myCoach ? budget - c.cost + prevCost : budget - c.cost;
       await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
     } catch(e) { console.error("Errore selezione coach:", e); }
+    finally { tradingRef.current = false; }
   };
 
   const handleRemoveCoach = async () => {
