@@ -1223,10 +1223,21 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   // Market:
   //   - Toggle marketOpen controlla tutto
   //   - In corso → sempre bloccato
+  // Deadline: giovedì 23:00 → tutto bloccato automaticamente
+  const isDeadlinePassed = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0=dom, 1=lun, 2=mar, 3=mer, 4=gio, 5=ven, 6=sab
+    const hour = now.getHours();
+    if (day === 4 && hour >= 23) return true; // giovedì dopo le 23
+    if (day === 5 || day === 6 || day === 0) return true; // ven, sab, dom
+    return false;
+  };
+
   const canTrade = () => {
     if (myJoin !== "APPROVED") return false;
-    if (tappaInCorso2026) return false;
-    if (league.type === "classic") return !tappaCompletata2026; // bloccato se completata
+    if (tappaInCorso2026) return false; // tappa in corso → sempre bloccato
+    if (isDeadlinePassed()) return false; // giovedì 23:00 → bloccato automaticamente
+    if (league.type === "classic") return !tappaCompletata2026;
     return league.marketOpen;
   };
 
@@ -1234,13 +1245,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const canSaveFormation = () => {
     if (myJoin !== "APPROVED") return false;
     if (tappaInCorso2026) return false;
-    return true; // aperta sia in Planned che dopo Completata
+    if (isDeadlinePassed()) return false; // giovedì 23:00 → bloccato
+    return true;
   };
 
   // Coach: stessa logica della formazione
   const canSelectCoach = () => {
     if (myJoin !== "APPROVED") return false;
     if (tappaInCorso2026) return false;
+    if (isDeadlinePassed()) return false;
     if (league.type === "classic") return !tappaCompletata2026;
     return league.marketOpen;
   };
