@@ -1563,11 +1563,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             border:`1px solid ${tappaInCorso2026?B.orange:canTrade()?"#34D399":B.grayLight}`}}>
             {tappaInCorso2026
               ? "🔴 Tappa in corso"
-              : league.type==="classic"
-                ? tappaCompletata2026
-                  ? "🟡 Formazione aperta · Mercato chiuso"
-                  : "🟢 Formazione e mercato aperti"
-                : league.marketOpen ? "🟢 Mercato aperto" : "🔴 Mercato chiuso"}
+              : isDeadlinePassed()
+                ? "🔴 Mercato chiuso — deadline giovedì 23:00"
+                : league.type==="classic"
+                  ? tappaCompletata2026
+                    ? "🟡 Formazione aperta · Mercato chiuso"
+                    : "🟢 Formazione e mercato aperti"
+                  : league.marketOpen ? "🟢 Mercato aperto" : "🔴 Mercato chiuso"}
           </span>
           {myJoin==="APPROVED"&&<span style={{color:B.gray,fontSize:10}}>{roster.length}/5 atleti · {lineup.length}/3 titolari{captain?" · ★ Cap":""}</span>}
         </div>
@@ -2186,7 +2188,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       </div>
                       {/* Toggle schierato/panchina — sempre disponibile se non tappa In corso */}
                       <button onClick={async ()=>{
-                        if (tappaInCorso2026) return;
+                        if (tappaInCorso2026 || isDeadlinePassed()) return;
                         const newVal = !coachInField[leagueId];
                         setCoachInField(cf=>({...cf,[leagueId]:newVal}));
                         try {
