@@ -333,6 +333,12 @@ exports.handler = async (event) => {
       const res = calcResult(row[6], row[7], row[8], row[9], row[10], row[11], forfeit);
       if (!res) return;
 
+      // Score invertito per team B: se Excel ha S1A=21 S1B=15,
+      // team A vede "21-15" e team B vede "15-21"
+      const scoreStrB = res.scoreStr
+        ? res.scoreStr.split(" ").map(s => { const [a,b] = s.split("-"); return `${b}-${a}`; }).join(" ")
+        : "";
+
       // Giocatori team A
       [teamA.p1Id, teamA.p2Id].filter(Boolean).forEach(pid => {
         const b = calcBonuses(res.sets, res.setsA, res.setsB, false, coachAIn, forfeit === "A");
@@ -352,7 +358,7 @@ exports.handler = async (event) => {
         resultsToSave.push({
           event_id: eventId, phase: fase, match_index: matchIndex,
           player_id: pid, player_name: null,
-          result: res.resultB, score: res.scoreStr, is_bye: false,
+          result: res.resultB, score: scoreStrB, is_bye: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaA,
           coach_id: teamB.coach || null,
