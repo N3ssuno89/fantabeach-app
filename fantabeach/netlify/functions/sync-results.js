@@ -98,7 +98,7 @@ const calcBonuses = (sets, setsWon, setsLost, isBye, coachInField, forfeitMe) =>
     // Per il giocatore A: set persi sono quelli dove myPts < oppPts
     if (sets.S1A !== null) checkClose(sets.S1A, sets.S1B);
     if (sets.S2A !== null) checkClose(sets.S2A, sets.S2B);
-    if (sets.S3A !== null) checkClose(sets.S3A, sets.S3B);
+    // S3 (tie-break) escluso dal closeSet per regolamento
   }
 
   // Coach in campo e vittoria
@@ -316,7 +316,7 @@ exports.handler = async (event) => {
       if (isBye) {
         // BYE per entrambi i giocatori di teamA
         [teamA.p1Id, teamA.p2Id].filter(Boolean).forEach(pid => {
-          const b = calcBonuses(null, 2, 0, true, false, false);
+          const b = calcBonuses(null, 2, 0, true, coachAIn, false);
           resultsToSave.push({
             event_id: eventId, phase: fase, match_index: matchIndex,
             player_id: pid, player_name: null,
