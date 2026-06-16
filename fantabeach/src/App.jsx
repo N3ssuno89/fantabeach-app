@@ -2044,9 +2044,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     // Punti coach — solo se schierato in campo
                     let coachPts = 0;
                     const coachBox = currentCoach ? (()=>{
-                      const coachMatches = eventMatches.filter(m =>
-                        m.coach_id === currentCoach.id && !m.is_bye
-                      );
+                      const coachMatches = eventMatches.filter(m => m.coach_id === currentCoach.id);
                       const byMatch = {};
                       coachMatches.forEach(m => {
                         if (!byMatch[m.match_index]) byMatch[m.match_index] = m;
@@ -2055,12 +2053,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                       // Punti coach contano SOLO se schierato
                       if (coachOnField) {
                         coachPts = uniqueMatches.reduce((s, m) => {
-                          const codes = m.bonus_codes || [];
-                          if (codes.includes("coachWin")) return s + 0.5;
-                          if (codes.includes("coachMalus")) return s - 1;
-                          return s;
+                      if ((m.result || "").startsWith("2") || m.is_bye) return s + 0.5;
+                      return s;
                         }, 0);
-                      }
+                       }
                       const isOnField = coachOnField;
                       return (
                         <div style={{
@@ -2085,9 +2081,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                             </div>}
                           </div>
                           {uniqueMatches.map((m, i) => {
-                            const codes = m.bonus_codes || [];
-                            const hasWin = codes.includes("coachWin");
-                            const hasMalus = codes.includes("coachMalus");
+                            const win = (m.result || "").startsWith("2") || m.is_bye;
                             const oppParts = (m.opponent||"").split(" - ");
                             const opp1 = oppParts[0]?.split(" ").slice(0,-1).join(" ") || oppParts[0] || "—";
                             const opp2 = oppParts[1]?.split(" ").slice(0,-1).join(" ") || oppParts[1] || "";
@@ -2098,8 +2092,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                                   color:B.white,flexShrink:0}}>{m.result||"—"}</span>
                                 <div style={{flex:1,fontSize:11,color:B.gray}}>{m.phase} vs {opp1}{opp2?` - ${opp2}`:""}</div>
                                 {isOnField&&<div style={{fontSize:11,fontWeight:"bold",
-                                  color:hasWin?B.greenDark:hasMalus?B.orange:B.gray,flexShrink:0}}>
-                                  {hasWin?"+0.5":hasMalus?"-1":"0"} pt
+                                  color:win?B.greenDark:B.gray,flexShrink:0}}>
+                                  {win?"+0.5":"0"} pt
                                 </div>}
                               </div>
                             );
@@ -4548,13 +4542,11 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
       const coach = coachSel ? coachesList.find(c => c.id === coachSel.coach_id) : null;
       const coachInField = coachSel?.in_field || false;
       if (coach && coachInField) {
-        const coachMatches = matches.filter(m => m.coach_id === coachSel.coach_id && !m.is_bye);
         const seen = new Set();
-        coachMatches.forEach(m => {
+        matches.filter(m => m.coach_id === coachSel.coach_id).forEach(m => {
           if (!seen.has(m.match_index)) {
             seen.add(m.match_index);
-            const codes = m.bonus_codes || [];
-            if (codes.includes("coachWin")) coachPts += 0.5;
+            if ((m.result || "").startsWith("2") || m.is_bye) coachPts += 0.5;
           }
         });
       }
