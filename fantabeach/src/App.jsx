@@ -1606,6 +1606,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} onBack={()=>setHiddenPage(null)}/>}
           </div>
         )}
 
@@ -2755,6 +2756,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{padding:"8px 0",flex:1}}>
                 {[
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
+                  {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
@@ -4448,7 +4450,245 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
     </div>
   );
 }
+// ─── PAGINA STORICO TAPPE ─────────────────────────────────────
+function PageHistory({ authUser, accessToken, leagueId, leagues, events, coachesList, onBack }) {
+  const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
+  const [selectedEventId, setSelectedEventId] = React.useState(null);
+  const [historyData, setHistoryData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
 
+  const league = leagues.find(l => l.id === selectedLeague);
+  const completedEvents = events.filter(e =>
+    e.status === "Completato" &&
+    (e.anno || 2026) === 2026 &&
+    (e.gender || "").toUpperCase() === (league?.gender || "F")
+  );
+
+  const loadHistory = async (eventId) => {
+    if (!accessToken || !authUser?.id) return;
+    setLoading(true);
+    setHistoryData(null);
+    try {
+      const [matchRes, lineupRes, coachSelRes] = await Promise.all([
+        supabase.from("match_results", accessToken).then(db =>
+          db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`)),
+        supabase.from("lineups", accessToken).then(db =>
+          db.select("*", `&user_id=eq.${authUser.id}&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
+        supabase.from("coach_selections", accessToken).then(db =>
+          db.select("*", `&user_id=eq.${authUser.id}&league_id=eq.${selectedLeague}`)),
+      ]);
+
+      const matches = Array.isArray(matchRes) ? matchRes : [];
+      const lineup = Array.isArray(lineupRes) ? lineupRes : [];
+      const coachSel = Array.isArray(coachSelRes) ? coachSelRes[0] : null;
+
+      // Costruisce mappa player_id → role dalla lineup
+      const roleMap = {};
+      lineup.forEach(l => { roleMap[l.player_id] = l.role; });
+
+      // Trova evento per moltiplicatore
+      const event = events.find(e => e.id === eventId);
+      const et = EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver;
+
+      // Raggruppa match per player_id
+      const byPlayer = {};
+      matches.forEach(m => {
+        if (!m.player_id) return;
+        if (!byPlayer[m.player_id]) byPlayer[m.player_id] = { player_id: m.player_id, player_name: m.player_name, matches: [] };
+        byPlayer[m.player_id].matches.push(m);
+      });
+
+      // Calcola punti per ogni giocatore in lineup
+      const players = lineup.map(l => {
+        const playerData = byPlayer[l.player_id] || { player_id: l.player_id, player_name: l.player_id, matches: [] };
+        const role = l.role;
+        const isStarter = role === "titolare" || role === "capitano";
+        const isCaptain = role === "capitano";
+
+        let rawPts = 0;
+        playerData.matches.forEach(m => {
+          const codes = m.bonus_codes || [];
+          const coachWinPts = codes.includes("coachWin") ? 0.5 : 0;
+          rawPts += (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts;
+        });
+
+        const withMult = rawPts * (et.weight || 1);
+        const finalPts = withMult * (isCaptain ? 1.3 : 1);
+
+        return { ...playerData, role, isStarter, isCaptain, rawPts, finalPts: Math.round(finalPts * 100) / 100 };
+      });
+
+      // Coach
+      let coachPts = 0;
+      const coach = coachSel ? coachesList.find(c => c.id === coachSel.coach_id) : null;
+      const coachInField = coachSel?.in_field || false;
+      if (coach && coachInField) {
+        const coachMatches = matches.filter(m => m.coach_id === coachSel.coach_id && !m.is_bye);
+        const seen = new Set();
+        coachMatches.forEach(m => {
+          if (!seen.has(m.match_index)) {
+            seen.add(m.match_index);
+            const codes = m.bonus_codes || [];
+            if (codes.includes("coachWin")) coachPts += 0.5;
+          }
+        });
+      }
+
+      const starters = players.filter(p => p.isStarter);
+      const bench = players.filter(p => !p.isStarter);
+      const totalPts = starters.reduce((s, p) => s + p.finalPts, 0) + coachPts;
+
+      setHistoryData({ players, starters, bench, coach, coachPts, coachInField, totalPts: Math.round(totalPts * 100) / 100, et, event });
+    } catch(e) { console.error("Errore storico:", e); }
+    setLoading(false);
+  };
+
+  React.useEffect(() => {
+    setSelectedEventId(null);
+    setHistoryData(null);
+  }, [selectedLeague]);
+
+  return (
+    <MenuPage title="Storico Tappe" emoji="📊" onBack={onBack}>
+
+      {/* Selettore lega */}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {leagues.map(l => (
+          <button key={l.id} onClick={()=>setSelectedLeague(l.id)}
+            style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${selectedLeague===l.id?B.orange:B.creamDark}`,
+              background:selectedLeague===l.id?B.orange:B.white,
+              color:selectedLeague===l.id?B.white:B.dark,
+              fontWeight:selectedLeague===l.id?"bold":"normal",
+              fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {l.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Lista tappe completate */}
+      {completedEvents.length === 0 ? (
+        <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
+          <div style={{fontSize:36,marginBottom:10}}>📅</div>
+          <div style={{fontSize:13,color:B.dark,fontWeight:"bold"}}>Nessuna tappa completata ancora</div>
+          <div style={{fontSize:11,color:B.gray,marginTop:4}}>I dati appariranno dopo la prima tappa disputata.</div>
+        </div>
+      ) : (
+        <div>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+            {completedEvents.map(e => {
+              const et = EVENT_TYPE_META[e.type] || EVENT_TYPE_META.Silver;
+              const isSelected = selectedEventId === e.id;
+              return (
+                <button key={e.id}
+                  onClick={()=>{ setSelectedEventId(e.id); loadHistory(e.id); }}
+                  style={{background:isSelected?B.greenDark:B.white,
+                    border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,
+                    borderLeft:`4px solid ${isSelected?B.white:et.color}`,
+                    borderRadius:10,padding:"11px 14px",cursor:"pointer",fontFamily:"Georgia,serif",
+                    display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:"bold",fontSize:13,color:isSelected?B.white:B.dark}}>{e.name}</div>
+                    <div style={{fontSize:10,color:isSelected?"rgba(255,255,255,.7)":B.gray,marginTop:2}}>{e.date_start||e.date}</div>
+                  </div>
+                  <span style={{fontSize:10,padding:"2px 8px",borderRadius:8,fontWeight:"bold",
+                    background:isSelected?"rgba(255,255,255,.2)":et.bg,
+                    color:isSelected?B.white:et.color}}>
+                    ×{et.weight}
+                  </span>
+                  <span style={{color:isSelected?"rgba(255,255,255,.7)":B.grayLight,fontSize:12}}>›</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Dettaglio tappa selezionata */}
+          {loading && (
+            <div style={{textAlign:"center",padding:"30px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+          )}
+
+          {historyData && !loading && (
+            <div>
+              <div style={{background:B.greenDark,borderRadius:12,padding:"12px 14px",marginBottom:14,color:B.white,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:"bold",fontSize:15}}>{historyData.event?.name}</div>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:2}}>{historyData.et.label} ×{historyData.et.weight}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:24,fontWeight:"bold"}}>{historyData.totalPts}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>punti totali</div>
+                </div>
+              </div>
+
+              {/* Titolari */}
+              <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:8}}>⚡ Titolari</div>
+              {historyData.starters.length === 0
+                ? <div style={{fontSize:12,color:B.gray,marginBottom:12}}>Nessuna formazione salvata per questa tappa.</div>
+                : historyData.starters.map((p,i) => (
+                  <div key={p.player_id} style={{background:B.white,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${p.isCaptain?B.yellow:B.greenDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                        {p.isCaptain&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{p.player_name||p.player_id}
+                      </div>
+                      <div style={{fontSize:10,color:B.gray,marginTop:2}}>
+                        {p.matches.length} {p.matches.length===1?"partita":"partite"}
+                        {p.isCaptain&&<span style={{color:B.yellow,marginLeft:6}}>× 1.3 cap</span>}
+                        {" · "}base {Math.round(p.rawPts * 100) / 100} pt × {historyData.et.weight}
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:18,fontWeight:"bold",color:p.finalPts>0?B.greenDark:B.gray}}>{p.finalPts>0?`+${p.finalPts}`:p.finalPts}</div>
+                      <div style={{fontSize:9,color:B.gray}}>pt tappa</div>
+                    </div>
+                  </div>
+                ))
+              }
+
+              {/* Coach */}
+              {historyData.coach && (
+                <div style={{background:historyData.coachInField?B.yellowPale:B.grayPale,
+                  border:`1px solid ${historyData.coachInField?B.yellow:B.grayLight}`,
+                  borderRadius:10,padding:"10px 12px",marginBottom:14,display:"flex",alignItems:"center",gap:10,opacity:historyData.coachInField?1:0.65}}>
+                  <span style={{fontSize:20}}>🧢</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>{historyData.coach.name}</div>
+                    <div style={{fontSize:10,color:B.gray}}>{historyData.coachInField?"Schierato":"In panchina — punti non conteggiati"}</div>
+                  </div>
+                  {historyData.coachInField&&(
+                    <div style={{fontSize:18,fontWeight:"bold",color:historyData.coachPts>0?B.greenDark:B.gray}}>
+                      {historyData.coachPts>0?`+${historyData.coachPts}`:historyData.coachPts}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Panchina */}
+              {historyData.bench.length > 0 && (
+                <div>
+                  <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.gray,marginBottom:8}}>⏸ Panchina (non conteggiata)</div>
+                  {historyData.bench.map(p => (
+                    <div key={p.player_id} style={{background:B.grayPale,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,display:"flex",alignItems:"center",gap:10,opacity:0.65}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,color:B.dark}}>{p.player_name||p.player_id}</div>
+                        <div style={{fontSize:10,color:B.gray}}>{p.matches.length} partite · base {Math.round(p.rawPts*100)/100} pt</div>
+                      </div>
+                      <div style={{fontSize:13,color:B.gray}}>({p.finalPts} pt)</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Totale */}
+              <div style={{background:B.greenDark,borderRadius:10,padding:"14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
+                <div style={{color:"rgba(255,255,255,.9)",fontSize:14,fontWeight:"bold"}}>Totale tappa</div>
+                <span style={{color:B.white,fontWeight:"bold",fontSize:24}}>{historyData.totalPts>0?`+${historyData.totalPts}`:historyData.totalPts} pt</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </MenuPage>
+  );
+}
 function BonusItem({b}) {
   const [open, setOpen] = useState(false);
   return (
