@@ -101,10 +101,11 @@ const calcBonuses = (sets, setsWon, setsLost, isBye, coachInField, forfeitMe) =>
     // S3 (tie-break) escluso dal closeSet per regolamento
   }
 
-  // Coach in campo e vittoria
+  // Coach in campo e vittoria — il punto NON va sull'atleta:
+  // il bonus coach viene calcolato dalla vista (risultato della coppia × 0.5).
+  // Qui lasciamo solo il codice per riferimento/visualizzazione, senza punti.
   if (coachInField && (setsWon === 2 || isBye)) {
     codes.push("coachWin");
-    bonus += 0.5;
   }
 
   return { codes, base_pts: base, bonus_pts: bonus, total_pts: base + bonus };
