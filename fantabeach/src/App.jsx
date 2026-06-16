@@ -1122,19 +1122,12 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         setRosters(newRosters);
       }
 
-      // ── Lineup ──
+      // ── Lineup (solo evento corrente per lega) ──
       if (Array.isArray(lineupRes)) {
         const newLineups  = { "L001-F":[],"L001-M":[],"L002-F":[],"L002-M":[] };
         const newCaptains = { "L001-F":null,"L001-M":null,"L002-F":null,"L002-M":null };
-        lineupRes.forEach(l => {
-          if (newLineups[l.league_id] !== undefined) {
-            if (l.role === "titolare" || l.role === "capitano")
-              newLineups[l.league_id].push(l.player_id);
-            if (l.role === "capitano") newCaptains[l.league_id] = l.player_id;
-          }
-        });
-        // Filtra lineup: tieni solo atleti presenti nel roster attivo
-        // Evita che atleti venduti rimangano contati come titolari (bug "Max 3 titolari")
+
+        // Roster attivo per lega (per filtrare atleti venduti)
         const rosterIds = {};
         if (Array.isArray(rosterRes)) {
           rosterRes.forEach(r => {
@@ -1142,13 +1135,37 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             rosterIds[r.league_id].add(r.player_id);
           });
         }
+
+        // Stessa logica di handleSaveFormation: In corso → primo Planned → E_PRESTAGIONE
+        const allEvents = Array.isArray(eventsRes) ? eventsRes : [];
+        const activeEventIdForLeague = (lid) => {
+          const gender = lid.endsWith("-F") ? "F" : "M";
+          const evG = allEvents.filter(e => (e.gender||"").toUpperCase() === gender);
+          const active = evG.find(e => e.status === "In corso")
+            || evG.find(e => e.status === "Planned")
+            || null;
+          return active?.id || "E_PRESTAGIONE";
+        };
+
         Object.keys(newLineups).forEach(lid => {
-          if (rosterIds[lid]) {
-            newLineups[lid] = newLineups[lid].filter(id => rosterIds[lid].has(id));
-            if (newCaptains[lid] && !rosterIds[lid].has(newCaptains[lid]))
-              newCaptains[lid] = null;
-          }
+          const eventId = activeEventIdForLeague(lid);
+          // Solo righe della lega + evento corrente — mai toccato lo storico
+          const rows = lineupRes.filter(l => l.league_id === lid && l.event_id === eventId);
+          // Deduplica i titolari/capitano
+          const starterIds = [...new Set(
+            rows.filter(r => r.role === "titolare" || r.role === "capitano")
+                .map(r => r.player_id)
+          )];
+          // Filtra sugli atleti ancora nel roster attivo
+          const filtered = rosterIds[lid]
+            ? starterIds.filter(id => rosterIds[lid].has(id))
+            : starterIds;
+          newLineups[lid] = filtered;
+          // Capitano solo se ancora tra i titolari filtrati
+          const capId = rows.find(r => r.role === "capitano")?.player_id || null;
+          newCaptains[lid] = (capId && filtered.includes(capId)) ? capId : null;
         });
+
         setLineups(newLineups);
         setCaptains(newCaptains);
       }
@@ -1353,12 +1370,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const toggleStarter = (a) => {
     if (!canSaveFormation()) return showNotif("Tappa in corso — formazione bloccata","error");
-    if (isStarter(a)) {
-      setLineups(l=>({...l,[leagueId]:l[leagueId].filter(id=>id!==a.id)}));
+    const currentLineup = [...new Set(lineup)];
+    if (currentLineup.includes(a.id)) {
+      setLineups(l=>({...l,[leagueId]:currentLineup.filter(id=>id!==a.id)}));
       if (captain===a.id) setCaptains(c=>({...c,[leagueId]:null}));
     } else {
-      if (lineup.length>=3) return showNotif("Max 3 titolari!","error");
-      setLineups(l=>({...l,[leagueId]:[...l[leagueId],a.id]}));
+      if (currentLineup.length>=3) return showNotif("Max 3 titolari!","error");
+      setLineups(l=>({...l,[leagueId]:[...currentLineup,a.id]}));
     }
   };
 
@@ -1603,8 +1621,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} onBack={()=>setHiddenPage(null)}/>}
-          </div>
+            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}          </div>
         )}
 
         {!hiddenPage&&(<div>
@@ -3086,7 +3103,7 @@ function PageRegole({ onBack }) {
           </div>
         ))}
         <InfoBox>
-          Se non salvi la formazione entro giovedì 23:00, viene usata automaticamente l'ultima formazione salvata.
+          La formazione va rischierata ad ogni tappa: i titolari della tappa precedente non vengono riportati automaticamente. Se non schieri 3 titolari + capitano entro giovedì 23:00, per quella tappa non ottieni punti.
         </InfoBox>
       </div>
 
@@ -4448,7 +4465,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
   );
 }
 // ─── PAGINA STORICO TAPPE ─────────────────────────────────────
-function PageHistory({ authUser, accessToken, leagueId, leagues, events, coachesList, onBack }) {
+function PageHistory({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
   const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [historyData, setHistoryData] = React.useState(null);
@@ -4495,6 +4512,12 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
         byPlayer[m.player_id].matches.push(m);
       });
 
+      // Mappa atleti per genere lega → nome leggibile
+      const athleteList = (league?.gender || "F").toUpperCase() === "F"
+        ? (athletesData?.women || [])
+        : (athletesData?.men || []);
+      const athleteMap = Object.fromEntries(athleteList.map(a => [a.id, a]));
+
       // Calcola punti per ogni giocatore in lineup
       const players = lineup.map(l => {
         const playerData = byPlayer[l.player_id] || { player_id: l.player_id, player_name: l.player_id, matches: [] };
@@ -4512,7 +4535,12 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
         const withMult = rawPts * (et.weight || 1);
         const finalPts = withMult * (isCaptain ? 1.3 : 1);
 
-        return { ...playerData, role, isStarter, isCaptain, rawPts, finalPts: Math.round(finalPts * 100) / 100 };
+        const playerName =
+          playerData.player_name ||
+          athleteMap[l.player_id]?.name ||
+          l.player_id;
+
+        return { ...playerData, player_name: playerName, role, isStarter, isCaptain, rawPts, finalPts: Math.round(finalPts * 100) / 100 };
       });
 
       // Coach
@@ -4544,7 +4572,37 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
     setSelectedEventId(null);
     setHistoryData(null);
   }, [selectedLeague]);
-
+const MatchRows = ({ matches }) => {
+    if (!matches || matches.length === 0) return null;
+    return (
+      <div style={{marginTop:8,borderTop:`1px solid ${B.creamDark}`,paddingTop:6}}>
+        {matches.map((m,i) => {
+          const tot = (m.total_pts != null) ? m.total_pts : (m.base_pts||0) + (m.bonus_pts||0);
+          const win = (m.result||"").startsWith("2");
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0",borderBottom:i<matches.length-1?`1px solid ${B.creamDark}`:"none"}}>
+              <div style={{fontSize:9,color:B.gray,minWidth:62,flexShrink:0}}>{m.phase||"—"}</div>
+              <span style={{fontSize:10,fontWeight:"bold",flexShrink:0,padding:"1px 6px",borderRadius:4,
+                background:m.is_bye?B.greenPale:win?"#D1FAE5":"#FEE2E2",
+                color:m.is_bye?B.greenDark:win?"#065F46":"#DC2626"}}>
+                {m.is_bye?"BYE":(m.result||"—")}
+              </span>
+              <div style={{flex:1,minWidth:0,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {m.is_bye?"—":(m.opponent||"—")}{m.score?` · ${m.score}`:""}
+              </div>
+              <div style={{fontSize:10,color:B.gray,flexShrink:0,minWidth:46,textAlign:"right"}}>
+                {m.base_pts>0?`+${m.base_pts}`:(m.base_pts||0)}{m.bonus_pts?` ${m.bonus_pts>0?"+":""}${m.bonus_pts}`:""}
+              </div>
+              <div style={{fontSize:11,fontWeight:"bold",flexShrink:0,minWidth:28,textAlign:"right",
+                color:tot>0?B.greenDark:tot<0?B.orange:B.gray}}>
+                {tot>0?`+${tot}`:tot}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
   return (
     <MenuPage title="Storico Tappe" emoji="📊" onBack={onBack}>
 
@@ -4621,21 +4679,24 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
               {historyData.starters.length === 0
                 ? <div style={{fontSize:12,color:B.gray,marginBottom:12}}>Nessuna formazione salvata per questa tappa.</div>
                 : historyData.starters.map((p,i) => (
-                  <div key={p.player_id} style={{background:B.white,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${p.isCaptain?B.yellow:B.greenDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
-                        {p.isCaptain&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{p.player_name||p.player_id}
+                  <div key={p.player_id} style={{background:B.white,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${p.isCaptain?B.yellow:B.greenDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                          {p.isCaptain&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{p.player_name||p.player_id}
+                        </div>
+                        <div style={{fontSize:10,color:B.gray,marginTop:2}}>
+                          {p.matches.length} {p.matches.length===1?"partita":"partite"}
+                          {p.isCaptain&&<span style={{color:B.yellow,marginLeft:6}}>× 1.3 cap</span>}
+                          {" · "}base {Math.round(p.rawPts * 100) / 100} pt × {historyData.et.weight}
+                        </div>
                       </div>
-                      <div style={{fontSize:10,color:B.gray,marginTop:2}}>
-                        {p.matches.length} {p.matches.length===1?"partita":"partite"}
-                        {p.isCaptain&&<span style={{color:B.yellow,marginLeft:6}}>× 1.3 cap</span>}
-                        {" · "}base {Math.round(p.rawPts * 100) / 100} pt × {historyData.et.weight}
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:18,fontWeight:"bold",color:p.finalPts>0?B.greenDark:B.gray}}>{p.finalPts>0?`+${p.finalPts}`:p.finalPts}</div>
+                        <div style={{fontSize:9,color:B.gray}}>pt tappa</div>
                       </div>
                     </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:18,fontWeight:"bold",color:p.finalPts>0?B.greenDark:B.gray}}>{p.finalPts>0?`+${p.finalPts}`:p.finalPts}</div>
-                      <div style={{fontSize:9,color:B.gray}}>pt tappa</div>
-                    </div>
+                    <MatchRows matches={p.matches}/>
                   </div>
                 ))
               }
@@ -4662,13 +4723,16 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
               {historyData.bench.length > 0 && (
                 <div>
                   <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.gray,marginBottom:8}}>⏸ Panchina (non conteggiata)</div>
-                  {historyData.bench.map(p => (
-                    <div key={p.player_id} style={{background:B.grayPale,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,display:"flex",alignItems:"center",gap:10,opacity:0.65}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,color:B.dark}}>{p.player_name||p.player_id}</div>
-                        <div style={{fontSize:10,color:B.gray}}>{p.matches.length} partite · base {Math.round(p.rawPts*100)/100} pt</div>
+                 {historyData.bench.map(p => (
+                    <div key={p.player_id} style={{background:B.grayPale,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,opacity:0.65}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,color:B.dark}}>{p.player_name||p.player_id}</div>
+                          <div style={{fontSize:10,color:B.gray}}>{p.matches.length} partite · base {Math.round(p.rawPts*100)/100} pt</div>
+                        </div>
+                        <div style={{fontSize:13,color:B.gray}}>({p.finalPts} pt)</div>
                       </div>
-                      <div style={{fontSize:13,color:B.gray}}>({p.finalPts} pt)</div>
+                      <MatchRows matches={p.matches}/>
                     </div>
                   ))}
                 </div>
