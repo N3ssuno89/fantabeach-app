@@ -323,7 +323,7 @@ exports.handler = async (event) => {
           resultsToSave.push({
             event_id: eventId, phase: fase, match_index: matchIndex,
             player_id: pid, player_name: null,
-            result: "BYE", score: "", is_bye: true, is_team_a: true,
+            result: "BYE", score: "", is_bye: true,
             base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
             bonus_codes: b.codes, opponent: "",
             coach_id: teamA.coach || null,
@@ -348,7 +348,7 @@ exports.handler = async (event) => {
         resultsToSave.push({
           event_id: eventId, phase: fase, match_index: matchIndex,
           player_id: pid, player_name: null,
-          result: res.resultA, score: res.scoreStr, is_bye: false, is_team_a: true,
+         result: res.resultA, score: res.scoreStr, is_bye: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaB,
           coach_id: teamA.coach || null,
@@ -361,7 +361,7 @@ exports.handler = async (event) => {
         resultsToSave.push({
           event_id: eventId, phase: fase, match_index: matchIndex,
           player_id: pid, player_name: null,
-          result: res.resultB, score: scoreStrB, is_bye: false, is_team_a: false,
+          result: res.resultB, score: scoreStrB, is_bye: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaA,
           coach_id: teamB.coach || null,
