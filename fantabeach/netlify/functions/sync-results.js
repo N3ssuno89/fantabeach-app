@@ -288,9 +288,11 @@ exports.handler = async (event) => {
       const fase     = row[2]?.trim();
       const coppiaA  = row[4]?.trim();
       const coppiaB  = row[5]?.trim();
-      // Coach sempre presente — solo bonus, nessun malus
-      const coachAIn = true;
-      const coachBIn = true;
+      // Coach: legge dalla colonna Coach A/B del foglio Excel (indici 12 e 13)
+      const coachAStr = (row[12] || "").trim();
+      const coachBStr = (row[13] || "").trim();
+      const coachAIn = coachAStr.length > 0;
+      const coachBIn = coachBStr.length > 0;
       const forfeit  = (row[14] || "").trim().toUpperCase();
 
       if (!eventId || !fase || !coppiaA) return;
@@ -320,7 +322,7 @@ exports.handler = async (event) => {
           resultsToSave.push({
             event_id: eventId, phase: fase, match_index: matchIndex,
             player_id: pid, player_name: null,
-            result: "BYE", score: "", is_bye: true,
+            result: "BYE", score: "", is_bye: true, is_team_a: true,
             base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
             bonus_codes: b.codes, opponent: "",
             coach_id: teamA.coach || null,
@@ -345,7 +347,7 @@ exports.handler = async (event) => {
         resultsToSave.push({
           event_id: eventId, phase: fase, match_index: matchIndex,
           player_id: pid, player_name: null,
-          result: res.resultA, score: res.scoreStr, is_bye: false,
+          result: res.resultA, score: res.scoreStr, is_bye: false, is_team_a: true,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaB,
           coach_id: teamA.coach || null,
@@ -358,7 +360,7 @@ exports.handler = async (event) => {
         resultsToSave.push({
           event_id: eventId, phase: fase, match_index: matchIndex,
           player_id: pid, player_name: null,
-          result: res.resultB, score: scoreStrB, is_bye: false,
+          result: res.resultB, score: scoreStrB, is_bye: false, is_team_a: false,
           base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
           bonus_codes: b.codes, opponent: coppiaA,
           coach_id: teamB.coach || null,
