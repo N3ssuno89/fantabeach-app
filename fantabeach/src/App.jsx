@@ -1400,8 +1400,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         || null;
       const eventId = activeEvent?.id || "E_PRESTAGIONE";
       const ldb = await supabase.from("lineups", accessToken);
-      // Cancella TUTTE le righe per questa lega (qualsiasi event_id) per evitare duplicati
-      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
+      
+      // Cancella solo le righe dell'evento attivo — non tocca lo storico delle tappe precedenti
+      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}&event_id=eq.${eventId}`);
+      
       const entries = lineup.map(pid => ({
         user_id: authUser.id,
         league_id: leagueId,
