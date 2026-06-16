@@ -4486,7 +4486,7 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
       const [matchRes, lineupRes, coachSelRes] = await Promise.all([
         supabase.from("match_results", accessToken).then(db =>
           db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`)),
-        supabase.from("lineups", accessToken).then(db =>
+        supabase.from("lineup_history", accessToken).then(db =>
           db.select("*", `&user_id=eq.${authUser.id}&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
         supabase.from("coach_selections", accessToken).then(db =>
           db.select("*", `&user_id=eq.${authUser.id}&league_id=eq.${selectedLeague}`)),
