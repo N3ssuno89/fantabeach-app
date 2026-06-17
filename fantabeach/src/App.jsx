@@ -4537,18 +4537,21 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
         return { ...playerData, player_name: playerName, role, isStarter, isCaptain, rawPts, finalPts: Math.round(finalPts * 100) / 100 };
       });
 
-      // Coach
+      // Coach — letto dalle colonne CONGELATE in lineup_history (non da coach_selections)
       let coachPts = 0;
-      const coach = coachSel ? coachesList.find(c => c.id === coachSel.coach_id) : null;
-      const coachInField = coachSel?.in_field || false;
+      const frozenCoachRow = lineup.find(l => l.coach_id);
+      const frozenCoachId = frozenCoachRow?.coach_id || null;
+      const coachInField = frozenCoachRow?.coach_in_field || false;
+      const coach = frozenCoachId ? coachesList.find(c => c.id === frozenCoachId) : null;
       if (coach && coachInField) {
-        const seen = new Set();
-        matches.filter(m => m.coach_id === coachSel.coach_id).forEach(m => {
-          if (!seen.has(m.match_index)) {
-            seen.add(m.match_index);
-            if ((m.result || "").startsWith("2") || m.is_bye) coachPts += 0.5;
-          }
+        // +0.5 per ogni match in cui ALMENO una coppia del coach ha vinto (gestisce i derby)
+        const wonByMatch = {};
+        matches.filter(m => m.coach_id === frozenCoachId).forEach(m => {
+          const won = (m.result || "").startsWith("2") || m.is_bye;
+          if (won) wonByMatch[m.match_index] = true;
+          else if (!(m.match_index in wonByMatch)) wonByMatch[m.match_index] = false;
         });
+        coachPts = Object.values(wonByMatch).filter(Boolean).length * 0.5;
       }
 
       const starters = players.filter(p => p.isStarter);
