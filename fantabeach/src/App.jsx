@@ -1621,8 +1621,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}          </div>
-        )}
+            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}         
+            {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}  </div>
+    )}
 
         {!hiddenPage&&(<div>
 
@@ -2765,6 +2766,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 {[
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
                   {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
+                 {icon:"👥", label:"Formazioni di Lega", sub:"Le formazioni di tutti, per tappa", sec:"formations"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
@@ -4742,6 +4744,156 @@ const MatchRows = ({ matches }) => {
           )}
         </div>
       )}
+       </MenuPage>
+  );
+}
+   // ─── PAGINA FORMAZIONI DI LEGA (per tappa) ───────────────────
+function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
+  const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
+  const [selectedEventId, setSelectedEventId] = React.useState(null);
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const league = leagues.find(l => l.id === selectedLeague);
+  const frozenEvents = events.filter(e =>
+    (e.status === "Completato" || e.status === "In corso") &&
+    (e.anno || 2026) === 2026 &&
+    (e.gender || "").toUpperCase() === (league?.gender || "F")
+  );
+
+  const loadAll = async (eventId) => {
+    if (!accessToken) return;
+    setLoading(true); setData(null);
+    try {
+      const [matchRes, lineupRes, profRes] = await Promise.all([
+        supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}`)),
+        supabase.from("lineup_history", accessToken).then(db => db.select("*", `&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
+        supabase.from("profiles", accessToken).then(db => db.select("id,username", `&limit=1000`)),
+      ]);
+      const matches = Array.isArray(matchRes) ? matchRes : [];
+      const lineup  = Array.isArray(lineupRes) ? lineupRes : [];
+      const profs   = Array.isArray(profRes) ? profRes : [];
+      const nameByUser = Object.fromEntries(profs.map(p => [p.id, p.username]));
+
+      const event = events.find(e => e.id === eventId);
+      const et = EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver;
+
+      const byPlayer = {};
+      matches.forEach(m => { if (m.player_id) (byPlayer[m.player_id] = byPlayer[m.player_id] || []).push(m); });
+
+      const athleteList = (league?.gender || "F").toUpperCase() === "F" ? (athletesData?.women || []) : (athletesData?.men || []);
+      const athleteMap = Object.fromEntries(athleteList.map(a => [a.id, a]));
+
+      const byUser = {};
+      lineup.forEach(l => { (byUser[l.user_id] = byUser[l.user_id] || []).push(l); });
+
+      const users = Object.entries(byUser).map(([userId, rows]) => {
+        const players = rows.map(l => {
+          const isCaptain = l.role === "capitano";
+          const isStarter = isCaptain || l.role === "titolare";
+          let rawPts = 0;
+          (byPlayer[l.player_id] || []).forEach(m => {
+            const coachWinPts = (m.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
+            rawPts += (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts;
+          });
+          const finalPts = rawPts * (et.weight || 1) * (isCaptain ? 1.3 : 1);
+          const name = l.player_name || athleteMap[l.player_id]?.name || l.player_id;
+          return { name, isStarter, isCaptain, finalPts };
+        });
+        let coachPts = 0;
+        const frozenCoachRow = rows.find(l => l.coach_id);
+        const frozenCoachId = frozenCoachRow?.coach_id || null;
+        const coachInField = frozenCoachRow?.coach_in_field || false;
+        const coach = frozenCoachId ? coachesList.find(c => c.id === frozenCoachId) : null;
+        if (coach && coachInField) {
+          const won = {};
+          matches.filter(m => m.coach_id === frozenCoachId).forEach(m => {
+            const w = (m.result || "").startsWith("2") || m.is_bye;
+            if (w) won[m.match_index] = true;
+            else if (!(m.match_index in won)) won[m.match_index] = false;
+          });
+          coachPts = Object.values(won).filter(Boolean).length * 0.5;
+        }
+        const starters = players.filter(p => p.isStarter);
+        const total = Math.round((starters.reduce((s, p) => s + p.finalPts, 0) + coachPts) * 100) / 100;
+        return { userId, username: nameByUser[userId] || "—", starters, coachName: (coach && coachInField) ? coach.name : null, total };
+      }).sort((a, b) => b.total - a.total);
+
+      setData({ users, event, et });
+    } catch (e) { console.error("Errore formazioni lega:", e); }
+    setLoading(false);
+  };
+
+  React.useEffect(() => { setSelectedEventId(null); setData(null); }, [selectedLeague]);
+
+  return (
+    <MenuPage title="Formazioni di Lega" emoji="👥" onBack={onBack}>
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {leagues.map(l => (
+          <button key={l.id} onClick={()=>setSelectedLeague(l.id)}
+            style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${selectedLeague===l.id?B.orange:B.creamDark}`,
+              background:selectedLeague===l.id?B.orange:B.white,color:selectedLeague===l.id?B.white:B.dark,
+              fontWeight:selectedLeague===l.id?"bold":"normal",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {l.name}
+          </button>
+        ))}
+      </div>
+
+      {frozenEvents.length === 0 ? (
+        <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
+          <div style={{fontSize:36,marginBottom:10}}>📅</div>
+          <div style={{fontSize:13,color:B.dark,fontWeight:"bold"}}>Nessuna tappa con formazioni congelate</div>
+          <div style={{fontSize:11,color:B.gray,marginTop:4}}>Le formazioni appaiono dopo la chiusura del mercato della tappa.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+            {frozenEvents.map(e => {
+              const et = EVENT_TYPE_META[e.type] || EVENT_TYPE_META.Silver;
+              const sel = selectedEventId === e.id;
+              return (
+                <button key={e.id} onClick={()=>{ setSelectedEventId(e.id); loadAll(e.id); }}
+                  style={{background:sel?B.greenDark:B.white,border:`1px solid ${sel?B.greenDark:B.creamDark}`,
+                    borderLeft:`4px solid ${sel?B.white:et.color}`,borderRadius:10,padding:"11px 14px",cursor:"pointer",
+                    fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:"bold",fontSize:13,color:sel?B.white:B.dark}}>{e.name}</div>
+                    <div style={{fontSize:10,color:sel?"rgba(255,255,255,.7)":B.gray,marginTop:2}}>{e.date_start||e.date}{e.status==="In corso"?" · in corso":""}</div>
+                  </div>
+                  <span style={{fontSize:10,padding:"2px 8px",borderRadius:8,fontWeight:"bold",background:sel?"rgba(255,255,255,.2)":et.bg,color:sel?B.white:et.color}}>×{et.weight}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {loading && <div style={{textAlign:"center",padding:"30px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>}
+
+          {data && !loading && (
+            data.users.length === 0 ? (
+              <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>Nessuna formazione per questa tappa.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {data.users.map((u, i) => (
+                  <div key={u.userId} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:12,fontWeight:"bold",color:B.gray,minWidth:20}}>{i+1}°</span>
+                      <div style={{flex:1,fontSize:13,fontWeight:"bold",color:B.dark}}>{u.username}</div>
+                      <div style={{fontSize:18,fontWeight:"bold",color:u.total>0?B.greenDark:B.gray}}>{u.total>0?`+${u.total}`:u.total}</div>
+                    </div>
+                    <div style={{fontSize:11,color:B.gray,lineHeight:1.6}}>
+                      {u.starters.map((p,j) => (
+                        <span key={j}>{p.isCaptain&&<span style={{color:B.yellow}}>★</span>}{p.name}{j<u.starters.length-1?" · ":""}</span>
+                      ))}
+                      {u.coachName && <span> · 🧢 {u.coachName}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </>
+      )}
+
     </MenuPage>
   );
 }
