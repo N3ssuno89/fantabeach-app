@@ -183,25 +183,6 @@ exports.handler = async (event) => {
         } catch (e) { console.warn("Cleanup fallita:", e.message); }
       }
     }
-
-      // Inserisce in batch da 100
-      for (let i = 0; i < snapshot.length; i += 100) {
-        const batch = snapshot.slice(i, i + 100);
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/player_history`, {
-          method: "POST",
-          headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-          },
-          body: JSON.stringify(batch),
-        });
-        if (res.ok) savedCount += batch.length;
-        else console.error("Batch error:", await res.text());
-      }
-    }
-
     // ── Tappe — legge da Sheet e salva su Supabase ──
     const eventRows = eventsRes.data.values || [];
     const eH = (eventRows[0] || []).map(h => (h||"").trim().toLowerCase());
