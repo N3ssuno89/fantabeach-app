@@ -138,6 +138,9 @@ exports.handler = async (event) => {
     // ── Salva snapshot su Supabase ──
     let savedCount = 0;
     if (allAthletes.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+      const runTs = new Date().toISOString();
+      const todayStart = runTs.slice(0, 10) + "T00:00:00Z";
+
       const snapshot = allAthletes.map(a => ({
         player_id:    a.player_id,
         player_name:  a.player_name,
@@ -146,8 +149,40 @@ exports.handler = async (event) => {
         cost:         a.cost,
         ranking_prev: a.ranking_prev,
         cost_prev:    a.cost_prev,
-        synced_at:    new Date().toISOString(),
+        synced_at:    runTs,
       }));
+
+      for (let i = 0; i < snapshot.length; i += 100) {
+        const batch = snapshot.slice(i, i + 100);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/player_history`, {
+          method: "POST",
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+          },
+          body: JSON.stringify(batch),
+        });
+        if (res.ok) savedCount += batch.length;
+        else console.error("Batch error:", await res.text());
+      }
+
+      // Anti-bloat: una sola istantanea per giorno
+      if (savedCount === snapshot.length && savedCount > 0) {
+        try {
+          const delRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/player_history?synced_at=gte.${encodeURIComponent(todayStart)}&synced_at=lt.${encodeURIComponent(runTs)}`,
+            { method: "DELETE", headers: {
+              "apikey": SUPABASE_KEY,
+              "Authorization": `Bearer ${SUPABASE_KEY}`,
+              "Prefer": "return=minimal",
+            }}
+          );
+          if (!delRes.ok) console.error("Cleanup error:", await delRes.text());
+        } catch (e) { console.warn("Cleanup fallita:", e.message); }
+      }
+    }
 
       // Inserisce in batch da 100
       for (let i = 0; i < snapshot.length; i += 100) {
