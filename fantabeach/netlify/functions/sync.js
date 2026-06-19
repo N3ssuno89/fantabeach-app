@@ -291,7 +291,16 @@ exports.handler = async (event) => {
           const nameMap = {};
           if (Array.isArray(rosterRows)) rosterRows.forEach(r => { if (r.player_name) nameMap[r.player_id] = r.player_name; });
 
-          // Crea snapshot
+          // Fix 2: legge il coach scelto da ogni utente per questa lega
+          const coachSelRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/coach_selections?league_id=eq.${leagueId}&select=user_id,coach_id,coach_name,in_field`,
+            { headers: supaHeaders }
+          );
+          const coachSel = await coachSelRes.json();
+          const coachMap = {};
+          if (Array.isArray(coachSel)) coachSel.forEach(c => { coachMap[c.user_id] = c; });
+
+          // Crea snapshot (con coach timbrato su ogni riga, come la UPDATE manuale)
           const snapshots = Object.values(dedup).map(l => ({
             user_id: l.user_id,
             league_id: leagueId,
@@ -299,6 +308,9 @@ exports.handler = async (event) => {
             player_id: l.player_id,
             player_name: nameMap[l.player_id] || null,
             role: l.role,
+            coach_id:       coachMap[l.user_id]?.coach_id ?? null,
+            coach_name:     coachMap[l.user_id]?.coach_name ?? null,
+            coach_in_field: coachMap[l.user_id]?.in_field ?? null,
           }));
 
           if (snapshots.length > 0) {
