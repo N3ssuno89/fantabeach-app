@@ -1629,7 +1629,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}         
-            {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}  </div>
+            {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="risultati"&&<PageRisultati accessToken={accessToken} events={events} onBack={()=>setHiddenPage(null)}/>}
+          </div>
     )}
 
         {!hiddenPage&&(<div>
@@ -2774,6 +2776,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
                   {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
                  {icon:"👥", label:"Formazioni di Lega", sub:"Le formazioni di tutti, per tappa", sec:"formations"},
+                  {icon:"🏟️", label:"Risultati Tappa", sub:"Partite reali del torneo", sec:"risultati"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
@@ -4755,6 +4758,125 @@ const MatchRows = ({ matches }) => {
   );
 }
    // ─── PAGINA FORMAZIONI DI LEGA (per tappa) ───────────────────
+// ─── PAGINA RISULTATI TAPPA (dati reali dall'API, tabelle fivb_*) ───
+function PageRisultati({ accessToken, events, onBack }) {
+  const [map, setMap] = React.useState([]);
+  const [sel, setSel] = React.useState(null);        // { location, vis_id, gender }
+  const [matches, setMatches] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!accessToken) return;
+    supabase.from("event_tournament_map", accessToken)
+      .then(db => db.select("*", "&limit=200"))
+      .then(rows => setMap(Array.isArray(rows) ? rows : []))
+      .catch(() => setMap([]));
+  }, [accessToken]);
+
+  const visByEvent = Object.fromEntries(map.map(m => [m.event_id, m.vis_id]));
+  const tappe = [];
+  const seen = {};
+  events
+    .filter(e => (e.anno || 2026) === 2026 && visByEvent[e.id])
+    .forEach(e => {
+      const key = e.location || e.name;
+      if (!seen[key]) { seen[key] = { location: key, M: null, F: null }; tappe.push(seen[key]); }
+      const g = (e.gender || "").toUpperCase();
+      if (g === "M") seen[key].M = visByEvent[e.id];
+      if (g === "F") seen[key].F = visByEvent[e.id];
+    });
+
+  const loadMatches = async (location, vis_id, gender) => {
+    setSel({ location, vis_id, gender });
+    setLoading(true); setMatches(null);
+    try {
+      const rows = await supabase.from("fivb_matches", accessToken)
+        .then(db => db.select(
+          "match_no,phase,round,team_a_name,team_b_name,result,sets,status",
+          `&tournament_vis_id=eq.${vis_id}&order=match_no.asc&limit=500`));
+      setMatches(Array.isArray(rows) ? rows : []);
+    } catch (e) { console.error("Errore risultati:", e); setMatches([]); }
+    setLoading(false);
+  };
+
+  const groups = [];
+  const gseen = {};
+  (matches || []).forEach(m => {
+    const key = `${m.phase}||${m.round}`;
+    if (!gseen[key]) { gseen[key] = { phase: m.phase, round: m.round, rows: [] }; groups.push(gseen[key]); }
+    gseen[key].rows.push(m);
+  });
+
+  const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}-${x[1]}`).join("  ") : "";
+  const phaseLabel = (p) => ({ qualification:"Qualificazioni", pool:"Gironi e tabellone", "main draw":"Tabellone principale" }[p] || p || "");
+
+  return (
+    <MenuPage title="Risultati Tappa" emoji="🏟️" onBack={onBack}>
+      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+        {tappe.length === 0 && <div style={{color:B.gray,fontSize:12}}>Nessuna tappa mappata.</div>}
+        {tappe.map(t => (
+          <button key={t.location} onClick={() => loadMatches(t.location, t.M || t.F, t.M ? "M" : "F")}
+            style={{padding:"7px 12px",borderRadius:20,border:`1px solid ${sel?.location===t.location?B.greenDark:B.creamDark}`,background:sel?.location===t.location?B.greenDark:B.white,color:sel?.location===t.location?B.white:B.dark,cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif"}}>
+            {t.location}
+          </button>
+        ))}
+      </div>
+
+      {sel && (
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {["M","F"].map(g => {
+            const t = tappe.find(x => x.location === sel.location);
+            const vis = g === "M" ? t?.M : t?.F;
+            if (!vis) return null;
+            return (
+              <button key={g} onClick={() => loadMatches(sel.location, vis, g)}
+                style={{padding:"6px 16px",borderRadius:16,border:"none",background:sel.gender===g?B.green:B.grayPale,color:sel.gender===g?B.white:B.gray,cursor:"pointer",fontSize:12,fontWeight:"bold",fontFamily:"Georgia,serif"}}>
+                {g === "M" ? "Maschile" : "Femminile"}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {!sel && <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Scegli una tappa per vedere le partite reali.</div>}
+      {loading && <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Caricamento…</div>}
+      {sel && !loading && matches && matches.length === 0 && (
+        <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Nessuna partita ingerita per questa tappa.</div>
+      )}
+
+      {!loading && groups.map((g, gi) => (
+        <div key={gi} style={{marginBottom:16}}>
+          <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1,textTransform:"uppercase",color:B.green,marginBottom:4}}>{phaseLabel(g.phase)}</div>
+          <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}`,borderRadius:10,padding:"8px 11px"}}>
+            <div style={{fontWeight:"bold",fontSize:12,color:B.greenDark,marginBottom:6}}>{g.round}</div>
+            {g.rows.map((m, mi) => {
+              if (m.status === "bye") return null;
+              const a = m.team_a_name || "—", b = m.team_b_name || "—";
+              const parts = (m.result || "").split("-");
+              const ra = parts[0] || "", rb = parts[1] || "";
+              const sch = m.status === "scheduled";
+              return (
+                <div key={mi} style={{padding:"6px 0",borderTop:mi>0?`1px solid ${B.creamDark}`:"none"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11}}>
+                    <span style={{color:B.dark,fontWeight: ra>rb?"bold":"normal"}}>{a}</span>
+                    <span style={{color:B.greenDark,fontWeight:"bold",minWidth:14,textAlign:"right"}}>{sch?"":ra}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,marginTop:2}}>
+                    <span style={{color:B.dark,fontWeight: rb>ra?"bold":"normal"}}>{b}</span>
+                    <span style={{color:B.greenDark,fontWeight:"bold",minWidth:14,textAlign:"right"}}>{sch?"":rb}</span>
+                  </div>
+                  {m.sets && <div style={{fontSize:9,color:B.gray,marginTop:3,letterSpacing:0.5}}>{setsTxt(m.sets)}</div>}
+                  {sch && <div style={{fontSize:9,color:B.yellow,marginTop:3}}>Da giocare</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </MenuPage>
+  );
+}
+
 function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
   const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
   const [selectedEventId, setSelectedEventId] = React.useState(null);
