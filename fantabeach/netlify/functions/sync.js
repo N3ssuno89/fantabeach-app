@@ -268,7 +268,7 @@ exports.handler = async (event) => {
         for (const leagueId of leagueIds) {
           // Legge tutte le lineup correnti per questa lega
           const lineupsRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/lineups?league_id=eq.${leagueId}&select=user_id,player_id,role,saved_at`,
+            `${SUPABASE_URL}/rest/v1/lineups?league_id=eq.${leagueId}&event_id=eq.${event.id}&select=user_id,player_id,role,saved_at`,
             { headers: supaHeaders }
           );
           const lineups = await lineupsRes.json();
