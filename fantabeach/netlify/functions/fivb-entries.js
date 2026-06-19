@@ -59,8 +59,12 @@ exports.handler = async (event) => {
           });
         }
       }
-      const saved = await upsert(rows);
-      perTorneo.push({ vis_id: Number(id), atleti: rows.length, salvati: saved });
+      // dedup per node nello stesso torneo (un atleta può comparire in più sezioni)
+      const byNode = new Map();
+      for (const r of rows) byNode.set(r.node, r);   // ultima vince
+      const deduped = [...byNode.values()];
+      const saved = await upsert(deduped);
+      perTorneo.push({ vis_id: Number(id), atleti: deduped.length, doppioni: rows.length - deduped.length, salvati: saved });
     }
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, tornei: perTorneo }) };
   } catch (err) {
