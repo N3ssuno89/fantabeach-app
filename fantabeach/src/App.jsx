@@ -1318,6 +1318,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       const now = new Date().toISOString();
       const rdb = await supabase.from("rosters", accessToken);
       await rdb.update({ sold_at: now }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}&player_id=eq.${a.id}&sold_at=is.null`);
+      // Fix 3: rimuove il venduto dalla formazione dell'evento attivo (niente formazioni sporche al freeze)
+      const eventsForGenderSell = events.filter(e => (e.gender||"").toUpperCase() === league.gender.toUpperCase());
+      const activeEventSell = eventsForGenderSell.find(e => e.status === "In corso")
+        || eventsForGenderSell.find(e => e.status === "Planned") || null;
+      const sellEventId = activeEventSell?.id || "E_PRESTAGIONE";
+      const ldb = await supabase.from("lineups", accessToken);
+      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}&player_id=eq.${a.id}&event_id=eq.${sellEventId}`);
       const udb = await supabase.from("user_leagues", accessToken);
       await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
       const tdb = await supabase.from("transfer_history", accessToken);
