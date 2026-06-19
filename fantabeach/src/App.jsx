@@ -4761,9 +4761,16 @@ const MatchRows = ({ matches }) => {
 // ─── PAGINA RISULTATI TAPPA (dati reali dall'API, tabelle fivb_*) ───
 function PageRisultati({ accessToken, events, onBack }) {
   const [map, setMap] = React.useState([]);
-  const [sel, setSel] = React.useState(null);        // { location, vis_id, gender }
+  const [sel, setSel] = React.useState(null);          // { location, vis_id, gender }
   const [matches, setMatches] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
+
+  const A = {
+    card:"#FFFFFF", line:"#ECECF0",
+    text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8",
+    accent:"#2D5C4F", track:"#EDEDF1",
+  };
+  const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 
   React.useEffect(() => {
     if (!accessToken) return;
@@ -4807,72 +4814,83 @@ function PageRisultati({ accessToken, events, onBack }) {
     gseen[key].rows.push(m);
   });
 
-  const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}-${x[1]}`).join("  ") : "";
+  const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
   const phaseLabel = (p) => ({ qualification:"Qualificazioni", pool:"Gironi e tabellone", "main draw":"Tabellone principale" }[p] || p || "");
+
+  const curT = sel ? tappe.find(x => x.location === sel.location) : null;
 
   return (
     <MenuPage title="Risultati Tappa" emoji="🏟️" onBack={onBack}>
-      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
-        {tappe.length === 0 && <div style={{color:B.gray,fontSize:12}}>Nessuna tappa mappata.</div>}
-        {tappe.map(t => (
-          <button key={t.location} onClick={() => loadMatches(t.location, t.M || t.F, t.M ? "M" : "F")}
-            style={{padding:"7px 12px",borderRadius:20,border:`1px solid ${sel?.location===t.location?B.greenDark:B.creamDark}`,background:sel?.location===t.location?B.greenDark:B.white,color:sel?.location===t.location?B.white:B.dark,cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif"}}>
-            {t.location}
-          </button>
-        ))}
-      </div>
+      <div style={{fontFamily:SANS}}>
 
-      {sel && (
-        <div style={{display:"flex",gap:6,marginBottom:14}}>
-          {["M","F"].map(g => {
-            const t = tappe.find(x => x.location === sel.location);
-            const vis = g === "M" ? t?.M : t?.F;
-            if (!vis) return null;
+        {/* selettore tappa */}
+        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:18}}>
+          {tappe.length === 0 && <div style={{color:A.sub,fontSize:13}}>Nessuna tappa mappata.</div>}
+          {tappe.map(t => {
+            const on = sel?.location === t.location;
             return (
-              <button key={g} onClick={() => loadMatches(sel.location, vis, g)}
-                style={{padding:"6px 16px",borderRadius:16,border:"none",background:sel.gender===g?B.green:B.grayPale,color:sel.gender===g?B.white:B.gray,cursor:"pointer",fontSize:12,fontWeight:"bold",fontFamily:"Georgia,serif"}}>
-                {g === "M" ? "Maschile" : "Femminile"}
+              <button key={t.location} onClick={() => loadMatches(t.location, t.M || t.F, t.M ? "M" : "F")}
+                style={{flexShrink:0,padding:"7px 16px",borderRadius:980,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,background:on?A.accent:A.track,color:on?"#FFFFFF":A.text,transition:"all .15s"}}>
+                {t.location}
               </button>
             );
           })}
         </div>
-      )}
 
-      {!sel && <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Scegli una tappa per vedere le partite reali.</div>}
-      {loading && <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Caricamento…</div>}
-      {sel && !loading && matches && matches.length === 0 && (
-        <div style={{color:B.gray,fontSize:13,textAlign:"center",padding:"30px 0"}}>Nessuna partita ingerita per questa tappa.</div>
-      )}
-
-      {!loading && groups.map((g, gi) => (
-        <div key={gi} style={{marginBottom:16}}>
-          <div style={{fontSize:9,fontWeight:"bold",letterSpacing:1,textTransform:"uppercase",color:B.green,marginBottom:4}}>{phaseLabel(g.phase)}</div>
-          <div style={{background:B.greenPale,border:`1px solid ${B.greenDark}`,borderRadius:10,padding:"8px 11px"}}>
-            <div style={{fontWeight:"bold",fontSize:12,color:B.greenDark,marginBottom:6}}>{g.round}</div>
-            {g.rows.map((m, mi) => {
-              if (m.status === "bye") return null;
-              const a = m.team_a_name || "—", b = m.team_b_name || "—";
-              const parts = (m.result || "").split("-");
-              const ra = parts[0] || "", rb = parts[1] || "";
-              const sch = m.status === "scheduled";
+        {/* segmented control M/F */}
+        {sel && curT && (
+          <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:22}}>
+            {["M","F"].map(g => {
+              const vis = g === "M" ? curT.M : curT.F;
+              const on = sel.gender === g;
               return (
-                <div key={mi} style={{padding:"6px 0",borderTop:mi>0?`1px solid ${B.creamDark}`:"none"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11}}>
-                    <span style={{color:B.dark,fontWeight: ra>rb?"bold":"normal"}}>{a}</span>
-                    <span style={{color:B.greenDark,fontWeight:"bold",minWidth:14,textAlign:"right"}}>{sch?"":ra}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,marginTop:2}}>
-                    <span style={{color:B.dark,fontWeight: rb>ra?"bold":"normal"}}>{b}</span>
-                    <span style={{color:B.greenDark,fontWeight:"bold",minWidth:14,textAlign:"right"}}>{sch?"":rb}</span>
-                  </div>
-                  {m.sets && <div style={{fontSize:9,color:B.gray,marginTop:3,letterSpacing:0.5}}>{setsTxt(m.sets)}</div>}
-                  {sch && <div style={{fontSize:9,color:B.yellow,marginTop:3}}>Da giocare</div>}
-                </div>
+                <button key={g} disabled={!vis} onClick={() => vis && loadMatches(sel.location, vis, g)}
+                  style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:vis?"pointer":"default",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
+                    background:on?"#FFFFFF":"transparent",color:!vis?A.soft:on?A.text:A.sub,
+                    boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none",transition:"all .15s"}}>
+                  {g === "M" ? "Maschile" : "Femminile"}
+                </button>
               );
             })}
           </div>
-        </div>
-      ))}
+        )}
+
+        {!sel && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Scegli una tappa.</div>}
+        {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
+        {sel && !loading && matches && matches.length === 0 && (
+          <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita per questa tappa.</div>
+        )}
+
+        {!loading && groups.map((g, gi) => (
+          <div key={gi} style={{marginBottom:24}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:A.soft,margin:"0 2px 6px"}}>{phaseLabel(g.phase)}</div>
+            <div style={{fontSize:15,fontWeight:600,color:A.text,margin:"0 2px 10px"}}>{g.round}</div>
+            <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
+              {g.rows.filter(m => m.status !== "bye").map((m, mi) => {
+                const a = m.team_a_name || "—", b = m.team_b_name || "—";
+                const parts = (m.result || "").split("-");
+                const ra = parts[0] || "", rb = parts[1] || "";
+                const sch = m.status === "scheduled";
+                const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
+                return (
+                  <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
+                    </div>
+                    {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
+                    {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </MenuPage>
   );
 }
