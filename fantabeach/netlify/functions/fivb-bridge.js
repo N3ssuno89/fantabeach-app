@@ -1,6 +1,7 @@
 // netlify/functions/fivb-bridge.js
 // Abbina PLAYER_MAPPING ↔ federvolley_node (match ordine-insensibile).
 // Default = DRY RUN. Con ?write=1 scrive su player_node_map (upsert su internal_id).
+// I record match_type='manual' NON vengono mai sovrascritti dai re-run.
 
 const { google } = require("googleapis");
 
@@ -26,6 +27,7 @@ exports.handler = async (event) => {
   const doWrite = event.queryStringParameters?.write === "1";
 
   try {
+    // 1) lato API: fivb_rankings (paginato), dedup per (gender,node) sullo snapshot più recente
     const apiRows = [];
     for (let offset = 0; ; offset += 1000) {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/fivb_rankings?select=gender,node,name,snapshot_date&order=snapshot_date.desc&limit=1000&offset=${offset}`, { headers: supaHeaders });
@@ -43,6 +45,7 @@ exports.handler = async (event) => {
       if (!apiByKey[k]) apiByKey[k] = { node: a.node, name: a.name };
     }
 
+    // 2) lato tuo: PLAYER_MAPPING (A=id, B=nome, C=sesso)
     const auth = new google.auth.JWT(CLIENT_EMAIL, null, PRIVATE_KEY, ["https://www.googleapis.com/auth/spreadsheets.readonly"]);
     const sheets = google.sheets({ version: "v4", auth });
     const mapRes = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "PLAYER_MAPPING!A:C" });
@@ -59,11 +62,17 @@ exports.handler = async (event) => {
       else da_controllare.push({ id, gender, nome_tuo: name });
     }
 
+    // 3) scrittura opzionale, PRESERVANDO i 'manual'
     let scritti = 0;
     if (doWrite) {
+      // leggi gli id già sistemati a mano: non vanno mai toccati
+      const mr = await fetch(`${SUPABASE_URL}/rest/v1/player_node_map?select=internal_id&match_type=eq.manual`, { headers: supaHeaders });
+      const manualJson = await mr.json();
+      const manualIds = new Set(Array.isArray(manualJson) ? manualJson.map(x => x.internal_id) : []);
+
       const rows = [
-        ...abbinati.map(a => ({ internal_id: a.id, node: a.node, gender: a.gender, name_app: a.nome_tuo, name_api: a.nome_api, match_type: "auto", verified: false })),
-        ...da_controllare.map(d => ({ internal_id: d.id, node: null, gender: d.gender, name_app: d.nome_tuo, name_api: null, match_type: "none", verified: false })),
+        ...abbinati.filter(a => !manualIds.has(a.id)).map(a => ({ internal_id: a.id, node: a.node, gender: a.gender, name_app: a.nome_tuo, name_api: a.nome_api, match_type: "auto", verified: false })),
+        ...da_controllare.filter(d => !manualIds.has(d.id)).map(d => ({ internal_id: d.id, node: null, gender: d.gender, name_app: d.nome_tuo, name_api: null, match_type: "none", verified: false })),
       ];
       const wHeaders = { ...supaHeaders, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" };
       for (let i = 0; i < rows.length; i += 100) {
