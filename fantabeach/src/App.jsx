@@ -1630,7 +1630,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}         
             {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="risultati"&&<PageRisultati accessToken={accessToken} events={events} onBack={()=>setHiddenPage(null)}/>}
+            {hiddenPage==="risultati"&&<PageRisultati accessToken={accessToken} events={events} leagueId={leagueId} leagues={leagues} onBack={()=>setHiddenPage(null)}/>}
           </div>
     )}
 
@@ -4759,18 +4759,18 @@ const MatchRows = ({ matches }) => {
 }
    // ─── PAGINA FORMAZIONI DI LEGA (per tappa) ───────────────────
 // ─── PAGINA RISULTATI TAPPA (dati reali dall'API, tabelle fivb_*) ───
-function PageRisultati({ accessToken, events, onBack }) {
+function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
   const [map, setMap] = React.useState([]);
-  const [sel, setSel] = React.useState(null);          // { location, vis_id, gender }
+  const [sel, setSel] = React.useState(null);        // { location, vis }
   const [matches, setMatches] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
+  const [view, setView] = React.useState("lista");   // "lista" | "bracket"
 
-  const A = {
-    card:"#FFFFFF", line:"#ECECF0",
-    text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8",
-    accent:"#2D5C4F", track:"#EDEDF1",
-  };
+  const A = { card:"#FFFFFF", line:"#ECECF0", text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8", accent:"#2D5C4F", track:"#EDEDF1" };
   const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+
+  const league = leagues ? leagues.find(l => l.id === leagueId) : null;
+  const gender = (league?.gender || "M").toUpperCase();
 
   React.useEffect(() => {
     if (!accessToken) return;
@@ -4784,71 +4784,89 @@ function PageRisultati({ accessToken, events, onBack }) {
   const tappe = [];
   const seen = {};
   events
-    .filter(e => (e.anno || 2026) === 2026 && visByEvent[e.id])
+    .filter(e => (e.anno || 2026) === 2026 && (e.gender || "").toUpperCase() === gender && visByEvent[e.id])
     .forEach(e => {
       const key = e.location || e.name;
-      if (!seen[key]) { seen[key] = { location: key, M: null, F: null }; tappe.push(seen[key]); }
-      const g = (e.gender || "").toUpperCase();
-      if (g === "M") seen[key].M = visByEvent[e.id];
-      if (g === "F") seen[key].F = visByEvent[e.id];
+      if (!seen[key]) { seen[key] = { location: key, vis: visByEvent[e.id] }; tappe.push(seen[key]); }
     });
 
-  const loadMatches = async (location, vis_id, gender) => {
-    setSel({ location, vis_id, gender });
+  const loadMatches = async (location, vis) => {
+    setSel({ location, vis });
     setLoading(true); setMatches(null);
     try {
       const rows = await supabase.from("fivb_matches", accessToken)
         .then(db => db.select(
-          "match_no,phase,round,team_a_name,team_b_name,result,sets,status",
-          `&tournament_vis_id=eq.${vis_id}&order=match_no.asc&limit=500`));
+          "match_no,phase,pool,round,team_a_name,team_b_name,result,sets,status",
+          `&tournament_vis_id=eq.${vis}&order=match_no.asc&limit=500`));
       setMatches(Array.isArray(rows) ? rows : []);
     } catch (e) { console.error("Errore risultati:", e); setMatches([]); }
     setLoading(false);
   };
 
-  const groups = [];
-  const gseen = {};
+  // etichetta + peso (ordine decrescente: finali in alto, qualifiche in fondo)
+  const groupInfo = (phase, pool, round, count) => {
+    const r = round || "";
+    if (phase === "main_draw") {
+      if (/3°-4°|3-4/.test(r)) return { label: "Finale 3°/4° posto", w: 1 };
+      if (/1°-2°|1-2/.test(r) || r === "Finale") return { label: "Finale", w: 0 };
+      if (/semifinale/i.test(r) || count === 2) return { label: "Semifinali", w: 3 };
+      const byCount = { 4:"Quarti di finale", 8:"Ottavi di finale", 16:"Sedicesimi di finale", 32:"Trentaduesimi di finale" };
+      return { label: byCount[count] || r, w: 1 + count };
+    }
+    if (phase === "pool") {
+      const L = (pool || "?").toUpperCase();
+      return { label: `Pool ${L}`, w: 1000 + (L.charCodeAt(0) - 65) };
+    }
+    return { label: "Qualificazioni", w: 2000 };
+  };
+
+  const gmap = {};
   (matches || []).forEach(m => {
-    const key = `${m.phase}||${m.round}`;
-    if (!gseen[key]) { gseen[key] = { phase: m.phase, round: m.round, rows: [] }; groups.push(gseen[key]); }
-    gseen[key].rows.push(m);
+    if (m.status === "bye") return;
+    let key;
+    if (m.phase === "pool") key = `pool|${m.pool}`;
+    else if (m.phase === "main_draw") key = `md|${m.round}`;
+    else key = "qual";
+    if (!gmap[key]) gmap[key] = { phase: m.phase, pool: m.pool, round: m.round, rows: [] };
+    gmap[key].rows.push(m);
   });
+  const groups = Object.values(gmap)
+    .map(g => ({ ...g, ...groupInfo(g.phase, g.pool, g.round, g.rows.length) }))
+    .sort((a, b) => a.w - b.w);
 
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
-  const phaseLabel = (p) => ({ qualification:"Qualificazioni", pool:"Gironi e tabellone", "main draw":"Tabellone principale" }[p] || p || "");
-
-  const curT = sel ? tappe.find(x => x.location === sel.location) : null;
 
   return (
     <MenuPage title="Risultati Tappa" emoji="🏟️" onBack={onBack}>
       <div style={{fontFamily:SANS}}>
+        <div style={{fontSize:12,color:A.sub,margin:"0 2px 12px"}}>
+          {league ? `${league.name} · ${gender === "F" ? "Femminile" : "Maschile"}` : ""}
+        </div>
 
         {/* selettore tappa */}
-        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:18}}>
+        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:16}}>
           {tappe.length === 0 && <div style={{color:A.sub,fontSize:13}}>Nessuna tappa mappata.</div>}
           {tappe.map(t => {
             const on = sel?.location === t.location;
             return (
-              <button key={t.location} onClick={() => loadMatches(t.location, t.M || t.F, t.M ? "M" : "F")}
-                style={{flexShrink:0,padding:"7px 16px",borderRadius:980,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,background:on?A.accent:A.track,color:on?"#FFFFFF":A.text,transition:"all .15s"}}>
+              <button key={t.location} onClick={() => loadMatches(t.location, t.vis)}
+                style={{flexShrink:0,padding:"7px 16px",borderRadius:980,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,background:on?A.accent:A.track,color:on?"#FFFFFF":A.text}}>
                 {t.location}
               </button>
             );
           })}
         </div>
 
-        {/* segmented control M/F */}
-        {sel && curT && (
-          <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:22}}>
-            {["M","F"].map(g => {
-              const vis = g === "M" ? curT.M : curT.F;
-              const on = sel.gender === g;
+        {/* toggle Lista / Bracket */}
+        {sel && (
+          <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
+            {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
+              const on = view === v;
               return (
-                <button key={g} disabled={!vis} onClick={() => vis && loadMatches(sel.location, vis, g)}
-                  style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:vis?"pointer":"default",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
-                    background:on?"#FFFFFF":"transparent",color:!vis?A.soft:on?A.text:A.sub,
-                    boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none",transition:"all .15s"}}>
-                  {g === "M" ? "Maschile" : "Femminile"}
+                <button key={v} onClick={() => setView(v)}
+                  style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
+                    background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
+                  {lab}
                 </button>
               );
             })}
@@ -4857,20 +4875,29 @@ function PageRisultati({ accessToken, events, onBack }) {
 
         {!sel && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Scegli una tappa.</div>}
         {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
-        {sel && !loading && matches && matches.length === 0 && (
-          <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita per questa tappa.</div>
+
+        {/* BRACKET: predisposto, da disegnare */}
+        {sel && !loading && view === "bracket" && (
+          <div style={{textAlign:"center",padding:"56px 20px",color:A.sub}}>
+            <div style={{fontSize:34,marginBottom:10}}>🗂️</div>
+            <div style={{fontSize:15,fontWeight:600,color:A.text,marginBottom:6}}>Bracket in arrivo</div>
+            <div style={{fontSize:13,lineHeight:1.5}}>La vista ad albero del tabellone è predisposta ma non ancora disegnata. Per ora usa la Lista.</div>
+          </div>
         )}
 
-        {!loading && groups.map((g, gi) => (
-          <div key={gi} style={{marginBottom:24}}>
-            <div style={{fontSize:11,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:A.soft,margin:"0 2px 6px"}}>{phaseLabel(g.phase)}</div>
-            <div style={{fontSize:15,fontWeight:600,color:A.text,margin:"0 2px 10px"}}>{g.round}</div>
+        {/* LISTA */}
+        {sel && !loading && view === "lista" && matches && matches.length === 0 && (
+          <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
+        )}
+        {!loading && view === "lista" && groups.map((g, gi) => (
+          <div key={gi} style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:700,color:A.text,margin:"0 2px 9px",letterSpacing:0.2}}>{g.label}</div>
             <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
-              {g.rows.filter(m => m.status !== "bye").map((m, mi) => {
+              {g.rows.map((m, mi) => {
                 const a = m.team_a_name || "—", b = m.team_b_name || "—";
                 const parts = (m.result || "").split("-");
                 const ra = parts[0] || "", rb = parts[1] || "";
-                const sch = m.status === "scheduled";
+                const sch = m.status === "scheduled" || !m.result;
                 const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
                 return (
                   <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
