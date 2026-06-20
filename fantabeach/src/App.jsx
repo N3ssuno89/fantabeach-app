@@ -2774,7 +2774,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                  {icon:"👥", label:"Formazioni di Lega", sub:"Le formazioni di tutti, per tappa", sec:"formations"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
-                  {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
                   {icon:"📄", label:"Termini",          sub:"Regolamento ufficiale",    sec:"terms"},
                   ...(isAdmin?[
                     {icon:"🏐", label:"Stats Atleti",   sub:"Performance e ownership",  sec:"stats-atleti"},
@@ -4467,7 +4466,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 }
 // ─── PAGINA STORICO TAPPE ─────────────────────────────────────
 function PageHistory({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
-  const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
+  const selectedLeague = leagueId || "L001-F";
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [historyData, setHistoryData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
@@ -4609,20 +4608,7 @@ const MatchRows = ({ matches }) => {
   return (
     <MenuPage title="Storico Tappe" emoji="📊" onBack={onBack}>
 
-      {/* Selettore lega */}
-      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {leagues.map(l => (
-          <button key={l.id} onClick={()=>setSelectedLeague(l.id)}
-            style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${selectedLeague===l.id?B.orange:B.creamDark}`,
-              background:selectedLeague===l.id?B.orange:B.white,
-              color:selectedLeague===l.id?B.white:B.dark,
-              fontWeight:selectedLeague===l.id?"bold":"normal",
-              fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            {l.name}
-          </button>
-        ))}
-      </div>
-
+      
       {/* Lista tappe completate */}
       {completedEvents.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
@@ -4915,7 +4901,7 @@ function PageRisultati({ event, accessToken, onBack }) {
 }
 
 function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
-  const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
+  const selectedLeague = leagueId || "L001-F";
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
@@ -4994,16 +4980,6 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
 
   return (
     <MenuPage title="Formazioni di Lega" emoji="👥" onBack={onBack}>
-      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {leagues.map(l => (
-          <button key={l.id} onClick={()=>setSelectedLeague(l.id)}
-            style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${selectedLeague===l.id?B.orange:B.creamDark}`,
-              background:selectedLeague===l.id?B.orange:B.white,color:selectedLeague===l.id?B.white:B.dark,
-              fontWeight:selectedLeague===l.id?"bold":"normal",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            {l.name}
-          </button>
-        ))}
-      </div>
 
       {frozenEvents.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
