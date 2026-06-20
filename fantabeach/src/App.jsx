@@ -4530,7 +4530,8 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
         const finalPts = withMult * (isCaptain ? 1.3 : 1);
 
         const playerName =
-          playerData.player_name ||
+          l.player_name ||
+          byPlayer[l.player_id]?.player_name ||
           athleteMap[l.player_id]?.name ||
           l.player_id;
 
