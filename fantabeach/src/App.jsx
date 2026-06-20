@@ -4804,34 +4804,43 @@ function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
   };
 
   // etichetta + peso (ordine decrescente: finali in alto, qualifiche in fondo)
-  const groupInfo = (phase, pool, round, count) => {
+  const groupInfo = (phase, pool, round, realCount, byeCount) => {
     const r = round || "";
     if (phase === "main_draw") {
       if (/3°-4°|3-4/.test(r)) return { label: "Finale 3°/4° posto", w: 1 };
       if (/1°-2°|1-2/.test(r) || r === "Finale") return { label: "Finale", w: 0 };
-      if (/semifinale/i.test(r) || count === 2) return { label: "Semifinali", w: 3 };
-      const byCount = { 4:"Quarti di finale", 8:"Ottavi di finale", 16:"Sedicesimi di finale", 32:"Trentaduesimi di finale" };
-      return { label: byCount[count] || r, w: 1 + count };
+      // squadre nel turno = partite vere × 2 + bye (chi passa diretto)
+      const teams = realCount * 2 + byeCount;
+      const byTeams = { 4:"Semifinali", 8:"Quarti di finale", 12:"Round of 12", 16:"Ottavi di finale", 24:"Round of 24", 32:"Sedicesimi di finale" };
+      return { label: byTeams[teams] || r, w: teams };
     }
     if (phase === "pool") {
       const L = (pool || "?").toUpperCase();
       return { label: `Pool ${L}`, w: 1000 + (L.charCodeAt(0) - 65) };
     }
-    return { label: "Qualificazioni", w: 2000 };
+    // qualificazioni: un blocco per percorso, in ordine prima→sesta
+    const po = { prima:1, seconda:2, terza:3, quarta:4, quinta:5, sesta:6, settima:7, ottava:8 };
+    const mm = r.match(/percorso\s+(\w+)\s+coppia/i);
+    const ord = mm ? (po[mm[1].toLowerCase()] || 99) : 99;
+    return { label: r || "Qualificazioni", w: 2000 + ord };
   };
 
   const gmap = {};
   (matches || []).forEach(m => {
-    if (m.status === "bye") return;
     let key;
     if (m.phase === "pool") key = `pool|${m.pool}`;
     else if (m.phase === "main_draw") key = `md|${m.round}`;
-    else key = "qual";
+    else key = `qual|${m.round}`;
     if (!gmap[key]) gmap[key] = { phase: m.phase, pool: m.pool, round: m.round, rows: [] };
-    gmap[key].rows.push(m);
+    gmap[key].rows.push(m);   // include i bye, servono per contare le squadre
   });
   const groups = Object.values(gmap)
-    .map(g => ({ ...g, ...groupInfo(g.phase, g.pool, g.round, g.rows.length) }))
+    .map(g => {
+      const real = g.rows.filter(m => m.status !== "bye");
+      const byes = g.rows.length - real.length;
+      return { ...g, rows: real, ...groupInfo(g.phase, g.pool, g.round, real.length, byes) };
+    })
+    .filter(g => g.rows.length > 0)
     .sort((a, b) => a.w - b.w);
 
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
