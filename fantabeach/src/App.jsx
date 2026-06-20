@@ -1630,7 +1630,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}         
             {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="risultati"&&<PageRisultati accessToken={accessToken} events={events} leagueId={leagueId} leagues={leagues} onBack={()=>setHiddenPage(null)}/>}
           </div>
     )}
 
@@ -2327,13 +2326,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===3&&(
           <div>
             {selectedEvent?(
-              <EventDetail
+              <PageRisultati
                 event={selectedEvent}
-                onBack={()=>setSelectedEvent(null)}
-                myRoster={roster}
-                matchResults={matchResultsData[selectedEvent.id]}
-                onLoad={()=>loadMatchResults(selectedEvent.id)}
-                athletes={athletes_data}/>
+                accessToken={accessToken}
+                onBack={()=>setSelectedEvent(null)}/>
             ):(
               <div>
                 {/* Filtro genere automatico dalla lega selezionata */}
@@ -2776,7 +2772,6 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
                   {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
                  {icon:"👥", label:"Formazioni di Lega", sub:"Le formazioni di tutti, per tappa", sec:"formations"},
-                  {icon:"🏟️", label:"Risultati Tappa", sub:"Partite reali del torneo", sec:"risultati"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
@@ -4758,58 +4753,40 @@ const MatchRows = ({ matches }) => {
   );
 }
    // ─── PAGINA FORMAZIONI DI LEGA (per tappa) ───────────────────
-// ─── PAGINA RISULTATI TAPPA (dati reali dall'API, tabelle fivb_*) ───
-function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
-  const [map, setMap] = React.useState([]);
-  const [sel, setSel] = React.useState(null);        // { location, vis }
+// ─── DETTAGLIO RISULTATI TAPPA (dati reali API) — usato dal Calendario ───
+function PageRisultati({ event, accessToken, onBack }) {
   const [matches, setMatches] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [view, setView] = React.useState("lista");   // "lista" | "bracket"
 
   const A = { card:"#FFFFFF", line:"#ECECF0", text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8", accent:"#2D5C4F", track:"#EDEDF1" };
   const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
-
-  const league = leagues ? leagues.find(l => l.id === leagueId) : null;
-  const gender = (league?.gender || "M").toUpperCase();
+  const et = (EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver);
 
   React.useEffect(() => {
-    if (!accessToken) return;
-    supabase.from("event_tournament_map", accessToken)
-      .then(db => db.select("*", "&limit=200"))
-      .then(rows => setMap(Array.isArray(rows) ? rows : []))
-      .catch(() => setMap([]));
-  }, [accessToken]);
-
-  const visByEvent = Object.fromEntries(map.map(m => [m.event_id, m.vis_id]));
-  const tappe = [];
-  const seen = {};
-  events
-    .filter(e => (e.anno || 2026) === 2026 && (e.gender || "").toUpperCase() === gender && visByEvent[e.id])
-    .forEach(e => {
-      const key = e.location || e.name;
-      if (!seen[key]) { seen[key] = { location: key, vis: visByEvent[e.id] }; tappe.push(seen[key]); }
-    });
-
-  const loadMatches = async (location, vis) => {
-    setSel({ location, vis });
+    if (!accessToken || !event) return;
+    let cancelled = false;
     setLoading(true); setMatches(null);
-    try {
-      const rows = await supabase.from("fivb_matches", accessToken)
-        .then(db => db.select(
-          "match_no,phase,pool,round,team_a_name,team_b_name,result,sets,status",
-          `&tournament_vis_id=eq.${vis}&order=match_no.asc&limit=500`));
-      setMatches(Array.isArray(rows) ? rows : []);
-    } catch (e) { console.error("Errore risultati:", e); setMatches([]); }
-    setLoading(false);
-  };
+    supabase.from("event_tournament_map", accessToken)
+      .then(db => db.select("vis_id", `&event_id=eq.${event.id}`))
+      .then(async rows => {
+        const vis = Array.isArray(rows) && rows[0] ? rows[0].vis_id : null;
+        if (!vis) { if (!cancelled) { setMatches([]); setLoading(false); } return; }
+        const ms = await supabase.from("fivb_matches", accessToken)
+          .then(db => db.select(
+            "match_no,phase,pool,round,team_a_name,team_b_name,result,sets,status",
+            `&tournament_vis_id=eq.${vis}&order=match_no.asc&limit=500`));
+        if (!cancelled) { setMatches(Array.isArray(ms) ? ms : []); setLoading(false); }
+      })
+      .catch(() => { if (!cancelled) { setMatches([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [accessToken, event && event.id]);
 
-  // etichetta + peso (ordine decrescente: finali in alto, qualifiche in fondo)
   const groupInfo = (phase, pool, round, realCount, byeCount) => {
     const r = round || "";
     if (phase === "main_draw") {
       if (/3°-4°|3-4/.test(r)) return { label: "Finale 3°/4° posto", w: 1 };
       if (/1°-2°|1-2/.test(r) || r === "Finale") return { label: "Finale", w: 0 };
-      // squadre nel turno = partite vere × 2 + bye (chi passa diretto)
       const teams = realCount * 2 + byeCount;
       const byTeams = { 4:"Semifinali", 8:"Quarti di finale", 12:"Round of 12", 16:"Ottavi di finale", 24:"Round of 24", 32:"Sedicesimi di finale" };
       return { label: byTeams[teams] || r, w: teams };
@@ -4818,7 +4795,6 @@ function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
       const L = (pool || "?").toUpperCase();
       return { label: `Pool ${L}`, w: 1000 + (L.charCodeAt(0) - 65) };
     }
-    // qualificazioni: un blocco per percorso, in ordine prima→sesta
     const po = { prima:1, seconda:2, terza:3, quarta:4, quinta:5, sesta:6, settima:7, ottava:8 };
     const mm = r.match(/percorso\s+(\w+)\s+coppia/i);
     const ord = mm ? (po[mm[1].toLowerCase()] || 99) : 99;
@@ -4832,7 +4808,7 @@ function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
     else if (m.phase === "main_draw") key = `md|${m.round}`;
     else key = `qual|${m.round}`;
     if (!gmap[key]) gmap[key] = { phase: m.phase, pool: m.pool, round: m.round, rows: [] };
-    gmap[key].rows.push(m);   // include i bye, servono per contare le squadre
+    gmap[key].rows.push(m);
   });
   const groups = Object.values(gmap)
     .map(g => {
@@ -4843,7 +4819,6 @@ function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
     .filter(g => g.rows.length > 0)
     .sort((a, b) => a.w - b.w);
 
-  // sezioni per fase (Main Draw / Pool / Qualifiche) con sfondo leggero
   const phaseMeta = {
     main_draw:     { label: "Main Draw",  bg: "#E9F2EE", w: 0 },
     pool:          { label: "Pool",       bg: "#FAF1E0", w: 1 },
@@ -4860,98 +4835,81 @@ function PageRisultati({ accessToken, events, leagueId, leagues, onBack }) {
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
 
   return (
-    <MenuPage title="Risultati Tappa" emoji="🏟️" onBack={onBack}>
-      <div style={{fontFamily:SANS}}>
-        <div style={{fontSize:12,color:A.sub,margin:"0 2px 12px"}}>
-          {league ? `${league.name} · ${gender === "F" ? "Femminile" : "Maschile"}` : ""}
-        </div>
+    <div style={{fontFamily:SANS}}>
+      <button onClick={onBack} style={{background:A.track,border:"none",color:A.sub,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:13,fontFamily:SANS}}>← Calendario</button>
 
-        {/* selettore tappa */}
-        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:16}}>
-          {tappe.length === 0 && <div style={{color:A.sub,fontSize:13}}>Nessuna tappa mappata.</div>}
-          {tappe.map(t => {
-            const on = sel?.location === t.location;
-            return (
-              <button key={t.location} onClick={() => loadMatches(t.location, t.vis)}
-                style={{flexShrink:0,padding:"7px 16px",borderRadius:980,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,background:on?A.accent:A.track,color:on?"#FFFFFF":A.text}}>
-                {t.location}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+        <div style={{fontSize:19,fontWeight:700,color:A.text}}>{event?.name || "Tappa"}</div>
+        <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:8,background:et.bg,color:et.color}}>{et.label} ×{et.weight}</span>
+      </div>
 
-        {/* toggle Lista / Bracket */}
-        {sel && (
-          <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
-            {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
-              const on = view === v;
-              return (
-                <button key={v} onClick={() => setView(v)}
-                  style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
-                    background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
-                  {lab}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!sel && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Scegli una tappa.</div>}
-        {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
-
-        {/* BRACKET: predisposto, da disegnare */}
-        {sel && !loading && view === "bracket" && (
-          <div style={{textAlign:"center",padding:"56px 20px",color:A.sub}}>
-            <div style={{fontSize:34,marginBottom:10}}>🗂️</div>
-            <div style={{fontSize:15,fontWeight:600,color:A.text,marginBottom:6}}>Bracket in arrivo</div>
-            <div style={{fontSize:13,lineHeight:1.5}}>La vista ad albero del tabellone è predisposta ma non ancora disegnata. Per ora usa la Lista.</div>
-          </div>
-        )}
-
-        {/* LISTA */}
-        {sel && !loading && view === "lista" && matches && matches.length === 0 && (
-          <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
-        )}
-        {!loading && view === "lista" && sections.map((sec, si) => {
-          const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+      {/* toggle Lista / Bracket */}
+      <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
+        {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
+          const on = view === v;
           return (
-            <div key={si} style={{marginBottom:26}}>
-              <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
-                <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
-              </div>
-              {sec.groups.map((g, gi) => (
-                <div key={gi} style={{marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
-                  <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
-                    {g.rows.map((m, mi) => {
-                      const a = m.team_a_name || "—", b = m.team_b_name || "—";
-                      const parts = (m.result || "").split("-");
-                      const ra = parts[0] || "", rb = parts[1] || "";
-                      const sch = m.status === "scheduled" || !m.result;
-                      const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
-                      return (
-                        <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                            <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
-                            <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
-                          </div>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
-                            <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
-                            <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
-                          </div>
-                          {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
-                          {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button key={v} onClick={() => setView(v)}
+              style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
+                background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
+              {lab}
+            </button>
           );
         })}
       </div>
-    </MenuPage>
+
+      {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
+
+      {!loading && view === "bracket" && (
+        <div style={{textAlign:"center",padding:"56px 20px",color:A.sub}}>
+          <div style={{fontSize:34,marginBottom:10}}>🗂️</div>
+          <div style={{fontSize:15,fontWeight:600,color:A.text,marginBottom:6}}>Bracket in arrivo</div>
+          <div style={{fontSize:13,lineHeight:1.5}}>La vista ad albero del tabellone è predisposta ma non ancora disegnata. Per ora usa la Lista.</div>
+        </div>
+      )}
+
+      {!loading && view === "lista" && matches && matches.length === 0 && (
+        <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
+      )}
+
+      {!loading && view === "lista" && sections.map((sec, si) => {
+        const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+        return (
+          <div key={si} style={{marginBottom:26}}>
+            <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
+              <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+            </div>
+            {sec.groups.map((g, gi) => (
+              <div key={gi} style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
+                <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
+                  {g.rows.map((m, mi) => {
+                    const a = m.team_a_name || "—", b = m.team_b_name || "—";
+                    const parts = (m.result || "").split("-");
+                    const ra = parts[0] || "", rb = parts[1] || "";
+                    const sch = m.status === "scheduled" || !m.result;
+                    const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
+                    return (
+                      <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
+                          <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
+                          <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
+                          <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
+                        </div>
+                        {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
+                        {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
