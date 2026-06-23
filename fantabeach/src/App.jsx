@@ -1344,13 +1344,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     // Aggiorna stato locale
     if (myCoach) setBudgets(b=>({...b,[leagueId]:b[leagueId]+prevCost}));
     setCoaches(ch=>({...ch,[leagueId]:c.id}));
+    setCoachInField(cf=>({...cf,[leagueId]:true}));
     setBudgets(b=>({...b,[leagueId]:b[leagueId]-c.cost}));
     showNotif(`Coach ${c.name} selezionato!`);
     // Persiste su Supabase
     try {
       const db = await supabase.from("coach_selections", accessToken);
       await db.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
-      await db.insert({ user_id:authUser.id, league_id:leagueId, coach_id:c.id, coach_name:c.name });
+      await db.insert({ user_id:authUser.id, league_id:leagueId, coach_id:c.id, coach_name:c.name, in_field:true });
       // Aggiorna budget
       const udb = await supabase.from("user_leagues", accessToken);
       const newBudget = myCoach ? budget - c.cost + prevCost : budget - c.cost;
@@ -2206,27 +2207,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         <div style={{fontSize:12,fontWeight:"bold",color:B.dark}}>Coach: {currentCoach.name}</div>
                         <div style={{fontSize:10,color:B.gray}}>+0.5 pt per ogni vittoria se schierato</div>
                       </div>
-                      {/* Toggle schierato/panchina — sempre disponibile se non tappa In corso */}
-                      <button onClick={async ()=>{
-                        if (tappaInCorso2026 || isDeadlinePassed()) return;
-                        const newVal = !coachInField[leagueId];
-                        setCoachInField(cf=>({...cf,[leagueId]:newVal}));
-                        try {
-                          const db = await supabase.from("coach_selections", accessToken);
-                          await db.update({in_field: newVal}, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
-                        } catch(e) { console.warn("Errore salvataggio in_field:", e); }
-                      }}
-                        style={{padding:"5px 10px",borderRadius:8,border:"none",cursor:canTrade()?"pointer":"default",fontFamily:"Georgia,serif",fontSize:10,fontWeight:"bold",
-                          background:coachInField[leagueId]?B.greenDark:B.grayPale,
-                          color:coachInField[leagueId]?B.white:B.gray}}>
-                        {coachInField[leagueId]?"✓ Schierato":"⏸ Panchina"}
-                      </button>
+                      {/* Coach sempre titolare */}
+                      <span style={{padding:"5px 10px",borderRadius:8,fontFamily:"Georgia,serif",fontSize:10,fontWeight:"bold",background:B.greenDark,color:B.white}}>✓ Titolare</span>
                     </div>
-                    {!coachInField[leagueId]&&(
-                      <div style={{fontSize:10,color:B.orange,marginTop:6,paddingTop:6,borderTop:`1px solid ${B.yellow}44`}}>
-                        ⚠️ Coach in panchina — nessun bonus, ma anche nessun malus se assente
-                      </div>
-                    )}
                   </div>
                 )}
 
