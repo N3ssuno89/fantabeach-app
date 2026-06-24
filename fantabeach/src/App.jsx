@@ -5071,6 +5071,16 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
                         <span style={{color:B.grayLight,fontSize:13,minWidth:14,textAlign:"right"}}>{isOpen?"▲":"▼"}</span>
                       </button>
 
+                      {/* Anteprima titolari + coach (solo a tendina chiusa) */}
+                      {!isOpen && (
+                        <div style={{padding:"0 13px 11px 40px",fontSize:11,color:B.gray,lineHeight:1.6}}>
+                          {u.starters.map((p,j) => (
+                            <span key={p.player_id}>{p.isCaptain&&<span style={{color:B.yellow}}>★</span>}{p.name}{j<u.starters.length-1?" · ":""}</span>
+                          ))}
+                          {u.coach && <span> · 🧢 {u.coach.name}</span>}
+                        </div>
+                      )}
+
                       {/* Dettaglio espanso */}
                       {isOpen && (
                         <div style={{padding:"4px 13px 13px",borderTop:`1px solid ${B.creamDark}`}}>
