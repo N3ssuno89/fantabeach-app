@@ -26,13 +26,14 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 // ── Mappa fase: (phase FIVB, round FIVB, status) -> etichetta app (PHASE_ORDER) ──
 // Validata sul diff E0001: qualification->QUALI 1/2, pool+Semifinale->POOL 1,
 // pool+Finale->POOL 2, main_draw per round, bye->BYE POOL.
-const mapPhase = (phase, round, isBye) => {
+const mapPhase = (phase, round, isBye, isQualiFinal) => {
   if (isBye) return "BYE POOL";
   const r = (round || "").toLowerCase();
   if (phase === "qualification") {
-    // I due turni del percorso: il 2o giro ha match_no piu' alti, ma l'API
-    // non distingue 1 da 2 nel campo round. Distinzione fatta a valle (vedi sotto).
-    return "QUALI 1";
+    // Struttura percorso (valida Silver e Gold): una o piu' partite di apertura,
+    // poi UNA finale di percorso (il match_no piu' alto del round).
+    // QUALI 2 = la finale del percorso; QUALI 1 = le aperture.
+    return isQualiFinal ? "QUALI 2" : "QUALI 1";
   }
   if (phase === "pool") {
     if (r.includes("semifinale")) return "POOL 1";
@@ -169,11 +170,25 @@ exports.handler = async (event) => {
         continue; // NON scrive questo evento, NON crea W-id al volo
       }
 
+      // ── Pre-calcolo: per ogni round di qualificazione, il match_no massimo ──
+      // (la "finale di percorso" = QUALI 2; le altre = QUALI 1). Vale Silver e Gold.
+      const qualiMaxByRound = {};
+      for (const m of matches) {
+        if (m.phase === "qualification" && m.status !== "bye") {
+          const k = m.round || "";
+          if (qualiMaxByRound[k] == null || m.match_no > qualiMaxByRound[k]) {
+            qualiMaxByRound[k] = m.match_no;
+          }
+        }
+      }
+
       // ── Costruisci le righe match_results ───────────────────────────────
       const rows = [];
       for (const m of matches) {
         const isBye = m.status === "bye";
-        const phaseLabel = mapPhase(m.phase, m.round, isBye);
+        const isQualiFinal = m.phase === "qualification" &&
+          qualiMaxByRound[m.round || ""] === m.match_no;
+        const phaseLabel = mapPhase(m.phase, m.round, isBye, isQualiFinal);
         const matchIndex = m.match_no; // unico per torneo; (event_id, match_index) unico
 
         if (isBye) {
