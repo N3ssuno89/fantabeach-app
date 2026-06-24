@@ -176,8 +176,9 @@ exports.handler = async (event) => {
       for (const m of matches) {
         if (m.phase === "qualification" && m.status !== "bye") {
           const k = m.round || "";
-          if (qualiMaxByRound[k] == null || m.match_no > qualiMaxByRound[k]) {
-            qualiMaxByRound[k] = m.match_no;
+          const mn = Number(m.match_no);
+          if (qualiMaxByRound[k] == null || mn > qualiMaxByRound[k]) {
+            qualiMaxByRound[k] = mn;
           }
         }
       }
@@ -187,7 +188,7 @@ exports.handler = async (event) => {
       for (const m of matches) {
         const isBye = m.status === "bye";
         const isQualiFinal = m.phase === "qualification" &&
-          qualiMaxByRound[m.round || ""] === m.match_no;
+          qualiMaxByRound[m.round || ""] === Number(m.match_no);
         const phaseLabel = mapPhase(m.phase, m.round, isBye, isQualiFinal);
         const matchIndex = m.match_no; // unico per torneo; (event_id, match_index) unico
 
