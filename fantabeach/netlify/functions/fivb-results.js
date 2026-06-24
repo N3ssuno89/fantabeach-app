@@ -197,26 +197,33 @@ exports.handler = async (event) => {
         // partita normale: sets = [[a,b],...] prospettiva A
         let sets = null;
         try { sets = typeof m.sets === "string" ? JSON.parse(m.sets) : m.sets; } catch (_) { sets = null; }
-        if (!Array.isArray(sets) || sets.length === 0) continue;
-        sets = sets.map(s => [Number(s[0]), Number(s[1])]);
 
-        let setsA = 0, setsB = 0;
-        for (const [a, b] of sets) { if (a > b) setsA++; else if (b > a) setsB++; }
-        const scoreA = sets.map(([a, b]) => `${a}-${b}`).join(" ");
-        const scoreB = sets.map(([a, b]) => `${b}-${a}`).join(" ");
-        const setsApersp = sets.map(([a, b]) => [a, b]);
-        const setsBpersp = sets.map(([a, b]) => [b, a]);
+        let setsA = 0, setsB = 0, scoreA = "", scoreB = "", setsApersp = null, setsBpersp = null;
+
+        if (Array.isArray(sets) && sets.length > 0) {
+          // Caso normale: punteggi set presenti -> calcolo set vinti e closeSet
+          sets = sets.map(s => [Number(s[0]), Number(s[1])]);
+          for (const [a, b] of sets) { if (a > b) setsA++; else if (b > a) setsB++; }
+          scoreA = sets.map(([a, b]) => `${a}-${b}`).join(" ");
+          scoreB = sets.map(([a, b]) => `${b}-${a}`).join(" ");
+          setsApersp = sets.map(([a, b]) => [a, b]);
+          setsBpersp = sets.map(([a, b]) => [b, a]);
+        } else if (m.result && /^\d+-\d+$/.test(m.result)) {
+          // Set assenti ma result presente (es. "0-2"): punti base dal solo result.
+          // Trattato come sconfitta/vittoria NORMALE (loss02/win20...), NON forfait.
+          // closeSet non calcolabile senza i set -> nessun bonus (setsApersp = null).
+          const [ra, rb] = m.result.split("-").map(Number);
+          setsA = ra; setsB = rb;
+          scoreA = ""; scoreB = "";
+          setsApersp = null; setsBpersp = null;
+        } else {
+          // Ne' set ne' result: impossibile calcolare -> scarto la partita.
+          continue;
+        }
 
         const teamA = [m.team_a_p1_node, m.team_a_p2_node].filter(n => n != null);
         const teamB = [m.team_b_p1_node, m.team_b_p2_node].filter(n => n != null);
-        const nameA = teamA.map(n => null); // nome lo risolve l'app via athleteMap
-        const oppB_str = ""; // opponent e' la stringa dell'altra coppia; vedi sotto
-
-        // opponent = stringa "COGNOME NOME - COGNOME NOME" dell'altra coppia.
-        // sync-results usa la stringa coppia dell'Excel; qui non l'abbiamo per nodo,
-        // ma l'app mostra opponent come testo: usiamo i nomi da fivb_entries se ci sono.
-        // (Per coerenza con sync-results lasciamo che l'app risolva i propri nomi;
-        //  opponent resta una stringa informativa, non una chiave.)
+        // opponent = stringa squadra avversaria dal feed (solo display, non e' una chiave)
 
         for (const nd of teamA) {
           const b = calcBonuses(setsApersp, setsA, setsB, false);
