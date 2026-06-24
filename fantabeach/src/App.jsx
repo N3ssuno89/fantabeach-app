@@ -4888,6 +4888,7 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
+  const [openUser, setOpenUser] = React.useState(null);
 
   const league = leagues.find(l => l.id === selectedLeague);
   const frozenEvents = events.filter(e =>
@@ -4896,45 +4897,90 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
     (e.gender || "").toUpperCase() === (league?.gender || "F")
   );
 
+  // Dettaglio partite per giocatore — copia locale dello stile di Storico Tappe
+  const MatchRows = ({ matches }) => {
+    if (!matches || matches.length === 0) return null;
+    return (
+      <div style={{marginTop:8,borderTop:`1px solid ${B.creamDark}`,paddingTop:6}}>
+        {matches.map((m,i) => {
+          const tot = (m.total_pts != null) ? m.total_pts : (m.base_pts||0) + (m.bonus_pts||0);
+          const win = (m.result||"").startsWith("2");
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0",borderBottom:i<matches.length-1?`1px solid ${B.creamDark}`:"none"}}>
+              <div style={{fontSize:9,color:B.gray,minWidth:62,flexShrink:0}}>{m.phase||"—"}</div>
+              <span style={{fontSize:10,fontWeight:"bold",flexShrink:0,padding:"1px 6px",borderRadius:4,
+                background:m.is_bye?B.greenPale:win?"#D1FAE5":"#FEE2E2",
+                color:m.is_bye?B.greenDark:win?"#065F46":"#DC2626"}}>
+                {m.is_bye?"BYE":(m.result||"—")}
+              </span>
+              <div style={{flex:1,minWidth:0,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {m.is_bye?"—":(m.opponent||"—")}{m.score?` · ${m.score}`:""}
+              </div>
+              <div style={{fontSize:10,color:B.gray,flexShrink:0,minWidth:46,textAlign:"right"}}>
+                {m.base_pts>0?`+${m.base_pts}`:(m.base_pts||0)}{m.bonus_pts?` ${m.bonus_pts>0?"+":""}${m.bonus_pts}`:""}
+              </div>
+              <div style={{fontSize:11,fontWeight:"bold",flexShrink:0,minWidth:28,textAlign:"right",
+                color:tot>0?B.greenDark:tot<0?B.orange:B.gray}}>
+                {tot>0?`+${tot}`:tot}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const loadAll = async (eventId) => {
     if (!accessToken) return;
-    setLoading(true); setData(null);
+    setLoading(true); setData(null); setOpenUser(null);
     try {
-      const [matchRes, lineupRes, profRes] = await Promise.all([
-        supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}`)),
+      const [matchRes, lineupRes, profRes, ulRes] = await Promise.all([
+        supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`)),
         supabase.from("lineup_history", accessToken).then(db => db.select("*", `&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
         supabase.from("profiles", accessToken).then(db => db.select("id,username", `&limit=1000`)),
+        supabase.from("user_leagues", accessToken).then(db => db.select("user_id,team_name", `&league_id=eq.${selectedLeague}&limit=1000`)),
       ]);
       const matches = Array.isArray(matchRes) ? matchRes : [];
       const lineup  = Array.isArray(lineupRes) ? lineupRes : [];
       const profs   = Array.isArray(profRes) ? profRes : [];
+      const uls     = Array.isArray(ulRes) ? ulRes : [];
       const nameByUser = Object.fromEntries(profs.map(p => [p.id, p.username]));
+      const teamByUser = Object.fromEntries(uls.map(u => [u.user_id, u.team_name]));
 
       const event = events.find(e => e.id === eventId);
       const et = EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver;
 
+      // match per giocatore (con dettaglio partite)
       const byPlayer = {};
-      matches.forEach(m => { if (m.player_id) (byPlayer[m.player_id] = byPlayer[m.player_id] || []).push(m); });
+      matches.forEach(m => {
+        if (!m.player_id) return;
+        if (!byPlayer[m.player_id]) byPlayer[m.player_id] = { player_id: m.player_id, player_name: m.player_name, matches: [] };
+        byPlayer[m.player_id].matches.push(m);
+      });
 
       const athleteList = (league?.gender || "F").toUpperCase() === "F" ? (athletesData?.women || []) : (athletesData?.men || []);
       const athleteMap = Object.fromEntries(athleteList.map(a => [a.id, a]));
 
+      // raggruppa lineup per utente
       const byUser = {};
       lineup.forEach(l => { (byUser[l.user_id] = byUser[l.user_id] || []).push(l); });
 
       const users = Object.entries(byUser).map(([userId, rows]) => {
         const players = rows.map(l => {
+          const pd = byPlayer[l.player_id] || { player_id: l.player_id, player_name: l.player_id, matches: [] };
           const isCaptain = l.role === "capitano";
           const isStarter = isCaptain || l.role === "titolare";
           let rawPts = 0;
-          (byPlayer[l.player_id] || []).forEach(m => {
+          pd.matches.forEach(m => {
             const coachWinPts = (m.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
             rawPts += (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts;
           });
-          const finalPts = rawPts * (et.weight || 1) * (isCaptain ? 1.3 : 1);
-          const name = l.player_name || athleteMap[l.player_id]?.name || l.player_id;
-          return { name, isStarter, isCaptain, finalPts };
+          const finalPts = Math.round(rawPts * (et.weight || 1) * (isCaptain ? 1.3 : 1) * 100) / 100;
+          const name = l.player_name || pd.player_name || athleteMap[l.player_id]?.name || l.player_id;
+          return { player_id: l.player_id, name, matches: pd.matches, isStarter, isCaptain, rawPts, finalPts };
         });
+
+        // coach congelato
         let coachPts = 0;
         const frozenCoachRow = rows.find(l => l.coach_id);
         const frozenCoachId = frozenCoachRow?.coach_id || null;
@@ -4949,9 +4995,19 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
           });
           coachPts = Object.values(won).filter(Boolean).length * 0.5;
         }
+
         const starters = players.filter(p => p.isStarter);
+        const bench = players.filter(p => !p.isStarter);
         const total = Math.round((starters.reduce((s, p) => s + p.finalPts, 0) + coachPts) * 100) / 100;
-        return { userId, username: nameByUser[userId] || "—", starters, coachName: (coach && coachInField) ? coach.name : null, total };
+        return {
+          userId,
+          username: nameByUser[userId] || "—",
+          teamName: teamByUser[userId] || nameByUser[userId] || "—",
+          starters, bench,
+          coach: (coach && coachInField) ? coach : null,
+          coachInField, coachPts,
+          total,
+        };
       }).sort((a, b) => b.total - a.total);
 
       setData({ users, event, et });
@@ -4959,7 +5015,7 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
     setLoading(false);
   };
 
-  React.useEffect(() => { setSelectedEventId(null); setData(null); }, [selectedLeague]);
+  React.useEffect(() => { setSelectedEventId(null); setData(null); setOpenUser(null); }, [selectedLeague]);
 
   return (
     <MenuPage title="Formazioni di Lega" emoji="👥" onBack={onBack}>
@@ -4998,21 +5054,94 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
               <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>Nessuna formazione per questa tappa.</div>
             ) : (
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {data.users.map((u, i) => (
-                  <div key={u.userId} style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"11px 13px"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                      <span style={{fontSize:12,fontWeight:"bold",color:B.gray,minWidth:20}}>{i+1}°</span>
-                      <div style={{flex:1,fontSize:13,fontWeight:"bold",color:B.dark}}>{u.username}</div>
-                      <div style={{fontSize:18,fontWeight:"bold",color:u.total>0?B.greenDark:B.gray}}>{u.total>0?`+${u.total}`:u.total}</div>
+                {data.users.map((u, i) => {
+                  const isOpen = openUser === u.userId;
+                  return (
+                    <div key={u.userId} style={{background:B.white,border:`1px solid ${isOpen?B.greenDark:B.creamDark}`,borderRadius:10,overflow:"hidden"}}>
+                      {/* Riga squadra cliccabile (accordion) */}
+                      <button onClick={()=>setOpenUser(isOpen?null:u.userId)}
+                        style={{width:"100%",border:"none",background:"transparent",cursor:"pointer",
+                          fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:"11px 13px"}}>
+                        <span style={{fontSize:12,fontWeight:"bold",color:B.gray,minWidth:22}}>{i+1}°</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.teamName}</div>
+                          <div style={{fontSize:10,color:B.gray,marginTop:1}}>{u.username}</div>
+                        </div>
+                        <div style={{fontSize:18,fontWeight:"bold",color:u.total>0?B.greenDark:B.gray}}>{u.total>0?`+${u.total}`:u.total}</div>
+                        <span style={{color:B.grayLight,fontSize:13,minWidth:14,textAlign:"right"}}>{isOpen?"▲":"▼"}</span>
+                      </button>
+
+                      {/* Dettaglio espanso */}
+                      {isOpen && (
+                        <div style={{padding:"4px 13px 13px",borderTop:`1px solid ${B.creamDark}`}}>
+                          {/* Titolari */}
+                          <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,margin:"10px 0 8px"}}>⚡ Titolari</div>
+                          {u.starters.length === 0
+                            ? <div style={{fontSize:12,color:B.gray,marginBottom:10}}>Nessun titolare.</div>
+                            : u.starters.map(p => (
+                              <div key={p.player_id} style={{background:B.white,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${p.isCaptain?B.yellow:B.greenDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                                      {p.isCaptain&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{p.name}
+                                    </div>
+                                    <div style={{fontSize:10,color:B.gray,marginTop:2}}>
+                                      {p.matches.length} {p.matches.length===1?"partita":"partite"}
+                                      {p.isCaptain&&<span style={{color:B.yellow,marginLeft:6}}>× 1.3 cap</span>}
+                                      {" · "}base {Math.round(p.rawPts*100)/100} pt × {data.et.weight}
+                                    </div>
+                                  </div>
+                                  <div style={{textAlign:"right",flexShrink:0}}>
+                                    <div style={{fontSize:18,fontWeight:"bold",color:p.finalPts>0?B.greenDark:B.gray}}>{p.finalPts>0?`+${p.finalPts}`:p.finalPts}</div>
+                                    <div style={{fontSize:9,color:B.gray}}>pt tappa</div>
+                                  </div>
+                                </div>
+                                <MatchRows matches={p.matches}/>
+                              </div>
+                            ))
+                          }
+
+                          {/* Coach */}
+                          {u.coach && (
+                            <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:10,padding:"10px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:20}}>🧢</span>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>{u.coach.name}</div>
+                                <div style={{fontSize:10,color:B.gray}}>Schierato</div>
+                              </div>
+                              <div style={{fontSize:18,fontWeight:"bold",color:u.coachPts>0?B.greenDark:B.gray}}>{u.coachPts>0?`+${u.coachPts}`:u.coachPts}</div>
+                            </div>
+                          )}
+
+                          {/* Panchina */}
+                          {u.bench.length > 0 && (
+                            <div>
+                              <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.gray,margin:"4px 0 8px"}}>⏸ Panchina (non conteggiata)</div>
+                              {u.bench.map(p => (
+                                <div key={p.player_id} style={{background:B.grayPale,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,opacity:0.7}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:13,color:B.dark}}>{p.name}</div>
+                                      <div style={{fontSize:10,color:B.gray}}>{p.matches.length} {p.matches.length===1?"partita":"partite"} · base {Math.round(p.rawPts*100)/100} pt</div>
+                                    </div>
+                                    <div style={{fontSize:13,color:B.gray,flexShrink:0}}>({p.finalPts} pt)</div>
+                                  </div>
+                                  <MatchRows matches={p.matches}/>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Totale */}
+                          <div style={{background:B.greenDark,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                            <div style={{color:"rgba(255,255,255,.9)",fontSize:13,fontWeight:"bold"}}>Totale tappa</div>
+                            <span style={{color:B.white,fontWeight:"bold",fontSize:20}}>{u.total>0?`+${u.total}`:u.total} pt</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div style={{fontSize:11,color:B.gray,lineHeight:1.6}}>
-                      {u.starters.map((p,j) => (
-                        <span key={j}>{p.isCaptain&&<span style={{color:B.yellow}}>★</span>}{p.name}{j<u.starters.length-1?" · ":""}</span>
-                      ))}
-                      {u.coachName && <span> · 🧢 {u.coachName}</span>}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
