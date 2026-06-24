@@ -2753,8 +2753,8 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{padding:"8px 0",flex:1}}>
                 {[
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
-                  {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
-                 {icon:"👥", label:"Formazioni di Lega", sub:"Le formazioni di tutti, per tappa", sec:"formations"},
+                  {icon:"📊", label:"Storico Tappe", sub:"I tuoi punti, tappa per tappa", sec:"history"},
+                 {icon:"👥", label:"Formazioni di Lega", sub:"Sbircia le formazioni degli avversari", sec:"formations"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
                   {icon:"📄", label:"Termini",          sub:"Regolamento ufficiale",    sec:"terms"},
