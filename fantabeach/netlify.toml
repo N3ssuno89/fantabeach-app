@@ -30,13 +30,13 @@
 [functions.fivb-entries]
   schedule = "30 4 * * *"
 
+# Ranking (costo atleti): ogni giorno 04:45 UTC (06:45 Rome)
+[functions.fivb-rankings]
+  schedule = "45 4 * * *"
 # Allineamento anagrafica: ogni giorno 05:00 UTC (07:00 Rome), dopo entries/rankings
 [functions.fivb-players]
   schedule = "0 5 * * *"
 
-# Ranking (costo atleti): ogni giorno 04:45 UTC (06:45 Rome)
-[functions.fivb-rankings]
-  schedule = "45 4 * * *"
 
 [build.environment]
   NODE_VERSION = "20"
