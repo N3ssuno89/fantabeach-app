@@ -49,14 +49,78 @@ exports.handler = async (event) => {
     return rows.length;
   };
 
+  // Legge gli stati attuali in tabella PRIMA dell'upsert (per rilevare transizioni)
+  const readCurrentStates = async () => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/fivb_tournaments?select=vis_id,status`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+    });
+    if (!res.ok) return {};
+    const rows = await res.json();
+    return Object.fromEntries(rows.map(r => [String(r.vis_id), r.status]));
+  };
+
+  // Traduce vis_id -> event_id via event_tournament_map
+  const visToEvent = async (visIds) => {
+    if (visIds.length === 0) return {};
+    const inList = visIds.join(",");
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/event_tournament_map?select=event_id,vis_id&vis_id=in.(${inList})`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+    });
+    if (!res.ok) return {};
+    const rows = await res.json();
+    return Object.fromEntries(rows.map(r => [String(r.vis_id), r.event_id]));
+  };
+
+  // Lancia fivb-results (scrittura vera) per gli eventi appena conclusi
+  const triggerResults = async (eventIds) => {
+    const base = process.env.URL || process.env.DEPLOY_PRIME_URL || "";
+    const out = [];
+    for (const eid of eventIds) {
+      try {
+        const res = await fetch(`${base}/.netlify/functions/fivb-results`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event_id: eid, dry_run: false }),
+        });
+        const j = await res.json().catch(() => ({}));
+        out.push({ event_id: eid, ok: res.ok, esito: j.eventi || j.error || null });
+      } catch (e) {
+        out.push({ event_id: eid, ok: false, error: e.message });
+      }
+    }
+    return out;
+  };
+
   try {
+    const prevStates = await readCurrentStates();
     const [m, f] = await Promise.all([fetchTournaments("m"), fetchTournaments("f")]);
     const all = [...m, ...f];
+
+    // Rileva transizioni ongoing -> finished (PRIMA di sovrascrivere)
+    const justFinished = all.filter(t =>
+      t.status === "finished" && prevStates[String(t.vis_id)] === "ongoing"
+    ).map(t => t.vis_id);
+
     const saved = await upsert(all);
+
+    // Se qualcosa e' appena finito: traduci e lancia fivb-results
+    let autoResults = null;
+    if (justFinished.length > 0) {
+      const map = await visToEvent(justFinished);
+      const eventIds = justFinished.map(v => map[String(v)]).filter(Boolean);
+      if (eventIds.length > 0) {
+        autoResults = await triggerResults(eventIds);
+        console.log("fivb-tournaments: auto fivb-results su", eventIds, JSON.stringify(autoResults));
+      }
+    }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         ok: true, scaricati: all.length, salvati: saved,
+        base_url_rilevato: (process.env.URL || process.env.DEPLOY_PRIME_URL || "(VUOTO)"),
+        appena_finiti: justFinished,
+        auto_results: autoResults,
         tornei: all.map(t => ({ vis_id: t.vis_id, gender: t.gender, title: t.title, status: t.status })),
       }),
     };
