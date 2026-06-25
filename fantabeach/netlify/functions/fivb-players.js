@@ -150,6 +150,8 @@ exports.handler = async (event) => {
       report.creati.push({ node: w.node, name: w.name, internal_id: newId });
     }
 
+    const ADMIN_ID = "e393e7f7-df59-4bf6-8aec-18c89c5cc3d6"; // zioema
+
     let scritti = 0;
     if (!dryRun) {
       for (const wr of writes) {
@@ -167,6 +169,23 @@ exports.handler = async (event) => {
           });
           if (res.ok) scritti++;
         }
+      }
+
+      // Notifica all'admin SOLO se ci sono casi dubbi da rivedere a mano.
+      if (report.da_rivedere.length > 0) {
+        try {
+          await sb("notifications", {
+            method: "POST",
+            headers: { "Prefer": "return=minimal" },
+            body: JSON.stringify({
+              user_id: ADMIN_ID,
+              type: "anagrafica_dubbi",
+              message: `⚠️ Anagrafica: ${report.da_rivedere.length} atleti da verificare ` +
+                       `(agganciati ${report.agganciati.length}, creati ${report.creati.length}). ` +
+                       `Lancia fivb-players in dry_run per il dettaglio.`,
+            }),
+          });
+        } catch (_) { /* la notifica non deve far fallire il sync */ }
       }
     }
 
