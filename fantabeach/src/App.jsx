@@ -247,6 +247,123 @@ const EVENT_TYPE_META = {
   CoppaItalia: { label:"Coppa Italia", weight:1.5, color:"#D94F1E", bg:"#FDF0EB" },
   Finale:      { label:"Finale",       weight:1.7, color:"#7C3AED", bg:"#F3E8FF" },
 };
+
+// ─── MOTORE LIVE ────────────────────────────────────────────────────────────
+// Calcola righe in formato match_results dai dati grezzi fivb_matches.
+// Replica VERBATIM la logica di fivb-results (verificata su Termoli: 8/8).
+// Usato SOLO durante un torneo "ongoing": le pagine ricevono righe nello stesso
+// formato di match_results e non cambiano nulla nella visualizzazione.
+const LIVE_calcBonuses = (sets, setsWon, setsLost, isBye) => {
+  const codes = []; let base = 0;
+  if (isBye) { codes.push("bye"); base = 4; }
+  else if (setsWon === 2 && setsLost === 0) { codes.push("win20"); base = 4; }
+  else if (setsWon === 2 && setsLost === 1) { codes.push("win21"); base = 3; }
+  else if (setsWon === 1 && setsLost === 2) { codes.push("loss12"); base = 1; }
+  else if (setsWon === 0 && setsLost === 2) { codes.push("loss02"); base = 0; }
+  let bonus = 0;
+  if (sets && !isBye) {
+    for (let i = 0; i < sets.length && i < 2; i++) {
+      const [my, opp] = sets[i];
+      if (my != null && opp != null && my < opp && (opp - my) <= 2) { codes.push("closeSet"); bonus += 0.5; }
+    }
+  }
+  return { codes, base_pts: base, bonus_pts: bonus, total_pts: base + bonus };
+};
+
+const LIVE_mapPhase = (phase, round, isBye, isQualiFinal) => {
+  if (isBye) return "BYE POOL";
+  const r = (round || "").toLowerCase();
+  if (phase === "qualification") return isQualiFinal ? "QUALI 2" : "QUALI 1";
+  if (phase === "pool") {
+    if (r.includes("semifinale")) return "POOL 1";
+    if (r.includes("finale")) return "POOL 2";
+    return "POOL 1";
+  }
+  if (phase === "main_draw") {
+    if (r.includes("1") && r.includes("vincenti")) return "ROUND OF 12";
+    if (r.includes("2") && r.includes("vincenti")) return "QUARTER";
+    if (r.includes("semifinale")) return "SEMI";
+    if (r.includes("finale") && r.includes("1")) return "FINAL 1";
+    if (r.includes("finale") && r.includes("3")) return "FINAL 3";
+    return "ROUND OF 12";
+  }
+  return phase || "QUALI 1";
+};
+
+// matches: righe fivb_matches del torneo. nodeToId: {node->W/M-id}.
+// nodeToCoachId: {node->C-id} (opzionale). Restituisce righe formato match_results.
+// Aggiunge "live_in_corso": true se la partita NON è ancora finished (per colorazione).
+function LIVE_buildRows(eventId, matches, nodeToId, nodeToCoachId) {
+  // pre-calcolo QUALI: ultimo match_no per round di qualificazione = QUALI 2
+  const qualiMax = {};
+  for (const m of matches) {
+    if (m.phase === "qualification" && m.status !== "bye") {
+      const k = m.round || "";
+      const mn = Number(m.match_no);
+      if (qualiMax[k] == null || mn > qualiMax[k]) qualiMax[k] = mn;
+    }
+  }
+  const rows = [];
+  for (const m of matches) {
+    const isBye = m.status === "bye";
+    const finished = m.status === "finished" || isBye;
+    const inCorso = !finished; // partita non ancora conclusa
+    const isQualiFinal = m.phase === "qualification" && qualiMax[m.round || ""] === Number(m.match_no);
+    const phaseLabel = LIVE_mapPhase(m.phase, m.round, isBye, isQualiFinal);
+    const matchIndex = m.match_no;
+
+    if (isBye) {
+      const nodes = [m.team_a_p1_node, m.team_a_p2_node, m.team_b_p1_node, m.team_b_p2_node].filter(n => n != null);
+      for (const nd of nodes) {
+        if (!nodeToId[nd]) continue;
+        const b = LIVE_calcBonuses(null, 2, 0, true);
+        rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+          player_id: nodeToId[nd], player_name: null, result: "BYE", score: "", is_bye: true,
+          base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+          bonus_codes: b.codes, opponent: "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+          live_in_corso: false });
+      }
+      continue;
+    }
+
+    let sets = typeof m.sets === "string" ? (()=>{try{return JSON.parse(m.sets);}catch{return null;}})() : m.sets;
+    let setsA = 0, setsB = 0, scoreA = "", scoreB = "", pA = null, pB = null;
+    if (Array.isArray(sets) && sets.length > 0) {
+      sets = sets.map(s => [Number(s[0]), Number(s[1])]);
+      for (const [a,b] of sets) { if (a>b) setsA++; else if (b>a) setsB++; }
+      scoreA = sets.map(([a,b])=>`${a}-${b}`).join(" ");
+      scoreB = sets.map(([a,b])=>`${b}-${a}`).join(" ");
+      pA = sets.map(([a,b])=>[a,b]); pB = sets.map(([a,b])=>[b,a]);
+    } else if (m.result && /^\d+-\d+$/.test(m.result)) {
+      const [ra,rb] = m.result.split("-").map(Number);
+      setsA = ra; setsB = rb;
+    } else {
+      continue; // né set né result → niente da calcolare ancora
+    }
+
+    const teamA = [m.team_a_p1_node, m.team_a_p2_node].filter(n => n != null);
+    const teamB = [m.team_b_p1_node, m.team_b_p2_node].filter(n => n != null);
+    for (const nd of teamA) {
+      if (!nodeToId[nd]) continue;
+      const b = LIVE_calcBonuses(pA, setsA, setsB, false);
+      rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+        player_id: nodeToId[nd], player_name: null, result: `${setsA}-${setsB}`, score: scoreA, is_bye: false,
+        base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+        bonus_codes: b.codes, opponent: m.team_b_name || "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+        live_in_corso: inCorso });
+    }
+    for (const nd of teamB) {
+      if (!nodeToId[nd]) continue;
+      const b = LIVE_calcBonuses(pB, setsB, setsA, false);
+      rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+        player_id: nodeToId[nd], player_name: null, result: `${setsB}-${setsA}`, score: scoreB, is_bye: false,
+        base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+        bonus_codes: b.codes, opponent: m.team_a_name || "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+        live_in_corso: inCorso });
+    }
+  }
+  return rows;
+}
 // EVENTS caricato da Supabase (tabella events) — non più hardcoded
 // Fallback vuoto: viene popolato da loadEventsFromDB() al login
 const EVENTS_FALLBACK = []; // usato solo se Supabase non risponde
@@ -942,10 +1059,49 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [lastSyncResultsOk, setLastSyncResultsOk] = useState(null);
   const [matchResultsData, setMatchResultsData] = useState({}); // event_id → array risultati
 
-  // Carica match_results da Supabase per un evento
+  // Carica match_results da Supabase per un evento.
+  // Se il torneo è "ongoing", calcola LIVE dai dati grezzi fivb_matches
+  // (stesso motore di fivb-results) invece di leggere match_results (fermo).
   const loadMatchResults = async (eventId) => {
     if (!accessToken || !eventId) return;
     try {
+      // 1. event_id -> vis_id
+      let visId = null;
+      try {
+        const mapDb = await supabase.from("event_tournament_map", accessToken);
+        const mapRows = await mapDb.select("vis_id", `&event_id=eq.${eventId}`);
+        visId = Array.isArray(mapRows) && mapRows[0] ? mapRows[0].vis_id : null;
+      } catch (_) { visId = null; }
+
+      // 2. se ho un vis_id, controllo se il torneo è ongoing
+      let ongoing = false;
+      if (visId != null) {
+        try {
+          const tDb = await supabase.from("fivb_tournaments", accessToken);
+          const tRows = await tDb.select("status", `&vis_id=eq.${visId}`);
+          ongoing = Array.isArray(tRows) && tRows[0] && tRows[0].status === "ongoing";
+        } catch (_) { ongoing = false; }
+      }
+
+      // 3a. TORNEO ONGOING -> calcolo live dal grezzo
+      if (ongoing && visId != null) {
+        const [mRows, pnmRows] = await Promise.all([
+          supabase.from("fivb_matches", accessToken).then(db =>
+            db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
+              `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
+          supabase.from("player_node_map", accessToken).then(db =>
+            db.select("node,internal_id", `&limit=2000`)),
+        ]);
+        const matches = Array.isArray(mRows) ? mRows : [];
+        const nodeToId = {};
+        (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+        const liveRows = LIVE_buildRows(eventId, matches, nodeToId, null);
+        console.log(`[matchResults LIVE] ${eventId}: ${liveRows.length} righe da fivb_matches`);
+        setMatchResultsData(prev => ({ ...prev, [eventId]: liveRows }));
+        return;
+      }
+
+      // 3b. TORNEO NON ongoing -> comportamento classico (match_results ufficiale)
       const db = await supabase.from("match_results", accessToken);
       const rows = await db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`);
       console.log(`[matchResults] ${eventId}:`, Array.isArray(rows) ? `${rows.length} righe OK` : JSON.stringify(rows).slice(0,100));
@@ -4934,8 +5090,39 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
     if (!accessToken) return;
     setLoading(true); setData(null); setOpenUser(null);
     try {
+      // Determina se il torneo è "ongoing" -> in tal caso calcola LIVE dal grezzo
+      let visId = null, ongoing = false;
+      try {
+        const mapDb = await supabase.from("event_tournament_map", accessToken);
+        const mapRows = await mapDb.select("vis_id", `&event_id=eq.${eventId}`);
+        visId = Array.isArray(mapRows) && mapRows[0] ? mapRows[0].vis_id : null;
+        if (visId != null) {
+          const tDb = await supabase.from("fivb_tournaments", accessToken);
+          const tRows = await tDb.select("status", `&vis_id=eq.${visId}`);
+          ongoing = Array.isArray(tRows) && tRows[0] && tRows[0].status === "ongoing";
+        }
+      } catch (_) { ongoing = false; }
+
+      let matchesPromise;
+      if (ongoing && visId != null) {
+        // LIVE: calcola righe formato match_results da fivb_matches + player_node_map
+        matchesPromise = Promise.all([
+          supabase.from("fivb_matches", accessToken).then(db =>
+            db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
+              `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
+          supabase.from("player_node_map", accessToken).then(db => db.select("node,internal_id", `&limit=2000`)),
+        ]).then(([mRows, pnmRows]) => {
+          const nodeToId = {};
+          (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+          return LIVE_buildRows(eventId, Array.isArray(mRows) ? mRows : [], nodeToId, null);
+        });
+      } else {
+        // UFFICIALE: match_results fermo
+        matchesPromise = supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`));
+      }
+
       const [matchRes, lineupRes, profRes, ulRes] = await Promise.all([
-        supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`)),
+        matchesPromise,
         supabase.from("lineup_history", accessToken).then(db => db.select("*", `&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
         supabase.from("profiles", accessToken).then(db => db.select("id,username", `&limit=1000`)),
         supabase.from("user_leagues", accessToken).then(db => db.select("user_id,team_name", `&league_id=eq.${selectedLeague}&limit=1000`)),
