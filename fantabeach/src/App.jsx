@@ -364,6 +364,28 @@ function LIVE_buildRows(eventId, matches, nodeToId, nodeToCoachId) {
   }
   return rows;
 }
+
+// Costruisce node -> C-id (coach) replicando la logica di fivb-results:
+// fivb_entries.coach (stringa "COGNOME NOME") -> coaches.id, match su nome completo + primo token.
+function LIVE_buildCoachMap(entries, coachesRows) {
+  const coachNameToId = {};
+  (coachesRows || []).forEach(c => {
+    const n = (c.name || "").toUpperCase().trim();
+    if (!n) return;
+    coachNameToId[n] = c.id;
+    const tok = n.split(" ")[0];
+    if (tok && !(tok in coachNameToId)) coachNameToId[tok] = c.id;
+  });
+  const findCoach = (name) => name ? (coachNameToId[name.toUpperCase().trim()] || null) : null;
+  const nodeToCoachId = {};
+  (entries || []).forEach(e => {
+    if (e.node != null && e.coach) {
+      const cid = findCoach(e.coach);
+      if (cid) nodeToCoachId[e.node] = cid;
+    }
+  });
+  return nodeToCoachId;
+}
 // EVENTS caricato da Supabase (tabella events) — non più hardcoded
 // Fallback vuoto: viene popolato da loadEventsFromDB() al login
 const EVENTS_FALLBACK = []; // usato solo se Supabase non risponde
@@ -1085,17 +1107,22 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
       // 3a. TORNEO ONGOING -> calcolo live dal grezzo
       if (ongoing && visId != null) {
-        const [mRows, pnmRows] = await Promise.all([
+        const [mRows, pnmRows, entRows, coachRows] = await Promise.all([
           supabase.from("fivb_matches", accessToken).then(db =>
             db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
               `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
           supabase.from("player_node_map", accessToken).then(db =>
             db.select("node,internal_id", `&limit=2000`)),
+          supabase.from("fivb_entries", accessToken).then(db =>
+            db.select("node,coach", `&tournament_vis_id=eq.${visId}`)),
+          supabase.from("coaches", accessToken).then(db =>
+            db.select("id,name", `&active=eq.true`)),
         ]);
         const matches = Array.isArray(mRows) ? mRows : [];
         const nodeToId = {};
         (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
-        const liveRows = LIVE_buildRows(eventId, matches, nodeToId, null);
+        const nodeToCoachId = LIVE_buildCoachMap(Array.isArray(entRows) ? entRows : [], Array.isArray(coachRows) ? coachRows : []);
+        const liveRows = LIVE_buildRows(eventId, matches, nodeToId, nodeToCoachId);
         console.log(`[matchResults LIVE] ${eventId}: ${liveRows.length} righe da fivb_matches`);
         setMatchResultsData(prev => ({ ...prev, [eventId]: liveRows }));
         return;
@@ -5105,16 +5132,19 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
 
       let matchesPromise;
       if (ongoing && visId != null) {
-        // LIVE: calcola righe formato match_results da fivb_matches + player_node_map
+        // LIVE: calcola righe formato match_results da fivb_matches + player_node_map + coach
         matchesPromise = Promise.all([
           supabase.from("fivb_matches", accessToken).then(db =>
             db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
               `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
           supabase.from("player_node_map", accessToken).then(db => db.select("node,internal_id", `&limit=2000`)),
-        ]).then(([mRows, pnmRows]) => {
+          supabase.from("fivb_entries", accessToken).then(db => db.select("node,coach", `&tournament_vis_id=eq.${visId}`)),
+          supabase.from("coaches", accessToken).then(db => db.select("id,name", `&active=eq.true`)),
+        ]).then(([mRows, pnmRows, entRows, coachRows]) => {
           const nodeToId = {};
           (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
-          return LIVE_buildRows(eventId, Array.isArray(mRows) ? mRows : [], nodeToId, null);
+          const nodeToCoachId = LIVE_buildCoachMap(Array.isArray(entRows) ? entRows : [], Array.isArray(coachRows) ? coachRows : []);
+          return LIVE_buildRows(eventId, Array.isArray(mRows) ? mRows : [], nodeToId, nodeToCoachId);
         });
       } else {
         // UFFICIALE: match_results fermo
