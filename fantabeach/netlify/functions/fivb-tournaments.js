@@ -91,6 +91,23 @@ exports.handler = async (event) => {
     return out;
   };
 
+  // Lancia freeze-lineups (auto-riporto + freeze) per i tornei appena iniziati.
+  // Non serve passare event_id: freeze-lineups trova da solo i tornei ongoing.
+  const triggerFreeze = async () => {
+    const base = process.env.URL || process.env.DEPLOY_PRIME_URL || "";
+    try {
+      const res = await fetch(`${base}/.netlify/functions/freeze-lineups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const j = await res.json().catch(() => ({}));
+      return { ok: res.ok, report: j.report || j.error || null };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  };
+
   try {
     const prevStates = await readCurrentStates();
     const [m, f] = await Promise.all([fetchTournaments("m"), fetchTournaments("f")]);
@@ -99,6 +116,11 @@ exports.handler = async (event) => {
     // Rileva transizioni ongoing -> finished (PRIMA di sovrascrivere)
     const justFinished = all.filter(t =>
       t.status === "finished" && prevStates[String(t.vis_id)] === "ongoing"
+    ).map(t => t.vis_id);
+
+    // Rileva transizioni -> ongoing (tappa appena iniziata: freeze + auto-riporto)
+    const justStarted = all.filter(t =>
+      t.status === "ongoing" && prevStates[String(t.vis_id)] !== "ongoing"
     ).map(t => t.vis_id);
 
     const saved = await upsert(all);
@@ -114,13 +136,22 @@ exports.handler = async (event) => {
       }
     }
 
+    // Se qualcosa e' appena iniziato: lancia freeze-lineups (idempotente, guardato)
+    let autoFreeze = null;
+    if (justStarted.length > 0) {
+      autoFreeze = await triggerFreeze();
+      console.log("fivb-tournaments: auto freeze-lineups per", justStarted, JSON.stringify(autoFreeze));
+    }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         ok: true, scaricati: all.length, salvati: saved,
         base_url_rilevato: (process.env.URL || process.env.DEPLOY_PRIME_URL || "(VUOTO)"),
         appena_finiti: justFinished,
+        appena_iniziati: justStarted,
         auto_results: autoResults,
+        auto_freeze: autoFreeze,
         tornei: all.map(t => ({ vis_id: t.vis_id, gender: t.gender, title: t.title, status: t.status })),
       }),
     };
