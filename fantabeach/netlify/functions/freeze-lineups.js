@@ -129,12 +129,12 @@ exports.handler = async (event) => {
           const rows = byEvent[lastEvent];
           if (!rows || rows.length === 0) continue;
           const tutti = rows.every(r => owned.has(r.player_id));   // tutti ancora in rosa?
-          if (!tutti) { evReport.saltati_vendita.push({ user_id:userId, da_evento:lastEvent }); continue; }
+          if (!tutti) { evReport.saltati_vendita.push({ user_id:userId, league_id:leagueId, da_evento:lastEvent }); continue; }
           rows.forEach(r => toInsert.push({
             user_id:userId, league_id:leagueId, event_id, player_id:r.player_id,
             role:r.role, gender_slot:genderSlot, saved_at:new Date().toISOString(),
           }));
-          evReport.riportati.push({ user_id:userId, da_evento:lastEvent, righe:rows.length });
+          evReport.riportati.push({ user_id:userId, league_id:leagueId, da_evento:lastEvent, righe:rows.length });
         }
         if (toInsert.length > 0 && !dryRun) {
           const ins = await sbPost("lineups", toInsert);
@@ -182,6 +182,16 @@ exports.handler = async (event) => {
         }
       }
 
+      // Riepilogo: conteggi per lega + rilevamento doppioni reali (stesso user+lega due volte)
+      const chiave = e => `${e.user_id}::${e.league_id}`;
+      const chiavi = evReport.riportati.map(chiave);
+      const doppioniReali = chiavi.filter((k,i) => chiavi.indexOf(k) !== i);
+      evReport.riepilogo = {
+        riportati_totali: evReport.riportati.length,
+        riportati_per_lega: evReport.riportati.reduce((a,e)=>{a[e.league_id]=(a[e.league_id]||0)+1;return a;},{}),
+        saltati_totali: evReport.saltati_vendita.length,
+        doppioni_reali_stesso_utente_stessa_lega: [...new Set(doppioniReali)],
+      };
       report.eventi.push(evReport);
     }
 
