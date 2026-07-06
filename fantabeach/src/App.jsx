@@ -500,7 +500,7 @@ function JoinGate({ myJoin, league, showJoinForm, setShowJoinForm, joinTeamName,
             onKeyDown={e=>e.key==="Enter"&&onJoinRequest()}
             autoFocus
             style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:14,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: compravendite lun 09:00 - gio 23:00. Mercato libero durante la settimana."}</div>
+          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: il mercato apre la domenica sera al termine della tappa e chiude giovedì alle 23:00."}</div>
           <button onClick={onJoinRequest} style={{width:"100%",padding:"12px",background:B.greenDark,border:"none",borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",marginBottom:8}}>Invia Richiesta</button>
           <button onClick={()=>setShowJoinForm(false)} style={{width:"100%",padding:"10px",background:"transparent",border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>Annulla</button>
         </div>
@@ -1486,7 +1486,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const handleBuy = async (a) => {
     if (myJoin!=="APPROVED") return showNotif("Non sei ancora approvato!","error");
-    if (!canTrade()) return showNotif(league.type==="classic"?"Iscrizioni chiuse!":"Mercato chiuso! Lun 09:00 - Gio 23:00","error");
+    if (!canTrade()) return showNotif(league.type==="classic"?"Iscrizioni chiuse!":"Mercato chiuso! Riapre la domenica sera a fine tappa.","error");
     if (roster.length>=5) return showNotif("Hai già 5 atleti nel roster!","error");
     if (budget<a.cost)    return showNotif("Crediti insufficienti!","error");
     if (isOwned(a))       return showNotif("Atleta già nel roster!","error");
@@ -1868,7 +1868,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 ? `🔴 Mercato chiuso — ${activeTappa.name} in corso`
                 : league.type==="classic"
                   ? "🔒 Classic: mercato chiuso per tutta la stagione"
-                  : "🔒 Mercato chiuso — riapre lunedì 09:00";
+                  : "🔒 Mercato chiuso — riapre la domenica sera a fine tappa";
               return <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:12,color:B.orange,display:"flex",alignItems:"center",gap:8}}>{msg}</div>;
             })()}
 
@@ -3350,8 +3350,8 @@ function PageRegole({ onBack }) {
         {[
           {nome:"Classic F",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
           {nome:"Classic M",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
-          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
-          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
+          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo dalla domenica sera (fine tappa) a giovedì 23:00. Acquista e vendi liberamente."},
+          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo dalla domenica sera (fine tappa) a giovedì 23:00. Acquista e vendi liberamente."},
         ].map((l,i)=>(
           <div key={i} style={{padding:"10px 0",borderBottom:i<3?`1px solid ${B.creamDark}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -3766,6 +3766,19 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
 
       return { topScorer, hiddenGem, ownership, diff, rocket, wallStreet };
     };
+
+    // ── DEBUG TEMP: diagnostica genere/leghe ──
+    console.log("[STATS DEBUG] atleti in ptsByPlayerByLeague:",
+      "L001-F:", Object.keys(ptsByPlayerByLeague["L001-F"]).length,
+      "L001-M:", Object.keys(ptsByPlayerByLeague["L001-M"]).length,
+      "L002-F:", Object.keys(ptsByPlayerByLeague["L002-F"]).length,
+      "L002-M:", Object.keys(ptsByPlayerByLeague["L002-M"]).length);
+    const _sampleF = Object.values(ptsByPlayerByLeague["L001-F"]).slice(0,3);
+    console.log("[STATS DEBUG] esempio atleti L001-F (id/gender/pts):",
+      _sampleF.map(a => `${a.id}/${a.gender}/${a.pts}`).join(", "));
+    const _builtF = build("L001-F", "F");
+    console.log("[STATS DEBUG] build(L001-F,F).topScorer length:", _builtF.topScorer.length,
+      "| primo:", JSON.stringify(_builtF.topScorer[0] || null));
 
     return {
       stats: {
