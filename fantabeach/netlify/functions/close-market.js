@@ -36,7 +36,7 @@ exports.handler = async (event) => {
     // Notifica globale chiusura mercato
     await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
       method: "POST", headers: supaHeaders,
-      body: JSON.stringify({ user_id: null, type: "market_closing", message: "⏰ Il mercato Market è chiuso! Riaprirà lunedì alle 09:00." }),
+      body: JSON.stringify({ user_id: null, type: "market_closing", message: "⏰ Il mercato Market è chiuso! Riaprirà la domenica sera al termine della prossima tappa." }),
     });
 
     const now = new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" });
