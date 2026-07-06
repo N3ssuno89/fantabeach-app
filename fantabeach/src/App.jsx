@@ -3658,6 +3658,20 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
     const ptsByPlayer = {};
     const ptsByPlayerByLeague = { "L001-F":{}, "L001-M":{}, "L002-F":{}, "L002-M":{} };
 
+    // ── DEBUG TEMP: traccia righe femminili nel forEach ──
+    const _dbg = { totali:0, senzaPlayerId:0, senzaEv:0, W_totali:0, W_scartate_ev:0, W_assegnate:0, eventIds:{} };
+    results.forEach(r => {
+      _dbg.totali++;
+      const isW = (r.player_id||"").startsWith("W");
+      if (isW) _dbg.W_totali++;
+      _dbg.eventIds[r.event_id] = (_dbg.eventIds[r.event_id]||0)+1;
+      if (!r.player_id) { _dbg.senzaPlayerId++; return; }
+      const _ev = evMap[r.event_id];
+      if (!_ev) { _dbg.senzaEv++; if(isW) _dbg.W_scartate_ev++; return; }
+      if (isW) _dbg.W_assegnate++;
+    });
+    console.log("[STATS DEBUG forEach]", JSON.stringify(_dbg));
+
     results.forEach(r => {
       if (!r.player_id) return;
       const ev = evMap[r.event_id];
