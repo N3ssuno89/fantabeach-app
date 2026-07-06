@@ -120,19 +120,42 @@ exports.handler = async (event) => {
     const nodeToId = {};
     pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
 
-    // coaches attivi: nome -> id (nome completo + primo token, come sync-results)
+    // Normalizza un nome per il match: maiuscole, no accenti/apostrofi, spazi singoli.
+    // NON tocca le lettere (MARTIN != MARTINS resta diverso: errore di dato, va corretto in coaches).
+    const normName = (s) => (s || "")
+      .toUpperCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // rimuove accenti (À->A, Ì->I...)
+      .replace(/['’`]/g, "")                              // rimuove apostrofi
+      .replace(/\s+/g, " ")                               // spazi multipli -> singolo
+      .trim();
+    // Chiave con ordine dei token normalizzato (così "JAMES MARTINS" == "MARTINS JAMES")
+    const sortedKey = (s) => normName(s).split(" ").filter(Boolean).sort().join(" ");
+
+    // coaches attivi: costruisce piu' indici (completo normalizzato, ordine-invariante, primo token)
     const coachRows = await sbGet("coaches?select=id,name&active=eq.true");
-    const coachNameToId = {};
+    const coachNameToId = {};   // nome completo normalizzato -> id
+    const coachSortedToId = {}; // token ordinati -> id (per ordine invertito)
     coachRows.forEach(c => {
-      const n = (c.name || "").toUpperCase().trim();
+      const n = normName(c.name);
       if (!n) return;
-      coachNameToId[n] = c.id;
+      if (!(n in coachNameToId)) coachNameToId[n] = c.id;
+      const sk = sortedKey(c.name);
+      if (sk && !(sk in coachSortedToId)) coachSortedToId[sk] = c.id;
       const tok = n.split(" ")[0];
       if (tok && !(tok in coachNameToId)) coachNameToId[tok] = c.id;
     });
     const findCoach = (name) => {
       if (!name) return null;
-      return coachNameToId[name.toUpperCase().trim()] || null;
+      const n = normName(name);
+      // 1. match esatto normalizzato (accenti/apostrofi/spazi gia' neutralizzati)
+      if (coachNameToId[n]) return coachNameToId[n];
+      // 2. match a ordine invertito (cognome-nome vs nome-cognome)
+      const sk = sortedKey(name);
+      if (coachSortedToId[sk]) return coachSortedToId[sk];
+      // 3. fallback primo token (cognome-solo), come nel codice originale
+      const tok = n.split(" ")[0];
+      if (tok && coachNameToId[tok]) return coachNameToId[tok];
+      return null;
     };
 
     const report = [];
