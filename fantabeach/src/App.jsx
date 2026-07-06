@@ -3608,12 +3608,27 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
 
   async function loadAthleteStats(token) {
     try {
-      // Carica match_results tappe completate 2026
+      // Carica gli eventi 2026 completati PRIMA, per derivare gli id da caricare (dinamico).
+      // Il server PostgREST ha un tetto di 1000 righe: caricare tutta match_results con
+      // order=player_id tagliava le righe femminili (W dopo M). Filtrando per gli eventi
+      // reali e spezzando in gruppi sotto il tetto, ogni tappa nuova entra da sola.
+      const edb0 = await supabase.from("events", token);
+      const ev2026 = await edb0.select("id,gender", "&status=eq.Completato&anno=eq.2026");
+      const eventIdsM = (Array.isArray(ev2026)?ev2026:[]).filter(e => (e.gender||"").toUpperCase()==="M").map(e=>e.id);
+      const eventIdsF = (Array.isArray(ev2026)?ev2026:[]).filter(e => (e.gender||"").toUpperCase()==="F").map(e=>e.id);
       const db = await supabase.from("match_results", token);
-      const results = await db.select(
-        "player_id,player_name,total_pts,bonus_codes,event_id",
-        "&order=player_id.asc&limit=5000"
-      );
+      const loadResultsFor = async (ids) => {
+        if (ids.length === 0) return [];
+        const d = await supabase.from("match_results", token);
+        const r = await d.select("player_id,player_name,total_pts,bonus_codes,event_id",
+          `&event_id=in.(${ids.join(",")})&limit=1000`);
+        return Array.isArray(r) ? r : [];
+      };
+      const [resM, resF] = await Promise.all([
+        loadResultsFor(eventIdsM),
+        loadResultsFor(eventIdsF),
+      ]);
+      const results = [...resM, ...resF];
 
       // Carica roster per ownership (include anche venduti per nameMap)
       const rdb = await supabase.from("rosters", token);
@@ -3641,9 +3656,6 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
       const events = await edb.select("id,gender,weight,name", "&status=eq.Completato&anno=eq.2026");
       const evMap = {};
       if (Array.isArray(events)) events.forEach(e => { evMap[e.id] = e; });
-      // ── DEBUG TEMP: cosa contiene evMap e i gender ──
-      console.log("[STATS DEBUG evMap] eventi ricevuti:", Array.isArray(events) ? events.length : "NON ARRAY",
-        "| dettaglio:", JSON.stringify((events||[]).map(e => ({id:e.id, gender:e.gender, g_type:typeof e.gender}))));
 
       // Merge nameMap: priorità a globalNameMap (più completo) poi nameMap da DB
       const mergedNameMap = { ...nameMap, ...globalNameMap };
@@ -3657,20 +3669,6 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
     // Punti totali per atleta
     const ptsByPlayer = {};
     const ptsByPlayerByLeague = { "L001-F":{}, "L001-M":{}, "L002-F":{}, "L002-M":{} };
-
-    // ── DEBUG TEMP: traccia righe femminili nel forEach ──
-    const _dbg = { totali:0, senzaPlayerId:0, senzaEv:0, W_totali:0, W_scartate_ev:0, W_assegnate:0, eventIds:{} };
-    results.forEach(r => {
-      _dbg.totali++;
-      const isW = (r.player_id||"").startsWith("W");
-      if (isW) _dbg.W_totali++;
-      _dbg.eventIds[r.event_id] = (_dbg.eventIds[r.event_id]||0)+1;
-      if (!r.player_id) { _dbg.senzaPlayerId++; return; }
-      const _ev = evMap[r.event_id];
-      if (!_ev) { _dbg.senzaEv++; if(isW) _dbg.W_scartate_ev++; return; }
-      if (isW) _dbg.W_assegnate++;
-    });
-    console.log("[STATS DEBUG forEach]", JSON.stringify(_dbg));
 
     results.forEach(r => {
       if (!r.player_id) return;
@@ -3783,19 +3781,6 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
 
       return { topScorer, hiddenGem, ownership, diff, rocket, wallStreet };
     };
-
-    // ── DEBUG TEMP: diagnostica genere/leghe ──
-    console.log("[STATS DEBUG] atleti in ptsByPlayerByLeague:",
-      "L001-F:", Object.keys(ptsByPlayerByLeague["L001-F"]).length,
-      "L001-M:", Object.keys(ptsByPlayerByLeague["L001-M"]).length,
-      "L002-F:", Object.keys(ptsByPlayerByLeague["L002-F"]).length,
-      "L002-M:", Object.keys(ptsByPlayerByLeague["L002-M"]).length);
-    const _sampleF = Object.values(ptsByPlayerByLeague["L001-F"]).slice(0,3);
-    console.log("[STATS DEBUG] esempio atleti L001-F (id/gender/pts):",
-      _sampleF.map(a => `${a.id}/${a.gender}/${a.pts}`).join(", "));
-    const _builtF = build("L001-F", "F");
-    console.log("[STATS DEBUG] build(L001-F,F).topScorer length:", _builtF.topScorer.length,
-      "| primo:", JSON.stringify(_builtF.topScorer[0] || null));
 
     return {
       stats: {
