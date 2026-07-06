@@ -1149,7 +1149,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const loadUserData = async (token, userId) => {
     try {
       // Tutte le chiamate in parallelo — da 6 chiamate sequenziali a 3 parallele
-      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes, leagueSettingsRes] = await Promise.all([
+      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes, leagueSettingsRes, lineupHistoryRes] = await Promise.all([
         supabase.from("profiles", token).then(db => db.select("role,username,display_name", `&id=eq.${userId}`)),
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
@@ -1158,6 +1158,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
         supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("league_settings", token).then(db => db.select("*")),
+        supabase.from("lineup_history", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
       ]);
 
       // ── League settings (status e marketOpen) da Supabase ──
@@ -1330,10 +1331,34 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           return active?.id || "E_PRESTAGIONE";
         };
 
+        // Trova l'ultima formazione 2026 dell'utente in lineup_history (event_id E00NN piu' alto)
+        const histAll = Array.isArray(lineupHistoryRes) ? lineupHistoryRes : [];
+        const ultimaFormazioneStorica = (lid) => {
+          const rowsLega = histAll.filter(h => h.league_id === lid && /^E\d{4}$/.test(h.event_id));
+          if (rowsLega.length === 0) return [];
+          const lastEvent = [...new Set(rowsLega.map(h => h.event_id))].sort().pop();
+          return rowsLega.filter(h => h.event_id === lastEvent);
+        };
+
         Object.keys(newLineups).forEach(lid => {
           const eventId = activeEventIdForLeague(lid);
           // Solo righe della lega + evento corrente — mai toccato lo storico
-          const rows = lineupRes.filter(l => l.league_id === lid && l.event_id === eventId);
+          let rows = lineupRes.filter(l => l.league_id === lid && l.event_id === eventId);
+
+          // PRE-COMPILAZIONE: se non c'e' formazione per l'evento attivo, usa l'ultima storica
+          // (solo visiva; il salvataggio/freeze scrive sull'evento attivo). Solo se rosa intatta.
+          if (rows.length === 0) {
+            const storiche = ultimaFormazioneStorica(lid);
+            if (storiche.length > 0) {
+              const idsStorici = storiche.map(h => h.player_id);
+              const tuttiPosseduti = rosterIds[lid]
+                ? idsStorici.every(id => rosterIds[lid].has(id))
+                : false;
+              // pre-compila SOLO se possiede ancora tutti gli atleti (coerente con auto-riporto)
+              if (tuttiPosseduti) rows = storiche;
+            }
+          }
+
           // Deduplica i titolari/capitano
           const starterIds = [...new Set(
             rows.filter(r => r.role === "titolare" || r.role === "capitano")
