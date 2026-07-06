@@ -3641,6 +3641,9 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
       const events = await edb.select("id,gender,weight,name", "&status=eq.Completato&anno=eq.2026");
       const evMap = {};
       if (Array.isArray(events)) events.forEach(e => { evMap[e.id] = e; });
+      // ── DEBUG TEMP: cosa contiene evMap e i gender ──
+      console.log("[STATS DEBUG evMap] eventi ricevuti:", Array.isArray(events) ? events.length : "NON ARRAY",
+        "| dettaglio:", JSON.stringify((events||[]).map(e => ({id:e.id, gender:e.gender, g_type:typeof e.gender}))));
 
       // Merge nameMap: priorità a globalNameMap (più completo) poi nameMap da DB
       const mergedNameMap = { ...nameMap, ...globalNameMap };
