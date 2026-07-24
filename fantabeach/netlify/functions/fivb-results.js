@@ -241,24 +241,37 @@ const isBye = m.status === "bye" || (teamAIsBye !== teamBIsBye);
 
         let setsA = 0, setsB = 0, scoreA = "", scoreB = "", setsApersp = null, setsBpersp = null;
 
+        // result atteso dal feed (es. "2-0", "0-2"): prospettiva A
+        let rA = null, rB = null;
+        if (m.result && /^\d+-\d+$/.test(m.result)) {
+          [rA, rB] = m.result.split("-").map(Number);
+        }
+
         if (Array.isArray(sets) && sets.length > 0) {
-          // Caso normale: punteggi set presenti -> calcolo set vinti e closeSet
           sets = sets.map(s => [Number(s[0]), Number(s[1])]);
           for (const [a, b] of sets) { if (a > b) setsA++; else if (b > a) setsB++; }
-          scoreA = sets.map(([a, b]) => `${a}-${b}`).join(" ");
-          scoreB = sets.map(([a, b]) => `${b}-${a}`).join(" ");
-          setsApersp = sets.map(([a, b]) => [a, b]);
-          setsBpersp = sets.map(([a, b]) => [b, a]);
-        } else if (m.result && /^\d+-\d+$/.test(m.result)) {
-          // Set assenti ma result presente (es. "0-2"): punti base dal solo result.
-          // Trattato come sconfitta/vittoria NORMALE (loss02/win20...), NON forfait.
-          // closeSet non calcolabile senza i set -> nessun bonus (setsApersp = null).
-          const [ra, rb] = m.result.split("-").map(Number);
-          setsA = ra; setsB = rb;
+
+          // RITIRO: i set contati non coincidono col result ufficiale (es. sets [[10,9]] ma result 0-2).
+          // Il feed ha result+winner corretti ma set parziali. Ci si fida del result:
+          // punti base dal result, NESSUN closeSet (i set sono parziali, non conclusi).
+          const setsCoerenti = (setsA === rA && setsB === rB);
+          if (rA != null && !setsCoerenti) {
+            setsA = rA; setsB = rB;
+            scoreA = ""; scoreB = "";
+            setsApersp = null; setsBpersp = null;   // niente bonus da set parziali
+          } else {
+            scoreA = sets.map(([a, b]) => `${a}-${b}`).join(" ");
+            scoreB = sets.map(([a, b]) => `${b}-${a}`).join(" ");
+            setsApersp = sets.map(([a, b]) => [a, b]);
+            setsBpersp = sets.map(([a, b]) => [b, a]);
+          }
+        } else if (rA != null) {
+          // Set assenti ma result presente: punti base dal solo result, niente closeSet.
+          setsA = rA; setsB = rB;
           scoreA = ""; scoreB = "";
           setsApersp = null; setsBpersp = null;
         } else {
-          // Ne' set ne' result: impossibile calcolare -> scarto la partita.
+          // Ne' set ne' result: impossibile calcolare -> scarto.
           continue;
         }
 
