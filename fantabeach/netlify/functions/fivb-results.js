@@ -209,7 +209,9 @@ exports.handler = async (event) => {
       // ── Costruisci le righe match_results ───────────────────────────────
       const rows = [];
       for (const m of matches) {
-        const isBye = m.status === "bye";
+        const teamAIsBye = /^BYE/i.test(m.team_a_name || "");
+const teamBIsBye = /^BYE/i.test(m.team_b_name || "");
+const isBye = m.status === "bye" || (teamAIsBye !== teamBIsBye);
         const isQualiFinal = m.phase === "qualification" &&
           qualiMaxByRound[m.round || ""] === Number(m.match_no);
         const phaseLabel = mapPhase(m.phase, m.round, isBye, isQualiFinal);
