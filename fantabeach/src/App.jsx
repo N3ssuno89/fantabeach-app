@@ -5376,7 +5376,8 @@ function PageRisultati({ event, accessToken, onBack }) {
 
   return (
     <div style={{fontFamily:SANS}}>
-      <button onClick={onBack} style={{background:A.track,border:"none",color:A.sub,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:13,fontFamily:SANS}}>← Calendario</button>
+      <style>{`.fb-btn3d{transition:transform .07s ease, box-shadow .07s ease;} .fb-btn3d:active:not(:disabled){transform:translateY(2px); box-shadow:none !important;}`}</style>
+      <button onClick={onBack} className="fb-btn3d" style={{background:"#FFFFFF",border:`1px solid ${A.line}`,color:A.accent,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:16,fontSize:13,fontWeight:600,fontFamily:SANS,boxShadow:"0 3px 0 #D7D7DE"}}>← Calendario</button>
 
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,flexWrap:"wrap"}}>
         <div style={{fontSize:19,fontWeight:700,color:A.text}}>{event?.name || "Tappa"}</div>
@@ -5384,13 +5385,13 @@ function PageRisultati({ event, accessToken, onBack }) {
       </div>
 
       {/* toggle Lista / Bracket */}
-      <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
         {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
           const on = view === v;
           return (
-            <button key={v} onClick={() => setView(v)}
-              style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
-                background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
+            <button key={v} onClick={() => setView(v)} className="fb-btn3d"
+              style={{flex:1,padding:"10px 0",borderRadius:12,border:`1px solid ${on?A.accent:A.line}`,cursor:"pointer",fontFamily:SANS,fontSize:14,fontWeight:on?700:600,textAlign:"center",
+                background:on?A.accent:"#FFFFFF",color:on?"#FFFFFF":A.accent,boxShadow:on?"0 3px 0 #1E3E35":"0 3px 0 #D7D7DE"}}>
               {lab}
             </button>
           );
@@ -5420,9 +5421,10 @@ function PageRisultati({ event, accessToken, onBack }) {
               {btns.map(([ph,lab]) => {
                 const on = cur === ph, dis = !avail[ph];
                 return (
-                  <button key={ph} disabled={dis} onClick={() => setBphase(ph)}
-                    style={{flex:1,padding:"8px 0",borderRadius:20,border:`1px solid ${on?A.accent:A.line}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:500,textAlign:"center",
-                      background:on?A.accent:"#FFFFFF",color:on?"#FFFFFF":(dis?A.soft:A.text),opacity:dis?0.55:1}}>
+                  <button key={ph} disabled={dis} onClick={() => setBphase(ph)} className="fb-btn3d"
+                    style={{flex:1,padding:"9px 0",borderRadius:12,border:`1px solid ${on?A.accent:(dis?A.line:A.accent)}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:600,textAlign:"center",
+                      background:on?A.accent:(dis?"#F4F4F6":"#FFFFFF"),color:on?"#FFFFFF":(dis?A.soft:A.accent),
+                      boxShadow:dis?"none":(on?"0 3px 0 #1E3E35":"0 3px 0 #D7D7DE")}}>
                     {lab}
                   </button>
                 );
