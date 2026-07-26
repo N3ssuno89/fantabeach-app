@@ -5175,6 +5175,134 @@ function PageRisultati({ event, accessToken, onBack }) {
 
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
 
+  const renderSection = (sec, si) => {
+    const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+    return (
+      <div key={si} style={{marginBottom:26}}>
+        <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
+          <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+        </div>
+        {sec.groups.map((g, gi) => (
+          <div key={gi} style={{marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
+            <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
+              {g.rows.map((m, mi) => {
+                const a = m.team_a_name || "\u2014", b = m.team_b_name || "\u2014";
+                const parts = (m.result || "").split("-");
+                const ra = parts[0] || "", rb = parts[1] || "";
+                const sch = m.status === "scheduled" || !m.result;
+                const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
+                return (
+                  <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
+                    </div>
+                    {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
+                    {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderBracket = (sec, si) => {
+    const pm = phaseMeta.main_draw;
+    const md = matches.filter(m => m.phase === "main_draw");
+    const pairSurnames = (name) => {
+      if (!name || /^BYE/i.test(name.trim())) return null;
+      return name.split(" - ").map(p => {
+        const t = p.trim().split(" ");
+        return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
+      }).join(" / ");
+    };
+    const isF34 = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
+    const groups = {};
+    md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
+    const roundList = Object.entries(groups)
+      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+      .sort((a,b)=>a.minNo-b.minNo);
+    const f34 = roundList.find(g => isF34(g.round));
+    const cols = roundList.filter(g => !isF34(g.round));
+    if (cols.length === 0) return null;
+    const labelFor = (round, count) => groupInfo("main_draw", null, round, count, 0).label;
+    const BOX_W = 132, BOX_H = 38, COL_GAP = 30, LABEL_H = 22, SLOT = 50;
+    const n0 = cols[0].ms.length || 1;
+    const H = Math.max(n0, 1) * SLOT;
+    const colX = (c) => c * (BOX_W + COL_GAP);
+    const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].ms.length);
+    const containerW = cols.length * BOX_W + Math.max(cols.length - 1, 0) * COL_GAP;
+    const finaleColIdx = cols.length - 1;
+    const finaleCenterY = centerY(finaleColIdx, 0);
+    const containerH = LABEL_H + H + (f34 ? BOX_H + 40 : 0);
+    const linePaths = [];
+    for (let c = 0; c < cols.length - 1; c++) {
+      const childCount = cols[c + 1].ms.length;
+      for (let k = 0; k < childCount; k++) {
+        if (2 * k + 1 >= cols[c].ms.length) continue;
+        const fx = colX(c) + BOX_W, cx = colX(c + 1), mx = (fx + cx) / 2;
+        const y1 = centerY(c, 2 * k), y2 = centerY(c, 2 * k + 1), yk = centerY(c + 1, k);
+        linePaths.push(`M ${fx} ${y1} H ${mx} M ${fx} ${y2} H ${mx} M ${mx} ${y1} V ${y2} M ${mx} ${yk} H ${cx}`);
+      }
+    }
+    const MatchBox = ({ m, x, top }) => {
+      const aWin = (m.result || "").startsWith("2");
+      const bWin = !aWin && /^(0|1)-2/.test(m.result || "");
+      const aS = pairSurnames(m.team_a_name);
+      const bS = pairSurnames(m.team_b_name);
+      const rp = (m.result || "").split("-");
+      return (
+        <div style={{position:"absolute",left:x,top,width:BOX_W,height:BOX_H,background:A.card,border:`1px solid ${A.line}`,borderRadius:7,padding:"3px 7px",boxSizing:"border-box",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aS?(aWin?A.accent:A.text):A.soft,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aS || "BYE"}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{rp[0] || ""}</span>
+          </div>
+          <div style={{height:1,background:A.line,margin:"2px 0"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bS?(bWin?A.accent:A.text):A.soft,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bS || "BYE"}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{rp[1] || ""}</span>
+          </div>
+        </div>
+      );
+    };
+    return (
+      <div key={si} style={{marginBottom:26}}>
+        <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
+          <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+        </div>
+        <div style={{overflowX:"auto",paddingBottom:10}}>
+          <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW}}>
+            <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
+              {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
+            </svg>
+            {cols.map((col,c) => (
+              <div key={"lbl"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>
+                {labelFor(col.round, col.ms.length)}
+              </div>
+            ))}
+            {cols.map((col,c) => col.ms.map((m,j) => (
+              <MatchBox key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
+            )))}
+            {f34 && f34.ms.map((m,j) => (
+              <React.Fragment key={"f34"+j}>
+                <div style={{position:"absolute",left:colX(finaleColIdx),top:finaleCenterY + BOX_H/2 + 14,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>Finale 3°/4°</div>
+                <MatchBox m={m} x={colX(finaleColIdx)} top={finaleCenterY + BOX_H/2 + 32}/>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{fontFamily:SANS}}>
       <button onClick={onBack} style={{background:A.track,border:"none",color:A.sub,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:13,fontFamily:SANS}}>← Calendario</button>
@@ -5200,142 +5328,15 @@ function PageRisultati({ event, accessToken, onBack }) {
 
       {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
 
-      {!loading && view === "bracket" && matches && (() => {
-        const md = matches.filter(m => m.phase === "main_draw");
-        if (md.length === 0) return (
-          <div style={{textAlign:"center",padding:"48px 20px",color:A.sub,fontSize:14}}>
-            Nessun tabellone principale disponibile per questa tappa.
-          </div>
-        );
-        const pairSurnames = (name) => {
-          if (!name || /^BYE/i.test(name.trim())) return null;
-          return name.split(" - ").map(p => {
-            const t = p.trim().split(" ");
-            return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
-          }).join(" / ");
-        };
-        const isF34 = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
-        const isF12 = (r) => /1\s*\u00b0?\s*[-\/]\s*2/.test(r || "");
-        const groups = {};
-        md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
-        const roundList = Object.entries(groups)
-          .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
-          .sort((a,b)=>a.minNo-b.minNo);
-        const f34 = roundList.find(g => isF34(g.round));
-        const cols = roundList.filter(g => !isF34(g.round));
-        if (cols.length === 0) return (
-          <div style={{textAlign:"center",padding:"48px 20px",color:A.sub,fontSize:14}}>Tabellone non disponibile.</div>
-        );
-        const roundLabel = (round) => {
-          if (isF12(round)) return "Finale 1°/2°";
-          return (round || "").replace(/\s*Vincenti/i, "").trim() || "Turno";
-        };
-        const BOX_W = 132, BOX_H = 38, COL_GAP = 30, LABEL_H = 22, SLOT = 50;
-        const n0 = cols[0].ms.length || 1;
-        const H = Math.max(n0, 1) * SLOT;
-        const colX = (c) => c * (BOX_W + COL_GAP);
-        const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].ms.length);
-        const containerW = cols.length * BOX_W + Math.max(cols.length - 1, 0) * COL_GAP;
-        const finaleColIdx = cols.length - 1;
-        const finaleCenterY = centerY(finaleColIdx, 0);
-        const containerH = LABEL_H + H + (f34 ? BOX_H + 40 : 0);
-        const linePaths = [];
-        for (let c = 0; c < cols.length - 1; c++) {
-          const childCount = cols[c + 1].ms.length;
-          for (let k = 0; k < childCount; k++) {
-            if (2 * k + 1 >= cols[c].ms.length) continue;
-            const fx = colX(c) + BOX_W, cx = colX(c + 1), mx = (fx + cx) / 2;
-            const y1 = centerY(c, 2 * k), y2 = centerY(c, 2 * k + 1), yk = centerY(c + 1, k);
-            linePaths.push(`M ${fx} ${y1} H ${mx} M ${fx} ${y2} H ${mx} M ${mx} ${y1} V ${y2} M ${mx} ${yk} H ${cx}`);
-          }
-        }
-        const MatchBox = ({ m, x, top }) => {
-          const aWin = (m.result || "").startsWith("2");
-          const bWin = !aWin && /^(0|1)-2/.test(m.result || "");
-          const aS = pairSurnames(m.team_a_name);
-          const bS = pairSurnames(m.team_b_name);
-          const rp = (m.result || "").split("-");
-          return (
-            <div style={{position:"absolute",left:x,top,width:BOX_W,height:BOX_H,background:A.card,border:`1px solid ${A.line}`,borderRadius:7,padding:"3px 7px",boxSizing:"border-box",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aS?(aWin?A.accent:A.text):A.soft,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aS || "BYE"}</span>
-                <span style={{flexShrink:0,fontWeight:700}}>{rp[0] || ""}</span>
-              </div>
-              <div style={{height:1,background:A.line,margin:"2px 0"}}/>
-              <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bS?(bWin?A.accent:A.text):A.soft,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bS || "BYE"}</span>
-                <span style={{flexShrink:0,fontWeight:700}}>{rp[1] || ""}</span>
-              </div>
-            </div>
-          );
-        };
-        return (
-          <div style={{overflowX:"auto",paddingBottom:10}}>
-            <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW}}>
-              <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
-                {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
-              </svg>
-              {cols.map((col,c) => (
-                <div key={"lbl"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>
-                  {roundLabel(col.round)}
-                </div>
-              ))}
-              {cols.map((col,c) => col.ms.map((m,j) => (
-                <MatchBox key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
-              )))}
-              {f34 && f34.ms.map((m,j) => (
-                <React.Fragment key={"f34"+j}>
-                  <div style={{position:"absolute",left:colX(finaleColIdx),top:finaleCenterY + BOX_H/2 + 14,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>Finale 3°/4°</div>
-                  <MatchBox m={m} x={colX(finaleColIdx)} top={finaleCenterY + BOX_H/2 + 32}/>
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {!loading && view === "lista" && matches && matches.length === 0 && (
+      {!loading && matches && matches.length === 0 && (
         <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
       )}
 
-      {!loading && view === "lista" && sections.map((sec, si) => {
-        const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
-        return (
-          <div key={si} style={{marginBottom:26}}>
-            <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
-              <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
-            </div>
-            {sec.groups.map((g, gi) => (
-              <div key={gi} style={{marginBottom:16}}>
-                <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
-                <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
-                  {g.rows.map((m, mi) => {
-                    const a = m.team_a_name || "—", b = m.team_b_name || "—";
-                    const parts = (m.result || "").split("-");
-                    const ra = parts[0] || "", rb = parts[1] || "";
-                    const sch = m.status === "scheduled" || !m.result;
-                    const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
-                    return (
-                      <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                          <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
-                          <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
-                        </div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
-                          <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
-                          <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
-                        </div>
-                        {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
-                        {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })}
+      {!loading && matches && matches.length > 0 && sections.map((sec, si) =>
+        (view === "bracket" && sec.phase === "main_draw")
+          ? renderBracket(sec, si)
+          : renderSection(sec, si)
+      )}
     </div>
   );
 }
