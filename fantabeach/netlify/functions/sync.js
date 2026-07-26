@@ -26,7 +26,7 @@ exports.handler = async (event) => {
     const latest = {};
     (Array.isArray(rows) ? rows : []).forEach(r => {
       if (!r.player_id) return;
-      latest[r.player_id] = r; // l'ordine asc garantisce che l'ultima assegnazione sia la più recente
+      if (!latest[r.player_id]) latest[r.player_id] = r; // desc order -> il PRIMO è il più recente
     });
 
     const all = Object.values(latest).map(r => ({
