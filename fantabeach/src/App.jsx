@@ -5228,7 +5228,7 @@ function PageRisultati({ event, accessToken, onBack }) {
   const isF34r = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
   const isF12r = (r) => /1\s*\u00b0?\s*[-\/]\s*2/.test(r || "");
 
-  const Bracket = ({ cols, f34, colLabels, f34Label, boxW }) => {
+  const Bracket = ({ cols, f34, colLabels, f12Label, f34Label, boxW }) => {
     const BOX_W = boxW || 128, BOX_H = 38, COL_GAP = 26, SLOT = 50;
     const LABEL_H = colLabels ? 20 : 6;
     const n0 = (cols[0] || []).length || 1;
@@ -5278,6 +5278,9 @@ function PageRisultati({ event, accessToken, onBack }) {
         {cols.map((col,c) => col.map((m,j) => (
           <Box key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
         )))}
+        {f12Label && cols[lastIdx].length === 1 && (
+          <div style={{position:"absolute",left:colX(lastIdx),top:finaleCenterY - BOX_H/2 - 13,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>{f12Label}</div>
+        )}
         {f34 && (
           <>
             <div style={{position:"absolute",left:colX(lastIdx),top:finaleCenterY + BOX_H/2 + 10,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>{f34Label || "3\u00b0/4\u00b0"}</div>
@@ -5301,10 +5304,11 @@ function PageRisultati({ event, accessToken, onBack }) {
     if (colsG.length === 0) return <div style={emptyStyle}>Main draw non ancora iniziato.</div>;
     const cols = colsG.map(g => g.ms);
     const colLabels = colsG.map(g => groupInfo("main_draw", null, g.round, g.ms.length, 0).label);
+    if (colsG.length && isF12r(colsG[colsG.length - 1].round)) colLabels[colsG.length - 1] = "";
     const f34 = f34g ? f34g.ms[0] : null;
     return (
       <div style={{overflowX:"auto",paddingBottom:10}}>
-        <Bracket cols={cols} f34={f34} colLabels={colLabels} boxW={132}/>
+        <Bracket cols={cols} f34={f34} colLabels={colLabels} f12Label={"1\u00b0/2\u00b0"} boxW={132}/>
       </div>
     );
   };
@@ -5316,7 +5320,7 @@ function PageRisultati({ event, accessToken, onBack }) {
     pmatches.forEach(m => { (byPool[m.pool] = byPool[m.pool] || []).push(m); });
     const pools = Object.keys(byPool).sort();
     return (
-      <div style={{display:"flex",flexWrap:"wrap",gap:18,alignItems:"flex-start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:22}}>
         {pools.map(pl => {
           const rows = byPool[pl];
           const semis = rows.filter(m => isSemi(m.round)).sort((a,b)=>a.match_no-b.match_no);
@@ -5324,11 +5328,11 @@ function PageRisultati({ event, accessToken, onBack }) {
           const f12 = rows.find(m => isF12r(m.round));
           const f34 = rows.find(m => isF34r(m.round)) || null;
           const cols = f12 ? [semis, [f12]] : [semis];
-          const colLabels = f12 ? ["Semifinali", "Finale"] : ["Semifinali"];
+          const colLabels = f12 ? ["Semifinali", ""] : ["Semifinali"];
           return (
             <div key={pl}>
               <div style={{fontSize:12,fontWeight:700,color:A.text,marginBottom:6}}>Pool {pl}</div>
-              <Bracket cols={cols} f34={f34} colLabels={colLabels} f34Label={"3\u00b0/4\u00b0"} boxW={122}/>
+              <Bracket cols={cols} f34={f34} colLabels={colLabels} f12Label={"1\u00b0/2\u00b0"} f34Label={"3\u00b0/4\u00b0"} boxW={122}/>
             </div>
           );
         })}
@@ -5345,7 +5349,7 @@ function PageRisultati({ event, accessToken, onBack }) {
       .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
       .sort((a,b)=>a.minNo-b.minNo);
     return (
-      <div style={{display:"flex",flexWrap:"wrap",gap:18,alignItems:"flex-start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:22}}>
         {percorsi.map((p, pi) => {
           const ms = p.ms;
           let cols, colLabels;
@@ -5412,12 +5416,12 @@ function PageRisultati({ event, accessToken, onBack }) {
         const btns = [["qualification","Qualifiche"],["pool","Pool"],["main_draw","Main Draw"]];
         return (
           <div>
-            <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,marginBottom:18}}>
               {btns.map(([ph,lab]) => {
                 const on = cur === ph, dis = !avail[ph];
                 return (
                   <button key={ph} disabled={dis} onClick={() => setBphase(ph)}
-                    style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${on?A.accent:A.line}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:500,
+                    style={{flex:1,padding:"8px 0",borderRadius:20,border:`1px solid ${on?A.accent:A.line}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:500,textAlign:"center",
                       background:on?A.accent:"#FFFFFF",color:on?"#FFFFFF":(dis?A.soft:A.text),opacity:dis?0.55:1}}>
                     {lab}
                   </button>
