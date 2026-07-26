@@ -3044,7 +3044,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         </div>
       )}
 
-      <style>{`*{box-sizing:border-box;}button,input,select{font-family:Georgia,serif;}input::placeholder{color:${B.grayLight};}::-webkit-scrollbar{display:none;}`}</style>
+      <style>{`*{box-sizing:border-box;}button,input,select{font-family:Georgia,serif;}input::placeholder{color:${B.grayLight};}::-webkit-scrollbar{display:none;}.fb-btn3d{transition:transform .07s ease, box-shadow .07s ease;}.fb-btn3d:active:not(:disabled){transform:translateY(2px);box-shadow:none !important;}`}</style>
     </div>
   );
 }
@@ -3054,7 +3054,7 @@ function MenuPage({ title, emoji, onBack, children }) {
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif"}}>← Indietro</button>
+        <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
         <span style={{fontSize:20}}>{emoji}</span>
         <div style={{fontWeight:"bold",fontSize:17,color:B.dark}}>{title}</div>
       </div>
@@ -3451,7 +3451,7 @@ function StatPage({ title, emoji, onBack, children }) {
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{background:B.sandDark,padding:"16px",borderBottom:`1px solid ${B.sandDeep}`,flexShrink:0}}>
-        <button onClick={onBack} style={{background:"transparent",border:"none",color:B.gray,cursor:"pointer",fontSize:13,fontFamily:"Georgia,serif",marginBottom:8}}>← back</button>
+        <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:8,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:22}}>{emoji}</span>
           <div style={{fontWeight:"bold",fontSize:17,color:B.dark}}>{title}</div>
@@ -4285,11 +4285,13 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const mrDb = await supabase.from("match_results", accessToken);
+        // TUTTE le partite dell'atleta — ordiniamo lato JS (anno+evento), non per stringa event_id
         const own = await mrDb.select(
           "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
           `&player_id=eq.${a.id}&limit=500`
         );
         if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
+        // Ordina per anno (da events) desc, poi event_id desc, poi match_index desc; prendi le 5 piu' recenti
         const annoById = {};
         (events || []).forEach(e => { annoById[e.id] = e.anno || 0; });
         const sorted = [...own].sort((x, y) => {
@@ -4315,8 +4317,8 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           (Array.isArray(tRows) ? tRows : []).forEach(t => { titleByVis[t.vis_id] = t.title; });
         }
         const fullRows = Array.isArray(full) ? full : [];
-        // opponent e' VUOTO in match_results -> ricostruisco le squadre dal RISULTATO:
-        // compagni = stesso result della riga; avversari = result diverso (invertito).
+        // Ricostruisce le due squadre di una partita: opponent e' vuoto, quindi si usa il RISULTATO.
+        // Compagni = stesso result di Mattavelli; avversari = result invertito.
         const teamsOf = (row) => {
           const same = fullRows.filter(r =>
             r.event_id === row.event_id && r.match_index === row.match_index);
@@ -4345,21 +4347,25 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const db = await supabase.from("player_history", accessToken);
+        // Prende tutte le righe ordinate per data — poi deduplicha per giorno lato JS
         const rows = await db.select("cost,ranking,synced_at",
           `&player_id=eq.${a.id}&order=synced_at.asc&limit=500`);
         if (Array.isArray(rows) && rows.length > 0) {
+          // Deduplica: tieni solo L'ULTIMA riga per ogni giorno
           const byDay = {};
           rows.forEach(r => {
-            const day = (r.synced_at || "").slice(0, 10);
-            byDay[day] = r;
+            const day = (r.synced_at || "").slice(0, 10); // "2026-05-13"
+            byDay[day] = r; // sovrascrive → tieni l'ultima del giorno
           });
+          // Ordina per giorno e prendi max 30
           const deduplicated = Object.values(byDay)
             .sort((a, b) => a.synced_at.localeCompare(b.synced_at))
             .slice(-30);
+          // Forza l'ultimo punto al valore corrente dell'atleta
           if (deduplicated.length > 0) {
             deduplicated[deduplicated.length - 1] = {
               ...deduplicated[deduplicated.length - 1],
-              cost: a.cost,
+              cost: a.cost, // valore corrente
               ranking: a.ranking,
             };
           }
@@ -4390,7 +4396,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
 
   return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Indietro</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
 
       {/* HEADER ATLETA */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:14,padding:"18px 16px",marginBottom:12,textAlign:"center"}}>
@@ -4456,6 +4462,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           Andamento Prezzo {fullHistory===null&&<span style={{fontSize:9,color:B.gray,fontWeight:"normal"}}>⏳</span>}
         </div>
         {(() => {
+          // Dimensioni responsive — usa viewBox largo, si scala al 100% del contenitore
           const W = 360, H = 120, PAD = 28;
           const innerW = W - PAD * 2;
           const n = historyData.length;
@@ -4464,6 +4471,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           const pts = historyData.map((h,i) => `${px(i)},${py(h.cost)}`).join(" ");
           const area = `${PAD},${H-26} ${pts} ${px(n-1)},${H-26}`;
 
+          // Mostra label solo primo, ultimo e punti con cambio valore
           const showLabel = (i) => {
             if (i === 0 || i === n-1) return true;
             return historyData[i].cost !== historyData[i-1].cost;
@@ -4480,11 +4488,13 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                 {historyData.map((h,i)=>{
                   const isLast = i === n-1;
                   const changed = i > 0 && h.cost !== historyData[i-1].cost;
+                  // Mostra cerchio su tutti i punti ma più piccolo sui punti invariati
                   const r = (isLast || changed) ? 5 : 2.5;
                   const fillColor = isLast ? B.orange : B.greenDark;
                   return (
                     <g key={i}>
                       <circle cx={px(i)} cy={py(h.cost)} r={r} fill={fillColor}/>
+                      {/* Mostra etichetta $ solo su primo, ultimo e cambio */}
                       {(i===0 || isLast || changed) && (
                         <text x={px(i)} y={py(h.cost)-9}
                           textAnchor={i===0?"start":isLast?"end":"middle"}
@@ -4497,6 +4507,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                   );
                 })}
               </svg>
+              {/* Label date — solo primo e ultimo */}
               <div style={{display:"flex",justifyContent:"space-between",marginTop:4,paddingLeft:PAD-4,paddingRight:PAD-4}}>
                 <div style={{fontSize:10,color:B.gray}}>{historyData[0]?.label}</div>
                 <div style={{fontSize:10,color:B.orange,fontWeight:"bold"}}>{historyData[n-1]?.label} (ora)</div>
@@ -4591,7 +4602,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
   if (matchResults === undefined) return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Calendario</button>
       <div style={{textAlign:"center",padding:"60px 20px",color:B.gray}}>
         <div style={{fontSize:32,marginBottom:10}}>⏳</div>
         <div>Caricamento risultati...</div>
@@ -4727,7 +4738,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
   return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Calendario</button>
       <div style={{background:B.greenDark,borderRadius:12,padding:"14px 16px",marginBottom:14,color:B.white}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
@@ -5099,6 +5110,7 @@ function PageRisultati({ event, accessToken, onBack }) {
   const [matches, setMatches] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [view, setView] = React.useState("lista");   // "lista" | "bracket"
+  const [bphase, setBphase] = React.useState(null); // fase bracket: qualification | pool | main_draw
 
   const A = { card:"#FFFFFF", line:"#ECECF0", text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8", accent:"#2D5C4F", track:"#EDEDF1" };
   const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
@@ -5161,9 +5173,9 @@ function PageRisultati({ event, accessToken, onBack }) {
     .sort((a, b) => a.w - b.w);
 
   const phaseMeta = {
-    main_draw:     { label: "Main Draw",  bg: "#E9F2EE", w: 0 },
-    pool:          { label: "Pool",       bg: "#FAF1E0", w: 1 },
-    qualification: { label: "Qualifiche", bg: "#EDEFF4", w: 2 },
+    main_draw:     { label: "Main Draw",  accent: "#2D5C4F", shadow: "#1E3E35", w: 0 },
+    pool:          { label: "Pool",       accent: "#C77D25", shadow: "#9C5F17", w: 1 },
+    qualification: { label: "Qualifiche", accent: "#5B6B8C", shadow: "#45526E", w: 2 },
   };
   const sections = [];
   const smap = {};
@@ -5175,9 +5187,208 @@ function PageRisultati({ event, accessToken, onBack }) {
 
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
 
+  const renderSection = (sec, si) => {
+    const pm = phaseMeta[sec.phase] || { label: sec.phase, accent: "#8E8E93", shadow: "#6E6E73" };
+    return (
+      <div key={si} style={{marginBottom:26}}>
+        <div style={{background:pm.accent,borderRadius:10,padding:"10px 15px",marginBottom:14,boxShadow:`0 2px 0 ${pm.shadow}`}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#FFFFFF",letterSpacing:0.8,textTransform:"uppercase"}}>{pm.label}</span>
+        </div>
+        {sec.groups.map((g, gi) => (
+          <div key={gi} style={{marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
+            <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
+              {g.rows.map((m, mi) => {
+                const a = m.team_a_name || "\u2014", b = m.team_b_name || "\u2014";
+                const parts = (m.result || "").split("-");
+                const ra = parts[0] || "", rb = parts[1] || "";
+                const sch = m.status === "scheduled" || !m.result;
+                const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
+                return (
+                  <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
+                      <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
+                    </div>
+                    {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
+                    {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ---------- BRACKET GENERICO (usato da qualifiche, pool, main draw) ----------
+  const emptyStyle = { color: A.sub, fontSize: 14, textAlign: "center", padding: "40px 0" };
+  const surnamesOf = (name) => {
+    if (!name || /^BYE/i.test(name.trim())) return "BYE";
+    return name.split(" - ").map(p => {
+      const t = p.trim().split(" ");
+      return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
+    }).join("/");
+  };
+  const isSemi = (r) => /semifinale/i.test(r || "");
+  const isF34r = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
+  const isF12r = (r) => /1\s*\u00b0?\s*[-\/]\s*2/.test(r || "");
+
+  const Bracket = ({ cols, f34, colLabels, f12Label, f34Label, boxW }) => {
+    const BOX_W = boxW || 128, BOX_H = 38, COL_GAP = 26, SLOT = 50;
+    const LABEL_H = colLabels ? 20 : 6;
+    const n0 = (cols[0] || []).length || 1;
+    const H = Math.max(n0, 1) * SLOT;
+    const colX = (c) => c * (BOX_W + COL_GAP);
+    const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].length);
+    const containerW = cols.length * BOX_W + Math.max(cols.length - 1, 0) * COL_GAP;
+    const lastIdx = cols.length - 1;
+    const finaleCenterY = centerY(lastIdx, 0);
+    const containerH = LABEL_H + H + (f34 ? BOX_H + 34 : 0);
+    const linePaths = [];
+    for (let c = 0; c < cols.length - 1; c++) {
+      for (let k = 0; k < cols[c + 1].length; k++) {
+        if (2 * k + 1 >= cols[c].length) continue;
+        const fx = colX(c) + BOX_W, cx = colX(c + 1), mx = (fx + cx) / 2;
+        const y1 = centerY(c, 2 * k), y2 = centerY(c, 2 * k + 1), yk = centerY(c + 1, k);
+        linePaths.push(`M ${fx} ${y1} H ${mx} M ${fx} ${y2} H ${mx} M ${mx} ${y1} V ${y2} M ${mx} ${yk} H ${cx}`);
+      }
+    }
+    const Box = ({ m, x, top }) => {
+      const aWin = (m.result || "").startsWith("2");
+      const bWin = !aWin && /^(0|1)-2/.test(m.result || "");
+      const rp = (m.result || "").split("-");
+      const sch = m.status === "scheduled" || !m.result;
+      return (
+        <div style={{position:"absolute",left:x,top,width:BOX_W,height:BOX_H,background:A.card,border:`1px solid ${A.line}`,borderRadius:7,padding:"3px 7px",boxSizing:"border-box",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aWin?A.accent:A.text,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{surnamesOf(m.team_a_name)}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{sch?"":rp[0]}</span>
+          </div>
+          <div style={{height:1,background:A.line,margin:"2px 0"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bWin?A.accent:A.text,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{surnamesOf(m.team_b_name)}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{sch?"":rp[1]}</span>
+          </div>
+        </div>
+      );
+    };
+    return (
+      <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW,flexShrink:0}}>
+        <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
+          {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
+        </svg>
+        {colLabels && cols.map((col,c) => (
+          <div key={"l"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{colLabels[c]||""}</div>
+        ))}
+        {cols.map((col,c) => col.map((m,j) => (
+          <Box key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
+        )))}
+        {f12Label && cols[lastIdx].length === 1 && (
+          <div style={{position:"absolute",left:colX(lastIdx),top:finaleCenterY - BOX_H/2 - 13,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>{f12Label}</div>
+        )}
+        {f34 && (
+          <>
+            <div style={{position:"absolute",left:colX(lastIdx),top:finaleCenterY + BOX_H/2 + 10,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>{f34Label || "3\u00b0/4\u00b0"}</div>
+            <Box m={f34} x={colX(lastIdx)} top={finaleCenterY + BOX_H/2 + 26}/>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderMainDraw = () => {
+    const md = matches.filter(m => m.phase === "main_draw");
+    if (md.length === 0) return <div style={emptyStyle}>Main draw non ancora iniziato.</div>;
+    const groups = {};
+    md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
+    const roundList = Object.entries(groups)
+      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+      .sort((a,b)=>a.minNo-b.minNo);
+    const f34g = roundList.find(g => isF34r(g.round));
+    const colsG = roundList.filter(g => !isF34r(g.round));
+    if (colsG.length === 0) return <div style={emptyStyle}>Main draw non ancora iniziato.</div>;
+    const cols = colsG.map(g => g.ms);
+    const colLabels = colsG.map(g => groupInfo("main_draw", null, g.round, g.ms.length, 0).label);
+    if (colsG.length && isF12r(colsG[colsG.length - 1].round)) colLabels[colsG.length - 1] = "";
+    const f34 = f34g ? f34g.ms[0] : null;
+    return (
+      <div style={{overflowX:"auto",paddingBottom:10}}>
+        <Bracket cols={cols} f34={f34} colLabels={colLabels} f12Label={"1\u00b0/2\u00b0"} boxW={132}/>
+      </div>
+    );
+  };
+
+  const renderPools = () => {
+    const pmatches = matches.filter(m => m.phase === "pool");
+    if (pmatches.length === 0) return <div style={emptyStyle}>Pool non ancora iniziate.</div>;
+    const byPool = {};
+    pmatches.forEach(m => { (byPool[m.pool] = byPool[m.pool] || []).push(m); });
+    const pools = Object.keys(byPool).sort();
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:22}}>
+        {pools.map(pl => {
+          const rows = byPool[pl];
+          const semis = rows.filter(m => isSemi(m.round)).sort((a,b)=>a.match_no-b.match_no);
+          if (semis.length === 0) return null;
+          const f12 = rows.find(m => isF12r(m.round));
+          const f34 = rows.find(m => isF34r(m.round)) || null;
+          const cols = f12 ? [semis, [f12]] : [semis];
+          const colLabels = f12 ? ["Semifinali", ""] : ["Semifinali"];
+          return (
+            <div key={pl}>
+              <div style={{fontSize:12,fontWeight:700,color:A.text,marginBottom:6}}>Pool {pl}</div>
+              <Bracket cols={cols} f34={f34} colLabels={colLabels} f12Label={"1\u00b0/2\u00b0"} f34Label={"3\u00b0/4\u00b0"} boxW={122}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderQualis = () => {
+    const qmatches = matches.filter(m => m.phase === "qualification");
+    if (qmatches.length === 0) return <div style={emptyStyle}>Qualificazioni non disponibili.</div>;
+    const byPer = {};
+    qmatches.forEach(m => { (byPer[m.round] = byPer[m.round] || []).push(m); });
+    const percorsi = Object.entries(byPer)
+      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+      .sort((a,b)=>a.minNo-b.minNo);
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:22}}>
+        {percorsi.map((p, pi) => {
+          const ms = p.ms;
+          let cols, colLabels;
+          if (ms.length >= 2) {
+            const r2 = ms[ms.length - 1];
+            const r1 = ms.slice(0, ms.length - 1);
+            cols = [r1, [r2]];
+            colLabels = ["Turno 1", "Turno 2"];
+          } else {
+            cols = [ms];
+            colLabels = ["Turno 1"];
+          }
+          return (
+            <div key={pi}>
+              <div style={{fontSize:12,fontWeight:700,color:A.text,marginBottom:6,maxWidth:270,lineHeight:1.25}}>{p.round}</div>
+              <Bracket cols={cols} colLabels={colLabels} boxW={122}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+
   return (
     <div style={{fontFamily:SANS}}>
-      <button onClick={onBack} style={{background:A.track,border:"none",color:A.sub,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:13,fontFamily:SANS}}>← Calendario</button>
+      <style>{`.fb-btn3d{transition:transform .07s ease, box-shadow .07s ease;} .fb-btn3d:active:not(:disabled){transform:translateY(2px); box-shadow:none !important;}`}</style>
+      <button onClick={onBack} className="fb-btn3d" style={{background:"#FFFFFF",border:`1px solid ${A.line}`,color:A.accent,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:16,fontSize:13,fontWeight:600,fontFamily:SANS,boxShadow:"0 3px 0 #D7D7DE"}}>← Calendario</button>
 
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,flexWrap:"wrap"}}>
         <div style={{fontSize:19,fontWeight:700,color:A.text}}>{event?.name || "Tappa"}</div>
@@ -5185,13 +5396,13 @@ function PageRisultati({ event, accessToken, onBack }) {
       </div>
 
       {/* toggle Lista / Bracket */}
-      <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
         {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
           const on = view === v;
           return (
-            <button key={v} onClick={() => setView(v)}
-              style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
-                background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
+            <button key={v} onClick={() => setView(v)} className="fb-btn3d"
+              style={{flex:1,padding:"10px 0",borderRadius:12,border:`1px solid ${on?A.accent:A.line}`,cursor:"pointer",fontFamily:SANS,fontSize:14,fontWeight:on?700:600,textAlign:"center",
+                background:on?A.accent:"#FFFFFF",color:on?"#FFFFFF":A.accent,boxShadow:on?"0 3px 0 #1E3E35":"0 3px 0 #D7D7DE"}}>
               {lab}
             </button>
           );
@@ -5200,56 +5411,42 @@ function PageRisultati({ event, accessToken, onBack }) {
 
       {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
 
-      {!loading && view === "bracket" && (
-        <div style={{textAlign:"center",padding:"56px 20px",color:A.sub}}>
-          <div style={{fontSize:34,marginBottom:10}}>🗂️</div>
-          <div style={{fontSize:15,fontWeight:600,color:A.text,marginBottom:6}}>Bracket in arrivo</div>
-          <div style={{fontSize:13,lineHeight:1.5}}>La vista ad albero del tabellone è predisposta ma non ancora disegnata. Per ora usa la Lista.</div>
-        </div>
-      )}
-
-      {!loading && view === "lista" && matches && matches.length === 0 && (
+      {!loading && matches && matches.length === 0 && (
         <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
       )}
 
-      {!loading && view === "lista" && sections.map((sec, si) => {
-        const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+      {!loading && view === "lista" && matches && matches.length > 0 &&
+        sections.map((sec, si) => renderSection(sec, si))}
+
+      {!loading && view === "bracket" && matches && matches.length > 0 && (() => {
+        const hasQ = matches.some(m => m.phase === "qualification");
+        const hasP = matches.some(m => m.phase === "pool");
+        const hasM = matches.some(m => m.phase === "main_draw");
+        const avail = { qualification: hasQ, pool: hasP, main_draw: hasM };
+        const def = hasM ? "main_draw" : hasP ? "pool" : "qualification";
+        const cur = (bphase && avail[bphase]) ? bphase : def;
+        const btns = [["qualification","Qualifiche"],["pool","Pool"],["main_draw","Main Draw"]];
         return (
-          <div key={si} style={{marginBottom:26}}>
-            <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
-              <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+          <div>
+            <div style={{display:"flex",gap:8,marginBottom:18}}>
+              {btns.map(([ph,lab]) => {
+                const on = cur === ph, dis = !avail[ph];
+                return (
+                  <button key={ph} disabled={dis} onClick={() => setBphase(ph)} className="fb-btn3d"
+                    style={{flex:1,padding:"9px 0",borderRadius:12,border:`1px solid ${on?A.accent:(dis?A.line:A.accent)}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:600,textAlign:"center",
+                      background:on?A.accent:(dis?"#F4F4F6":"#FFFFFF"),color:on?"#FFFFFF":(dis?A.soft:A.accent),
+                      boxShadow:dis?"none":(on?"0 3px 0 #1E3E35":"0 3px 0 #D7D7DE")}}>
+                    {lab}
+                  </button>
+                );
+              })}
             </div>
-            {sec.groups.map((g, gi) => (
-              <div key={gi} style={{marginBottom:16}}>
-                <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
-                <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
-                  {g.rows.map((m, mi) => {
-                    const a = m.team_a_name || "—", b = m.team_b_name || "—";
-                    const parts = (m.result || "").split("-");
-                    const ra = parts[0] || "", rb = parts[1] || "";
-                    const sch = m.status === "scheduled" || !m.result;
-                    const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
-                    return (
-                      <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                          <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
-                          <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
-                        </div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
-                          <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
-                          <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
-                        </div>
-                        {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
-                        {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            {cur === "main_draw" && renderMainDraw()}
+            {cur === "pool" && renderPools()}
+            {cur === "qualification" && renderQualis()}
           </div>
         );
-      })}
+      })()}
     </div>
   );
 }
