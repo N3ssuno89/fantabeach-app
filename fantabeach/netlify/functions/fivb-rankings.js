@@ -1,6 +1,7 @@
 // netlify/functions/fivb-rankings.js
-// Ingestione ranking ITA (M+F) dall'API → tabella isolata fivb_rankings (staging).
-// Non tocca nessuna tabella esistente. Idempotente: re-run aggiorna, non duplica.
+// Ingestione ranking ITA (M+F) dall'API → fivb_rankings (isolato)
+// + ALIMENTA player_history (prezzi FE) DALL'API invece che dal Google Sheet.
+//   Traduzione node -> player_id via player_node_map. ranking_prev/cost_prev come sync.js.
 
 const FIVB_BASE    = "https://fivbeach.com/api/v1";
 const FIVB_TOKEN   = process.env.FIVBEACH_TOKEN || "";
@@ -29,6 +30,7 @@ exports.handler = async (event) => {
     "Content-Type": "application/json",
     "Prefer": "resolution=merge-duplicates,return=minimal",
   };
+  const readHeaders = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 
   const fetchRanking = async (gender) => {
     const res = await fetch(`${FIVB_BASE}/rankings/ita?gender=${gender}`, {
@@ -50,7 +52,7 @@ exports.handler = async (event) => {
     return { snapshot_date, total: json.total ?? null, rows };
   };
 
-  const upsert = async (rows) => {
+  const upsertRankings = async (rows) => {
     let saved = 0;
     for (let i = 0; i < rows.length; i += 100) {
       const batch = rows.slice(i, i + 100);
@@ -58,21 +60,84 @@ exports.handler = async (event) => {
         method: "POST", headers: supaHeaders, body: JSON.stringify(batch),
       });
       if (res.ok) saved += batch.length;
-      else throw new Error("upsert: " + (await res.text()));
+      else throw new Error("upsert rankings: " + (await res.text()));
     }
     return saved;
   };
 
   try {
     const [m, f] = await Promise.all([fetchRanking("m"), fetchRanking("f")]);
-    const savedM = await upsert(m.rows);
-    const savedF = await upsert(f.rows);
+    const savedM = await upsertRankings(m.rows);
+    const savedF = await upsertRankings(f.rows);
+
+    // ── ALIMENTA player_history DALL'API ──
+    let phSaved = 0, phSkippedNoMap = 0;
+    try {
+      // 1) mappa node -> internal_id (player_id)
+      const pnmRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/player_node_map?select=internal_id,node&node=not.is.null`,
+        { headers: readHeaders }
+      );
+      const pnm = await pnmRes.json();
+      const nodeToId = {};
+      (Array.isArray(pnm) ? pnm : []).forEach(x => { if (x.node != null) nodeToId[String(x.node)] = x.internal_id; });
+
+      // 2) storico precedente: SOLO snapshot PRIMA di oggi (esclude i run di oggi).
+      //    Ordine desc -> il primo per player_id è lo snapshot più recente dei giorni scorsi.
+      const today = new Date().toISOString().slice(0, 10);
+      const prevRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost,synced_at&synced_at=lt.${today}T00:00:00Z&order=synced_at.desc&limit=20000`,
+        { headers: readHeaders }
+      );
+      const prevData = await prevRes.json();
+      const prevMap = {};
+      (Array.isArray(prevData) ? prevData : []).forEach(r => {
+        if (!prevMap[r.player_id]) {
+          prevMap[r.player_id] = { ranking: r.ranking, cost: r.cost };
+        }
+      });
+
+      // 3) costruisce le righe player_history da API (solo atleti mappati)
+      const nowISO = new Date().toISOString();
+      const phRows = [];
+      for (const r of [...m.rows, ...f.rows]) {
+        const pid = r.node != null ? nodeToId[String(r.node)] : null;
+        if (!pid) { phSkippedNoMap++; continue; }   // atleta senza mapping -> fuori (non posseduto)
+        const prev = prevMap[pid] || null;
+        phRows.push({
+          player_id:    pid,
+          player_name:  r.name,
+          gender:       r.gender,
+          ranking:      r.position,
+          cost:         r.price,
+          ranking_prev: prev?.ranking ?? null,
+          cost_prev:    prev?.cost ?? null,
+          synced_at:    nowISO,
+        });
+      }
+
+      // 4) scrive player_history in batch
+      const wHeaders = { ...supaHeaders, "Prefer": "return=minimal" };
+      for (let i = 0; i < phRows.length; i += 100) {
+        const batch = phRows.slice(i, i + 100);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/player_history`, {
+          method: "POST", headers: wHeaders, body: JSON.stringify(batch),
+        });
+        if (res.ok) phSaved += batch.length;
+        else console.error("[fivb-rankings] player_history batch error:", await res.text());
+      }
+    } catch (e) {
+      console.error("[fivb-rankings] player_history eccezione:", e.message);
+      // Non blocca l'ingestione fivb_rankings se player_history fallisce.
+    }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         ok: true,
         men:   { snapshot_date: m.snapshot_date, total: m.total, scaricati: m.rows.length, salvati: savedM },
         women: { snapshot_date: f.snapshot_date, total: f.total, scaricati: f.rows.length, salvati: savedF },
+        player_history: { scritti: phSaved, saltati_senza_mappa: phSkippedNoMap },
       }),
     };
   } catch (err) {
