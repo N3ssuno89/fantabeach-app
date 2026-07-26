@@ -2867,14 +2867,14 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                   setSyncResultsLoading(true);
                   try {
                     const body = eventId.trim() ? { event_id: eventId.trim() } : {};
-                    const res = await fetch("/.netlify/functions/sync-results", {
+                    const res = await fetch("/.netlify/functions/fivb-results", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify(body),
                     });
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const data = await res.json();
-                    if (data.error) throw new Error(data.error);
+                    if (data.error || data.ok === false) throw new Error(data.error || "Errore fivb-results");
 
                     const now = new Date().toLocaleString("it-IT", {
                       day:"2-digit", month:"2-digit",
@@ -2904,7 +2904,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                     // Reset cache partite così si ricaricano al prossimo click
                     setMatchResultsData({});
 
-                    const msg = `✓ ${data.resultsGenerated} risultati salvati (${data.matchesProcessed} partite)`;
+                    const eventi = Array.isArray(data.eventi) ? data.eventi : [];
+                    const totSalvati = eventi.reduce((s,e)=> s + (e.salvati||0), 0);
+                    const totPartite = eventi.reduce((s,e)=> s + (e.partite||0), 0);
+                    const skipped = eventi.filter(e => e.skip || e.error);
+                    const msg = `✓ ${totSalvati} risultati salvati (${totPartite} partite)`;
                     showNotif(msg);
                     // Notifica globale punteggi disponibili
                     try {
@@ -2915,9 +2919,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                         message: `🏆 Punteggi aggiornati! I risultati della tappa sono disponibili.`,
                       });
                     } catch(e) { /* silenzioso */ }
-                    if (data.warnings && data.warnings.length > 0) {
-                      console.warn("Sync warnings:", data.warnings);
-                      setTimeout(() => showNotif(`⚠️ ${data.warnings.length} warning — vedi console`, "error"), 2000);
+                    if (skipped.length > 0) {
+                      console.warn("fivb-results skip/error:", skipped);
+                      setTimeout(() => showNotif(`⚠️ ${skipped.length} eventi saltati — vedi console`, "error"), 2000);
                     }
                   } catch(e) {
                     console.error("Sync results error:", e);
