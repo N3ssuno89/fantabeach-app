@@ -1887,7 +1887,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           <div>
             {/* Profilo atleta inline nel mercato */}
             {selectedAthlete?(
-              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()} accessToken={accessToken}/>
+              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()} accessToken={accessToken} events={events} athletesData={athletes_data}/>
             ):(
             <div>
             {/* Market sub-tabs */}
@@ -4256,12 +4256,50 @@ function StatsAwards({ onBack, accessToken, athletesData }) {
 }
 
 
-function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessToken}) {
+function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessToken,events,athletesData}) {
   const cat  = getCategory(a.ranking);
   const diff = a.cost - (a.prevCost || a.cost);
   const rankDelta = a.rankDelta || null;
   const photo = ATHLETE_PHOTOS[a.id];
   const [fullHistory, setFullHistory] = React.useState(null);
+  const [lastResults, setLastResults] = React.useState(null);
+  const _athList = (a.gender === "F") ? (athletesData?.women || []) : (athletesData?.men || []);
+  const _nameById = Object.fromEntries(_athList.map(x => [x.id, x.name]));
+  const mateName = (id) => _nameById[id] || id;
+  useEffect(() => {
+    if (!accessToken || !a.id) { setLastResults([]); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const db = await supabase.from("match_results", accessToken);
+        const own = await db.select(
+          "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
+          `&player_id=eq.${a.id}&order=event_id.desc,match_index.desc&limit=5`
+        );
+        if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
+        const eventIds = [...new Set(own.map(r => r.event_id))];
+        const full = await db.select(
+          "event_id,match_index,opponent,player_id",
+          `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})&limit=2000`
+        );
+        const fullRows = Array.isArray(full) ? full : [];
+        const findMateId = (row) => {
+          const mate = fullRows.find(r =>
+            r.event_id === row.event_id && r.match_index === row.match_index &&
+            r.opponent === row.opponent && r.player_id !== a.id);
+          return mate ? mate.player_id : null;
+        };
+        const results = own.map(r => {
+          const coachWin = (r.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
+          const pts = Math.round(((r.base_pts || 0) + (r.bonus_pts || 0) - coachWin) * 100) / 100;
+          return { event_id: r.event_id, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, mateId: findMateId(r) };
+        });
+        if (!cancelled) setLastResults(results);
+      } catch(e) { if (!cancelled) setLastResults([]); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [a.id]);
 
   // Carica storico prezzi: 1 punto per giorno, max 30 giorni
   useEffect(() => {
@@ -4439,13 +4477,47 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
         })()}
       </div>
 
-      {/* ULTIMI RISULTATI — stato vuoto sicuro, nessun mock */}
+      {/* ULTIMI RISULTATI — ultime 5 partite da match_results */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px"}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Ultimi Risultati</div>
-        <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>
-          <div style={{fontSize:24,marginBottom:6}}>🏐</div>
-          Nessun risultato disponibile per questa atleta
-        </div>
+        {lastResults === null ? (
+          <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+        ) : lastResults.length === 0 ? (
+          <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>
+            <div style={{fontSize:24,marginBottom:6}}>🏐</div>
+            Nessun risultato disponibile
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {lastResults.map((r,i) => {
+              const win = (r.result||"").startsWith("2") || r.is_bye;
+              const tappa = events?.find(e => e.id === r.event_id)?.name || r.event_id;
+              const socio = r.mateId ? mateName(r.mateId) : "—";
+              return (
+                <div key={i} style={{background:B.cream,border:`1px solid ${B.creamDark}`,borderLeft:`3px solid ${win?B.greenDark:B.orange}`,borderRadius:10,padding:"9px 11px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,fontWeight:"bold",padding:"1px 7px",borderRadius:5,flexShrink:0,
+                      background:r.is_bye?B.greenPale:win?"#D1FAE5":"#FEE2E2",
+                      color:r.is_bye?B.greenDark:win?"#065F46":"#DC2626"}}>
+                      {r.is_bye?"BYE":(r.result||"—")}
+                    </span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tappa}</div>
+                      <div style={{fontSize:10,color:B.gray}}>{r.phase||"—"}{r.score?` · ${r.score}`:""}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:15,fontWeight:"bold",color:(r.pts||0)>0?B.greenDark:(r.pts||0)<0?B.orange:B.gray}}>
+                        {(r.pts||0)>0?`+${r.pts}`:(r.pts||0)}
+                      </div>
+                      <div style={{fontSize:8,color:B.gray}}>pt</div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:10,color:B.gray,marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>con {socio}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
