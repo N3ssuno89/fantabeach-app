@@ -34,7 +34,6 @@ exports.handler = async (event) => {
   const mapMatch = (vis_id, mm) => {
     const pa = mm.teams?.a?.players || [];
     const pb = mm.teams?.b?.players || [];
-    if (pa[0]) console.log("[DEBUG player feed]", JSON.stringify(pa[0]));
     return {
       tournament_vis_id: Number(vis_id),
       match_no: mm.match_no,
