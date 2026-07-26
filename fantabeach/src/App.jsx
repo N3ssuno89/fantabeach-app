@@ -4766,9 +4766,9 @@ function PageHistory({ authUser, accessToken, leagueId, leagues, events, coaches
         const finalPts = withMult * (isCaptain ? 1.3 : 1);
 
         const playerName =
+          athleteMap[l.player_id]?.name ||
           l.player_name ||
           byPlayer[l.player_id]?.player_name ||
-          athleteMap[l.player_id]?.name ||
           l.player_id;
 
         return { ...playerData, player_name: playerName, role, isStarter, isCaptain, rawPts, finalPts: Math.round(finalPts * 100) / 100 };
@@ -5260,7 +5260,7 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
             rawPts += (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts;
           });
           const finalPts = Math.round(rawPts * (et.weight || 1) * (isCaptain ? 1.3 : 1) * 100) / 100;
-          const name = l.player_name || pd.player_name || athleteMap[l.player_id]?.name || l.player_id;
+          const name = athleteMap[l.player_id]?.name || l.player_name || pd.player_name || l.player_id;
           return { player_id: l.player_id, name, matches: pd.matches, isStarter, isCaptain, rawPts, finalPts };
         });
 
