@@ -1525,7 +1525,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
       const tdb = await supabase.from("transfer_history", accessToken);
       await tdb.insert({ user_id:authUser.id, league_id:leagueId, player_id:a.id, player_name:a.name, action:"buy", price:a.cost, budget_after:newBudget });
-    } catch(e) { console.error("Errore acquisto:", e); }
+    } catch(e) {
+      console.error("Errore acquisto:", e);
+      // ROLLBACK UI: annulla l'update ottimistico
+      setRosters(r=>({...r,[leagueId]:r[leagueId].filter(x=>x.id!==a.id)}));
+      setBudgets(b=>({...b,[leagueId]:b[leagueId]+a.cost}));
+      showNotif("Errore di rete — acquisto annullato","error");
+    }
     finally { tradingRef.current = false; }
   };
 
@@ -1534,6 +1540,9 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
     if (!isOwned(a)) return; // blocca vendita di atleta non nel roster (double-click, stato stale)
     if (tradingRef.current) return; // blocca doppio click
     tradingRef.current = true;
+    // Salva stato per eventuale rollback
+    const _prevLineup = [...lineup];
+    const _wasCaptain = captain === a.id;
     // Aggiorna UI ottimisticamente
     setRosters(r=>({...r,[leagueId]:r[leagueId].filter(x=>x.id!==a.id)}));
     setLineups(l=>({...l,[leagueId]:l[leagueId].filter(id=>id!==a.id)}));
@@ -1557,7 +1566,15 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
       const tdb = await supabase.from("transfer_history", accessToken);
       await tdb.insert({ user_id:authUser.id, league_id:leagueId, player_id:a.id, player_name:a.name, action:"sell", price:a.cost, budget_after:newBudget });
-    } catch(e) { console.error("Errore vendita:", e); }
+    } catch(e) {
+      console.error("Errore vendita:", e);
+      // ROLLBACK UI: ripristina roster, lineup, capitano, budget
+      setRosters(r=>({...r,[leagueId]:[...r[leagueId],{...a}]}));
+      setLineups(l=>({...l,[leagueId]:_prevLineup}));
+      if (_wasCaptain) setCaptains(c=>({...c,[leagueId]:a.id}));
+      setBudgets(b=>({...b,[leagueId]:b[leagueId]-a.cost}));
+      showNotif("Errore di rete — vendita annullata","error");
+    }
     finally { tradingRef.current = false; }
   };
 
