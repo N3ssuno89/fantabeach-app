@@ -82,17 +82,17 @@ exports.handler = async (event) => {
       const nodeToId = {};
       (Array.isArray(pnm) ? pnm : []).forEach(x => { if (x.node != null) nodeToId[String(x.node)] = x.internal_id; });
 
-      // 2) storico precedente (snapshot di un giorno diverso da oggi) per ranking_prev/cost_prev
+      // 2) storico precedente: SOLO snapshot PRIMA di oggi (esclude i run di oggi).
+      //    Ordine desc -> il primo per player_id è lo snapshot più recente dei giorni scorsi.
       const today = new Date().toISOString().slice(0, 10);
       const prevRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost,synced_at&order=synced_at.desc&limit=5000`,
+        `${SUPABASE_URL}/rest/v1/player_history?select=player_id,ranking,cost,synced_at&synced_at=lt.${today}T00:00:00Z&order=synced_at.desc&limit=20000`,
         { headers: readHeaders }
       );
       const prevData = await prevRes.json();
       const prevMap = {};
       (Array.isArray(prevData) ? prevData : []).forEach(r => {
-        const rDay = (r.synced_at || "").slice(0, 10);
-        if (!prevMap[r.player_id] && rDay !== today) {
+        if (!prevMap[r.player_id]) {
           prevMap[r.player_id] = { ranking: r.ranking, cost: r.cost };
         }
       });
