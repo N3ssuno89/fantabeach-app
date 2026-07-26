@@ -4850,7 +4850,10 @@ const MatchRows = ({ matches }) => {
               const isSelected = selectedEventId === e.id;
               return (
                 <button key={e.id}
-                  onClick={()=>{ setSelectedEventId(e.id); loadHistory(e.id); }}
+                  onClick={()=>{
+  if (selectedEventId === e.id) { setSelectedEventId(null); setHistoryData(null); }
+  else { setSelectedEventId(e.id); loadHistory(e.id); }
+}}
                   style={{background:isSelected?B.greenDark:B.white,
                     border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,
                     borderLeft:`4px solid ${isSelected?B.white:et.color}`,
@@ -5310,7 +5313,10 @@ function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events
               const et = EVENT_TYPE_META[e.type] || EVENT_TYPE_META.Silver;
               const sel = selectedEventId === e.id;
               return (
-                <button key={e.id} onClick={()=>{ setSelectedEventId(e.id); loadAll(e.id); }}
+                <button key={e.id} onClick={()=>{
+                    if (selectedEventId === e.id) { setSelectedEventId(null); setData(null); setOpenUser(null); }
+                    else { setSelectedEventId(e.id); loadAll(e.id); }
+                  }}
                   style={{background:sel?B.greenDark:B.white,border:`1px solid ${sel?B.greenDark:B.creamDark}`,
                     borderLeft:`4px solid ${sel?B.white:et.color}`,borderRadius:10,padding:"11px 14px",cursor:"pointer",
                     fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
