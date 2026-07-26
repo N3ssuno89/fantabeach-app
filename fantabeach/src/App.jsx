@@ -1446,15 +1446,32 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   //   - Toggle marketOpen controlla tutto
   //   - In corso → sempre bloccato
   // Deadline: giovedì 23:00 → tutto bloccato automaticamente
+  // C'è un torneo che tocca QUESTO weekend per il genere della lega?
+  // Cerca un evento 2026 dello stesso genere con date_start da (oggi-3) a (oggi+4):
+  // copre sia il torneo imminente (venerdì) sia quello appena concluso (domenica).
+  const torneoQuestoWeekend = () => {
+    const oggi = new Date();
+    const da = new Date(oggi.getTime() - 3 * 86400000);
+    const a  = new Date(oggi.getTime() + 4 * 86400000);
+    return events.some(e => {
+      if ((e.anno || 2026) !== 2026) return false;
+      if ((e.gender || "").toUpperCase() !== league.gender) return false;
+      const ds = e.date_start || e.date || "";
+      if (!ds) return false;
+      const d = new Date(ds);
+      return d >= da && d <= a;
+    });
+  };
+
   const isDeadlinePassed = () => {
     const now = new Date();
     const day = now.getDay(); // 0=dom, 1=lun, 2=mar, 3=mer, 4=gio, 5=ven, 6=sab
     const hour = now.getHours();
-    if (day === 4 && hour >= 23) return true; // giovedì dopo le 23
-    if (day === 5 || day === 6 || day === 0) return true; // ven, sab, dom
-    return false;
+    const inFinestra = (day === 4 && hour >= 23) || day === 5 || day === 6 || day === 0;
+    if (!inFinestra) return false;
+    // Blocca nel weekend SOLO se c'è un torneo che tocca questo weekend
+    return torneoQuestoWeekend();
   };
-
   const canTrade = () => {
     if (myJoin !== "APPROVED") return false;
     if (tappaInCorso2026) return false; // tappa in corso → sempre bloccato
