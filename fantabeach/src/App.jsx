@@ -185,17 +185,20 @@ const ATHLETES_CACHE_KEY = "fb_athletes_cache";
 const cacheAthletes = (women, men) => {
   try {
     sessionStorage.setItem(ATHLETES_CACHE_KEY, JSON.stringify({
-      women, men, cachedAt: new Date().toISOString()
+      women, men, ts: Date.now(),   // ← salva il momento del salvataggio
     }));
   } catch(e) {}
 };
 
 // Carica atleti da sessionStorage se presenti
+const ATHLETES_CACHE_TTL = 10 * 60 * 1000; // 10 minuti in millisecondi
 const loadCachedAthletes = () => {
   try {
     const raw = sessionStorage.getItem(ATHLETES_CACHE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
+    // Se manca il timestamp (cache vecchia) o è passato più del TTL -> scaduta, ignorala
+    if (!data.ts || (Date.now() - data.ts) > ATHLETES_CACHE_TTL) return null;
     if (data.women?.length > 0 && data.men?.length > 0) return data;
   } catch(e) {}
   return null;
