@@ -4266,22 +4266,40 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
   const _athList = (a.gender === "F") ? (athletesData?.women || []) : (athletesData?.men || []);
   const _nameById = Object.fromEntries(_athList.map(x => [x.id, x.name]));
   const mateName = (id) => _nameById[id] || id;
+  const PHASE_IT = {
+    "QUALI 1":"Qualificazioni","QUALI 2":"Qualificazioni",
+    "POOL 1":"Pool","POOL 2":"Pool","POOL 3":"Pool","BYE POOL":"Bye Pool",
+    "ROUND OF 16":"Ottavi di finale","ROUND OF 12":"Round of 12","ROUND OF 8":"Ottavi di finale",
+    "QUARTER":"Quarti di finale","SEMI":"Semifinale","FINAL 1":"Finale","FINAL 3":"Finale 3°/4°",
+  };
+  const phaseLabel = (p) => PHASE_IT[p] || p || "—";
   useEffect(() => {
     if (!accessToken || !a.id) { setLastResults([]); return; }
     let cancelled = false;
     const load = async () => {
       try {
-        const db = await supabase.from("match_results", accessToken);
-        const own = await db.select(
+        const mrDb = await supabase.from("match_results", accessToken);
+        const own = await mrDb.select(
           "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
           `&player_id=eq.${a.id}&order=event_id.desc,match_index.desc&limit=5`
         );
         if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
         const eventIds = [...new Set(own.map(r => r.event_id))];
-        const full = await db.select(
-          "event_id,match_index,opponent,player_id",
-          `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})&limit=2000`
-        );
+        const [mapRows, full] = await Promise.all([
+          supabase.from("event_tournament_map", accessToken).then(db =>
+            db.select("event_id,vis_id", `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})`)),
+          mrDb.select("event_id,match_index,opponent,player_id",
+            `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})&limit=2000`),
+        ]);
+        const visByEvent = {};
+        (Array.isArray(mapRows) ? mapRows : []).forEach(m => { if (m.vis_id != null) visByEvent[m.event_id] = m.vis_id; });
+        const visIds = [...new Set(Object.values(visByEvent))];
+        const titleByVis = {};
+        if (visIds.length) {
+          const tRows = await supabase.from("fivb_tournaments", accessToken).then(db =>
+            db.select("vis_id,title", `&vis_id=in.(${visIds.join(",")})`));
+          (Array.isArray(tRows) ? tRows : []).forEach(t => { titleByVis[t.vis_id] = t.title; });
+        }
         const fullRows = Array.isArray(full) ? full : [];
         const findMateId = (row) => {
           const mate = fullRows.find(r =>
@@ -4292,7 +4310,9 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
         const results = own.map(r => {
           const coachWin = (r.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
           const pts = Math.round(((r.base_pts || 0) + (r.bonus_pts || 0) - coachWin) * 100) / 100;
-          return { event_id: r.event_id, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, mateId: findMateId(r) };
+          const vis = visByEvent[r.event_id];
+          const title = (vis != null && titleByVis[vis]) ? titleByVis[vis] : null;
+          return { event_id: r.event_id, title, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, mateId: findMateId(r) };
         });
         if (!cancelled) setLastResults(results);
       } catch(e) { if (!cancelled) setLastResults([]); }
@@ -4491,7 +4511,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {lastResults.map((r,i) => {
               const win = (r.result||"").startsWith("2") || r.is_bye;
-              const tappa = events?.find(e => e.id === r.event_id)?.name || r.event_id;
+              const tappa = r.title || events?.find(e => e.id === r.event_id)?.name || r.event_id;
               const socio = r.mateId ? mateName(r.mateId) : "—";
               return (
                 <div key={i} style={{background:B.cream,border:`1px solid ${B.creamDark}`,borderLeft:`3px solid ${win?B.greenDark:B.orange}`,borderRadius:10,padding:"9px 11px"}}>
@@ -4503,7 +4523,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                     </span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tappa}</div>
-                      <div style={{fontSize:10,color:B.gray}}>{r.phase||"—"}{r.score?` · ${r.score}`:""}</div>
+                      <div style={{fontSize:10,color:B.gray}}>{phaseLabel(r.phase)}{r.score?` · ${r.score}`:""}</div>
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{fontSize:15,fontWeight:"bold",color:(r.pts||0)>0?B.greenDark:(r.pts||0)<0?B.orange:B.gray}}>
