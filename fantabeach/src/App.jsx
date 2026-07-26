@@ -4279,17 +4279,27 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const mrDb = await supabase.from("match_results", accessToken);
+        // TUTTE le partite dell'atleta — ordiniamo lato JS (anno+evento), non per stringa event_id
         const own = await mrDb.select(
           "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
-          `&player_id=eq.${a.id}&order=event_id.desc,match_index.desc&limit=5`
+          `&player_id=eq.${a.id}&limit=500`
         );
         if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
-        const eventIds = [...new Set(own.map(r => r.event_id))];
+        // Ordina per anno (da events) desc, poi event_id desc, poi match_index desc; prendi le 5 piu' recenti
+        const annoById = {};
+        (events || []).forEach(e => { annoById[e.id] = e.anno || 0; });
+        const sorted = [...own].sort((x, y) => {
+          const ax = annoById[x.event_id] || 0, ay = annoById[y.event_id] || 0;
+          if (ax !== ay) return ay - ax;
+          if (x.event_id !== y.event_id) return x.event_id < y.event_id ? 1 : -1;
+          return (y.match_index || 0) - (x.match_index || 0);
+        }).slice(0, 5);
+        const top5Events = [...new Set(sorted.map(r => r.event_id))];
+        const inList = top5Events.map(e => `"${e}"`).join(",");
         const [mapRows, full] = await Promise.all([
           supabase.from("event_tournament_map", accessToken).then(db =>
-            db.select("event_id,vis_id", `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})`)),
-          mrDb.select("event_id,match_index,opponent,player_id",
-            `&event_id=in.(${eventIds.map(e=>`"${e}"`).join(",")})&limit=2000`),
+            db.select("event_id,vis_id", `&event_id=in.(${inList})`)),
+          mrDb.select("event_id,match_index,opponent,player_id", `&event_id=in.(${inList})&limit=2000`),
         ]);
         const visByEvent = {};
         (Array.isArray(mapRows) ? mapRows : []).forEach(m => { if (m.vis_id != null) visByEvent[m.event_id] = m.vis_id; });
@@ -4307,7 +4317,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
             r.opponent === row.opponent && r.player_id !== a.id);
           return mate ? mate.player_id : null;
         };
-        const results = own.map(r => {
+        const results = sorted.map(r => {
           const coachWin = (r.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
           const pts = Math.round(((r.base_pts || 0) + (r.bonus_pts || 0) - coachWin) * 100) / 100;
           const vis = visByEvent[r.event_id];
