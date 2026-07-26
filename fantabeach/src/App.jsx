@@ -1887,7 +1887,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           <div>
             {/* Profilo atleta inline nel mercato */}
             {selectedAthlete?(
-              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()} accessToken={accessToken}/>
+              <AthleteProfile a={selectedAthlete} onBack={()=>setSelectedAthlete(null)} isOwned={isOwned(selectedAthlete)} onBuy={()=>handleBuy(selectedAthlete)} onSell={()=>handleSell(selectedAthlete)} budget={budget} canTrade={canTrade()} accessToken={accessToken} events={events} athletesData={athletes_data}/>
             ):(
             <div>
             {/* Market sub-tabs */}
@@ -4256,12 +4256,88 @@ function StatsAwards({ onBack, accessToken, athletesData }) {
 }
 
 
-function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessToken}) {
+function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessToken,events,athletesData}) {
   const cat  = getCategory(a.ranking);
   const diff = a.cost - (a.prevCost || a.cost);
   const rankDelta = a.rankDelta || null;
   const photo = ATHLETE_PHOTOS[a.id];
   const [fullHistory, setFullHistory] = React.useState(null);
+  const [lastResults, setLastResults] = React.useState(null);
+  const _athList = (a.gender === "F") ? (athletesData?.women || []) : (athletesData?.men || []);
+  const _nameById = Object.fromEntries(_athList.map(x => [x.id, x.name]));
+  const surnameOf = (id) => {
+    const full = _nameById[id];
+    if (!full) return id;
+    const toks = full.trim().split(" ");
+    return (toks.length === 1 ? toks[0] : toks.slice(0, -1).join(" ")).toUpperCase();
+  };
+  const teamLabel = (ids) => (ids || []).map(surnameOf).join(" / ") || "\u2014";
+  const PHASE_IT = {
+    "QUALI 1":"Qualificazioni","QUALI 2":"Qualificazioni",
+    "POOL 1":"Pool","POOL 2":"Pool","POOL 3":"Pool","BYE POOL":"Bye Pool",
+    "ROUND OF 16":"Ottavi di finale","ROUND OF 12":"Round of 12","ROUND OF 8":"Ottavi di finale",
+    "QUARTER":"Quarti di finale","SEMI":"Semifinale","FINAL 1":"Finale","FINAL 3":"Finale 3\u00b0/4\u00b0",
+  };
+  const phaseLabel = (p) => PHASE_IT[p] || p || "\u2014";
+  useEffect(() => {
+    if (!accessToken || !a.id) { setLastResults([]); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const mrDb = await supabase.from("match_results", accessToken);
+        const own = await mrDb.select(
+          "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
+          `&player_id=eq.${a.id}&limit=500`
+        );
+        if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
+        const annoById = {};
+        (events || []).forEach(e => { annoById[e.id] = e.anno || 0; });
+        const sorted = [...own].sort((x, y) => {
+          const ax = annoById[x.event_id] || 0, ay = annoById[y.event_id] || 0;
+          if (ax !== ay) return ay - ax;
+          if (x.event_id !== y.event_id) return x.event_id < y.event_id ? 1 : -1;
+          return (y.match_index || 0) - (x.match_index || 0);
+        }).slice(0, 5);
+        const top5Events = [...new Set(sorted.map(r => r.event_id))];
+        const inList = top5Events.map(e => `"${e}"`).join(",");
+        const [mapRows, full] = await Promise.all([
+          supabase.from("event_tournament_map", accessToken).then(db =>
+            db.select("event_id,vis_id", `&event_id=in.(${inList})`)),
+          mrDb.select("event_id,match_index,player_id,result,is_bye", `&event_id=in.(${inList})&limit=2000`),
+        ]);
+        const visByEvent = {};
+        (Array.isArray(mapRows) ? mapRows : []).forEach(m => { if (m.vis_id != null) visByEvent[m.event_id] = m.vis_id; });
+        const visIds = [...new Set(Object.values(visByEvent))];
+        const titleByVis = {};
+        if (visIds.length) {
+          const tRows = await supabase.from("fivb_tournaments", accessToken).then(db =>
+            db.select("vis_id,title", `&vis_id=in.(${visIds.join(",")})`));
+          (Array.isArray(tRows) ? tRows : []).forEach(t => { titleByVis[t.vis_id] = t.title; });
+        }
+        const fullRows = Array.isArray(full) ? full : [];
+        // opponent e' VUOTO in match_results -> ricostruisco le squadre dal RISULTATO:
+        // compagni = stesso result della riga; avversari = result diverso (invertito).
+        const teamsOf = (row) => {
+          const same = fullRows.filter(r =>
+            r.event_id === row.event_id && r.match_index === row.match_index);
+          const myTeam = same.filter(r => r.result === row.result).map(r => r.player_id);
+          const oppTeam = same.filter(r => r.result !== row.result).map(r => r.player_id);
+          return { myTeam, oppTeam };
+        };
+        const results = sorted.map(r => {
+          const coachWin = (r.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
+          const pts = Math.round(((r.base_pts || 0) + (r.bonus_pts || 0) - coachWin) * 100) / 100;
+          const vis = visByEvent[r.event_id];
+          const title = (vis != null && titleByVis[vis]) ? titleByVis[vis] : null;
+          const { myTeam, oppTeam } = teamsOf(r);
+          return { event_id: r.event_id, title, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, myTeam, oppTeam };
+        });
+        if (!cancelled) setLastResults(results);
+      } catch(e) { if (!cancelled) setLastResults([]); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [a.id]);
 
   // Carica storico prezzi: 1 punto per giorno, max 30 giorni
   useEffect(() => {
@@ -4269,25 +4345,21 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const db = await supabase.from("player_history", accessToken);
-        // Prende tutte le righe ordinate per data — poi deduplicha per giorno lato JS
         const rows = await db.select("cost,ranking,synced_at",
           `&player_id=eq.${a.id}&order=synced_at.asc&limit=500`);
         if (Array.isArray(rows) && rows.length > 0) {
-          // Deduplica: tieni solo L'ULTIMA riga per ogni giorno
           const byDay = {};
           rows.forEach(r => {
-            const day = (r.synced_at || "").slice(0, 10); // "2026-05-13"
-            byDay[day] = r; // sovrascrive → tieni l'ultima del giorno
+            const day = (r.synced_at || "").slice(0, 10);
+            byDay[day] = r;
           });
-          // Ordina per giorno e prendi max 30
           const deduplicated = Object.values(byDay)
             .sort((a, b) => a.synced_at.localeCompare(b.synced_at))
             .slice(-30);
-          // Forza l'ultimo punto al valore corrente dell'atleta
           if (deduplicated.length > 0) {
             deduplicated[deduplicated.length - 1] = {
               ...deduplicated[deduplicated.length - 1],
-              cost: a.cost, // valore corrente
+              cost: a.cost,
               ranking: a.ranking,
             };
           }
@@ -4384,7 +4456,6 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           Andamento Prezzo {fullHistory===null&&<span style={{fontSize:9,color:B.gray,fontWeight:"normal"}}>⏳</span>}
         </div>
         {(() => {
-          // Dimensioni responsive — usa viewBox largo, si scala al 100% del contenitore
           const W = 360, H = 120, PAD = 28;
           const innerW = W - PAD * 2;
           const n = historyData.length;
@@ -4393,7 +4464,6 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           const pts = historyData.map((h,i) => `${px(i)},${py(h.cost)}`).join(" ");
           const area = `${PAD},${H-26} ${pts} ${px(n-1)},${H-26}`;
 
-          // Mostra label solo primo, ultimo e punti con cambio valore
           const showLabel = (i) => {
             if (i === 0 || i === n-1) return true;
             return historyData[i].cost !== historyData[i-1].cost;
@@ -4410,13 +4480,11 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                 {historyData.map((h,i)=>{
                   const isLast = i === n-1;
                   const changed = i > 0 && h.cost !== historyData[i-1].cost;
-                  // Mostra cerchio su tutti i punti ma più piccolo sui punti invariati
                   const r = (isLast || changed) ? 5 : 2.5;
                   const fillColor = isLast ? B.orange : B.greenDark;
                   return (
                     <g key={i}>
                       <circle cx={px(i)} cy={py(h.cost)} r={r} fill={fillColor}/>
-                      {/* Mostra etichetta $ solo su primo, ultimo e cambio */}
                       {(i===0 || isLast || changed) && (
                         <text x={px(i)} y={py(h.cost)-9}
                           textAnchor={i===0?"start":isLast?"end":"middle"}
@@ -4429,7 +4497,6 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                   );
                 })}
               </svg>
-              {/* Label date — solo primo e ultimo */}
               <div style={{display:"flex",justifyContent:"space-between",marginTop:4,paddingLeft:PAD-4,paddingRight:PAD-4}}>
                 <div style={{fontSize:10,color:B.gray}}>{historyData[0]?.label}</div>
                 <div style={{fontSize:10,color:B.orange,fontWeight:"bold"}}>{historyData[n-1]?.label} (ora)</div>
@@ -4439,13 +4506,50 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
         })()}
       </div>
 
-      {/* ULTIMI RISULTATI — stato vuoto sicuro, nessun mock */}
+      {/* ULTIMI RISULTATI — ultime 5 partite da match_results */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:12,padding:"14px 13px"}}>
         <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,marginBottom:10}}>Ultimi Risultati</div>
-        <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>
-          <div style={{fontSize:24,marginBottom:6}}>🏐</div>
-          Nessun risultato disponibile per questa atleta
-        </div>
+        {lastResults === null ? (
+          <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>
+        ) : lastResults.length === 0 ? (
+          <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>
+            <div style={{fontSize:24,marginBottom:6}}>🏐</div>
+            Nessun risultato disponibile
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {lastResults.map((r,i) => {
+              const win = (r.result||"").startsWith("2") || r.is_bye;
+              const tappa = r.title || events?.find(e => e.id === r.event_id)?.name || r.event_id;
+              return (
+                <div key={i} style={{background:B.cream,border:`1px solid ${B.creamDark}`,borderLeft:`3px solid ${win?B.greenDark:B.orange}`,borderRadius:10,padding:"9px 11px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,fontWeight:"bold",padding:"1px 7px",borderRadius:5,flexShrink:0,
+                      background:r.is_bye?B.greenPale:win?"#D1FAE5":"#FEE2E2",
+                      color:r.is_bye?B.greenDark:win?"#065F46":"#DC2626"}}>
+                      {r.is_bye?"BYE":(r.result||"—")}
+                    </span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tappa}</div>
+                      <div style={{fontSize:10,color:B.gray}}>{phaseLabel(r.phase)}{r.score?` · ${r.score}`:""}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:15,fontWeight:"bold",color:(r.pts||0)>0?B.greenDark:(r.pts||0)<0?B.orange:B.gray}}>
+                        {(r.pts||0)>0?`+${r.pts}`:(r.pts||0)}
+                      </div>
+                      <div style={{fontSize:8,color:B.gray}}>pt</div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:10,color:B.dark,marginTop:5,display:"flex",alignItems:"center",gap:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <span style={{fontWeight:"bold",color:win?B.greenDark:B.dark}}>{teamLabel(r.myTeam)}</span>
+                    <span style={{color:B.gray,fontSize:9}}>vs</span>
+                    <span style={{color:win?B.dark:B.orange}}>{teamLabel(r.oppTeam)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
