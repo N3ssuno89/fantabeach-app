@@ -14,14 +14,34 @@
 # Reminder mercato chiude oggi — giovedì alle 10:00 ora italiana
 [functions.market-reminder]
   schedule = "0 8 * * 4"
-  
+
+# ─── FIVB: aggiornamento dati da fivbeach.com ───────────────────
+
+# Risultati partite: ogni 10 minuti (guardia interna: esce subito se nessun torneo "ongoing")
+[functions.fivb-matches]
+  schedule = "*/10 * * * *"
+
+# Stato tornei (upcoming/ongoing/finished): ogni ora al minuto :00
+# Cambiato da 6h a 1h per freeze tempestivo all'inizio tappa
+[functions.fivb-tournaments]
+  schedule = "0 * * * *"
+
+# Iscrizioni (coppie + coach): ogni giorno 04:30 UTC (06:30 Rome)
+[functions.fivb-entries]
+  schedule = "30 4 * * *"
+
+# Ranking (costo atleti): ogni giorno 04:45 UTC (06:45 Rome)
+[functions.fivb-rankings]
+  schedule = "45 4 * * *"
+
+# Allineamento anagrafica: ogni giorno 05:00 UTC (07:00 Rome), dopo entries/rankings
+[functions.fivb-players]
+  schedule = "0 5 * * *"
+
 [build.environment]
   NODE_VERSION = "20"
-  
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-
-
