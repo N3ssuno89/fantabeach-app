@@ -5201,6 +5201,98 @@ function PageRisultati({ event, accessToken, onBack }) {
       {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
 
       {!loading && view === "bracket" && matches && (() => {
+        const md = matches.filter(m => m.phase === "main_draw");
+        if (md.length === 0) return (
+          <div style={{textAlign:"center",padding:"48px 20px",color:A.sub,fontSize:14}}>
+            Nessun tabellone principale disponibile per questa tappa.
+          </div>
+        );
+        const pairSurnames = (name) => {
+          if (!name || /^BYE/i.test(name.trim())) return null;
+          return name.split(" - ").map(p => {
+            const t = p.trim().split(" ");
+            return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
+          }).join(" / ");
+        };
+        const isF34 = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
+        const isF12 = (r) => /1\s*\u00b0?\s*[-\/]\s*2/.test(r || "");
+        const groups = {};
+        md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
+        const roundList = Object.entries(groups)
+          .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+          .sort((a,b)=>a.minNo-b.minNo);
+        const f34 = roundList.find(g => isF34(g.round));
+        const cols = roundList.filter(g => !isF34(g.round));
+        if (cols.length === 0) return (
+          <div style={{textAlign:"center",padding:"48px 20px",color:A.sub,fontSize:14}}>Tabellone non disponibile.</div>
+        );
+        const roundLabel = (round) => {
+          if (isF12(round)) return "Finale 1°/2°";
+          return (round || "").replace(/\s*Vincenti/i, "").trim() || "Turno";
+        };
+        const BOX_W = 132, BOX_H = 38, COL_GAP = 30, LABEL_H = 22, SLOT = 50;
+        const n0 = cols[0].ms.length || 1;
+        const H = Math.max(n0, 1) * SLOT;
+        const colX = (c) => c * (BOX_W + COL_GAP);
+        const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].ms.length);
+        const containerW = cols.length * BOX_W + Math.max(cols.length - 1, 0) * COL_GAP;
+        const finaleColIdx = cols.length - 1;
+        const finaleCenterY = centerY(finaleColIdx, 0);
+        const containerH = LABEL_H + H + (f34 ? BOX_H + 40 : 0);
+        const linePaths = [];
+        for (let c = 0; c < cols.length - 1; c++) {
+          const childCount = cols[c + 1].ms.length;
+          for (let k = 0; k < childCount; k++) {
+            if (2 * k + 1 >= cols[c].ms.length) continue;
+            const fx = colX(c) + BOX_W, cx = colX(c + 1), mx = (fx + cx) / 2;
+            const y1 = centerY(c, 2 * k), y2 = centerY(c, 2 * k + 1), yk = centerY(c + 1, k);
+            linePaths.push(`M ${fx} ${y1} H ${mx} M ${fx} ${y2} H ${mx} M ${mx} ${y1} V ${y2} M ${mx} ${yk} H ${cx}`);
+          }
+        }
+        const MatchBox = ({ m, x, top }) => {
+          const aWin = (m.result || "").startsWith("2");
+          const bWin = !aWin && /^(0|1)-2/.test(m.result || "");
+          const aS = pairSurnames(m.team_a_name);
+          const bS = pairSurnames(m.team_b_name);
+          const rp = (m.result || "").split("-");
+          return (
+            <div style={{position:"absolute",left:x,top,width:BOX_W,height:BOX_H,background:A.card,border:`1px solid ${A.line}`,borderRadius:7,padding:"3px 7px",boxSizing:"border-box",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aS?(aWin?A.accent:A.text):A.soft,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aS || "BYE"}</span>
+                <span style={{flexShrink:0,fontWeight:700}}>{rp[0] || ""}</span>
+              </div>
+              <div style={{height:1,background:A.line,margin:"2px 0"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bS?(bWin?A.accent:A.text):A.soft,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bS || "BYE"}</span>
+                <span style={{flexShrink:0,fontWeight:700}}>{rp[1] || ""}</span>
+              </div>
+            </div>
+          );
+        };
+        return (
+          <div style={{overflowX:"auto",paddingBottom:10}}>
+            <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW}}>
+              <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
+                {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
+              </svg>
+              {cols.map((col,c) => (
+                <div key={"lbl"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>
+                  {roundLabel(col.round)}
+                </div>
+              ))}
+              {cols.map((col,c) => col.ms.map((m,j) => (
+                <MatchBox key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
+              )))}
+              {f34 && f34.ms.map((m,j) => (
+                <React.Fragment key={"f34"+j}>
+                  <div style={{position:"absolute",left:colX(finaleColIdx),top:finaleCenterY + BOX_H/2 + 14,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>Finale 3°/4°</div>
+                  <MatchBox m={m} x={colX(finaleColIdx)} top={finaleCenterY + BOX_H/2 + 32}/>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {!loading && view === "lista" && matches && matches.length === 0 && (
         <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
