@@ -4311,14 +4311,19 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
         (Array.isArray(mapRows) ? mapRows : []).forEach(m => { if (m.vis_id != null) visByEvent[m.event_id] = m.vis_id; });
         const visIds = [...new Set(Object.values(visByEvent))];
         const titleByVis = {};
+        const fmByKey = {};
         if (visIds.length) {
-          const tRows = await supabase.from("fivb_tournaments", accessToken).then(db =>
-            db.select("vis_id,title", `&vis_id=in.(${visIds.join(",")})`));
+          const [tRows, fmRows] = await Promise.all([
+            supabase.from("fivb_tournaments", accessToken).then(db =>
+              db.select("vis_id,title", `&vis_id=in.(${visIds.join(",")})`)),
+            supabase.from("fivb_matches", accessToken).then(db =>
+              db.select("match_no,tournament_vis_id,team_a_name,team_b_name", `&tournament_vis_id=in.(${visIds.join(",")})&limit=2000`)),
+          ]);
           (Array.isArray(tRows) ? tRows : []).forEach(t => { titleByVis[t.vis_id] = t.title; });
+          (Array.isArray(fmRows) ? fmRows : []).forEach(m => { fmByKey[`${m.tournament_vis_id}_${m.match_no}`] = { a: m.team_a_name || "", b: m.team_b_name || "" }; });
         }
         const fullRows = Array.isArray(full) ? full : [];
-        // Ricostruisce le due squadre di una partita: opponent e' vuoto, quindi si usa il RISULTATO.
-        // Compagni = stesso result di Mattavelli; avversari = result invertito.
+        // FALLBACK (eventi senza fivb_matches, es. 2025): ricostruzione dai player_id via risultato
         const teamsOf = (row) => {
           const same = fullRows.filter(r =>
             r.event_id === row.event_id && r.match_index === row.match_index);
@@ -4326,13 +4331,35 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           const oppTeam = same.filter(r => r.result !== row.result).map(r => r.player_id);
           return { myTeam, oppTeam };
         };
+        // "COGNOME NOME - COGNOME NOME" -> "COGNOME / COGNOME"
+        const teamSurnames = (str) => {
+          if (!str) return "\u2014";
+          if (/^BYE/i.test(str.trim())) return "BYE";
+          return str.split(" - ").map(p => {
+            const t = p.trim().split(" ");
+            return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
+          }).join(" / ");
+        };
+        const aSurn = surnameOf(a.id);
         const results = sorted.map(r => {
           const coachWin = (r.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
           const pts = Math.round(((r.base_pts || 0) + (r.bonus_pts || 0) - coachWin) * 100) / 100;
           const vis = visByEvent[r.event_id];
           const title = (vis != null && titleByVis[vis]) ? titleByVis[vis] : null;
-          const { myTeam, oppTeam } = teamsOf(r);
-          return { event_id: r.event_id, title, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, myTeam, oppTeam };
+          // Nomi dalle stringhe di fivb_matches: fonte con TUTTI gli atleti (anche fuori ranking, es. Schwan)
+          const fm = (vis != null) ? fmByKey[`${vis}_${r.match_index}`] : null;
+          let myLabel, oppLabel;
+          if (fm) {
+            const inA = (fm.a || "").toUpperCase().includes(aSurn);
+            const inB = (fm.b || "").toUpperCase().includes(aSurn);
+            if (inA && !inB)      { myLabel = teamSurnames(fm.a); oppLabel = teamSurnames(fm.b); }
+            else if (inB && !inA) { myLabel = teamSurnames(fm.b); oppLabel = teamSurnames(fm.a); }
+          }
+          if (myLabel === undefined) {
+            const { myTeam, oppTeam } = teamsOf(r);
+            myLabel = teamLabel(myTeam); oppLabel = teamLabel(oppTeam);
+          }
+          return { event_id: r.event_id, title, phase: r.phase, result: r.result, score: r.score, is_bye: r.is_bye, pts, myLabel, oppLabel };
         });
         if (!cancelled) setLastResults(results);
       } catch(e) { if (!cancelled) setLastResults([]); }
@@ -4552,9 +4579,9 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                     </div>
                   </div>
                   <div style={{fontSize:10,color:B.dark,marginTop:5,display:"flex",alignItems:"center",gap:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <span style={{fontWeight:"bold",color:win?B.greenDark:B.dark}}>{teamLabel(r.myTeam)}</span>
+                    <span style={{fontWeight:"bold",color:win?B.greenDark:B.dark}}>{r.myLabel}</span>
                     <span style={{color:B.gray,fontSize:9}}>vs</span>
-                    <span style={{color:win?B.dark:B.orange}}>{teamLabel(r.oppTeam)}</span>
+                    <span style={{color:win?B.dark:B.orange}}>{r.oppLabel}</span>
                   </div>
                 </div>
               );
