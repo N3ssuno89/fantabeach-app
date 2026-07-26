@@ -5099,6 +5099,7 @@ function PageRisultati({ event, accessToken, onBack }) {
   const [matches, setMatches] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [view, setView] = React.useState("lista");   // "lista" | "bracket"
+  const [bphase, setBphase] = React.useState(null); // fase bracket: qualification | pool | main_draw
 
   const A = { card:"#FFFFFF", line:"#ECECF0", text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8", accent:"#2D5C4F", track:"#EDEDF1" };
   const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
@@ -5214,94 +5215,160 @@ function PageRisultati({ event, accessToken, onBack }) {
     );
   };
 
-  const renderBracket = (sec, si) => {
-    const pm = phaseMeta.main_draw;
-    const md = matches.filter(m => m.phase === "main_draw");
-    const pairSurnames = (name) => {
-      if (!name || /^BYE/i.test(name.trim())) return null;
-      return name.split(" - ").map(p => {
-        const t = p.trim().split(" ");
-        return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
-      }).join(" / ");
-    };
-    const isF34 = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
-    const groups = {};
-    md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
-    const roundList = Object.entries(groups)
-      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
-      .sort((a,b)=>a.minNo-b.minNo);
-    const f34 = roundList.find(g => isF34(g.round));
-    const cols = roundList.filter(g => !isF34(g.round));
-    if (cols.length === 0) return null;
-    const labelFor = (round, count) => groupInfo("main_draw", null, round, count, 0).label;
-    const BOX_W = 132, BOX_H = 38, COL_GAP = 30, LABEL_H = 22, SLOT = 50;
-    const n0 = cols[0].ms.length || 1;
+  // ---------- BRACKET GENERICO (usato da qualifiche, pool, main draw) ----------
+  const emptyStyle = { color: A.sub, fontSize: 14, textAlign: "center", padding: "40px 0" };
+  const surnamesOf = (name) => {
+    if (!name || /^BYE/i.test(name.trim())) return "BYE";
+    return name.split(" - ").map(p => {
+      const t = p.trim().split(" ");
+      return (t.length === 1 ? t[0] : t.slice(0, -1).join(" ")).toUpperCase();
+    }).join("/");
+  };
+  const isSemi = (r) => /semifinale/i.test(r || "");
+  const isF34r = (r) => /3\s*\u00b0?\s*[-\/]\s*4/.test(r || "");
+  const isF12r = (r) => /1\s*\u00b0?\s*[-\/]\s*2/.test(r || "");
+
+  const Bracket = ({ cols, f34, colLabels, f34Label, boxW }) => {
+    const BOX_W = boxW || 128, BOX_H = 38, COL_GAP = 26, SLOT = 50;
+    const LABEL_H = colLabels ? 20 : 6;
+    const n0 = (cols[0] || []).length || 1;
     const H = Math.max(n0, 1) * SLOT;
     const colX = (c) => c * (BOX_W + COL_GAP);
-    const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].ms.length);
+    const centerY = (c, j) => LABEL_H + (j + 0.5) * (H / cols[c].length);
     const containerW = cols.length * BOX_W + Math.max(cols.length - 1, 0) * COL_GAP;
-    const finaleColIdx = cols.length - 1;
-    const finaleCenterY = centerY(finaleColIdx, 0);
-    const containerH = LABEL_H + H + (f34 ? BOX_H + 40 : 0);
+    const lastIdx = cols.length - 1;
+    const finaleCenterY = centerY(lastIdx, 0);
+    const containerH = LABEL_H + H + (f34 ? BOX_H + 34 : 0);
     const linePaths = [];
     for (let c = 0; c < cols.length - 1; c++) {
-      const childCount = cols[c + 1].ms.length;
-      for (let k = 0; k < childCount; k++) {
-        if (2 * k + 1 >= cols[c].ms.length) continue;
+      for (let k = 0; k < cols[c + 1].length; k++) {
+        if (2 * k + 1 >= cols[c].length) continue;
         const fx = colX(c) + BOX_W, cx = colX(c + 1), mx = (fx + cx) / 2;
         const y1 = centerY(c, 2 * k), y2 = centerY(c, 2 * k + 1), yk = centerY(c + 1, k);
         linePaths.push(`M ${fx} ${y1} H ${mx} M ${fx} ${y2} H ${mx} M ${mx} ${y1} V ${y2} M ${mx} ${yk} H ${cx}`);
       }
     }
-    const MatchBox = ({ m, x, top }) => {
+    const Box = ({ m, x, top }) => {
       const aWin = (m.result || "").startsWith("2");
       const bWin = !aWin && /^(0|1)-2/.test(m.result || "");
-      const aS = pairSurnames(m.team_a_name);
-      const bS = pairSurnames(m.team_b_name);
       const rp = (m.result || "").split("-");
+      const sch = m.status === "scheduled" || !m.result;
       return (
         <div style={{position:"absolute",left:x,top,width:BOX_W,height:BOX_H,background:A.card,border:`1px solid ${A.line}`,borderRadius:7,padding:"3px 7px",boxSizing:"border-box",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aS?(aWin?A.accent:A.text):A.soft,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
-            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aS || "BYE"}</span>
-            <span style={{flexShrink:0,fontWeight:700}}>{rp[0] || ""}</span>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:aWin?A.accent:A.text,fontWeight:aWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{surnamesOf(m.team_a_name)}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{sch?"":rp[0]}</span>
           </div>
           <div style={{height:1,background:A.line,margin:"2px 0"}}/>
-          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bS?(bWin?A.accent:A.text):A.soft,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
-            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bS || "BYE"}</span>
-            <span style={{flexShrink:0,fontWeight:700}}>{rp[1] || ""}</span>
+          <div style={{display:"flex",justifyContent:"space-between",gap:3,color:bWin?A.accent:A.text,fontWeight:bWin?700:400,fontSize:8.5,lineHeight:1.35}}>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{surnamesOf(m.team_b_name)}</span>
+            <span style={{flexShrink:0,fontWeight:700}}>{sch?"":rp[1]}</span>
           </div>
         </div>
       );
     };
     return (
-      <div key={si} style={{marginBottom:26}}>
-        <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
-          <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
-        </div>
-        <div style={{overflowX:"auto",paddingBottom:10}}>
-          <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW}}>
-            <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
-              {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
-            </svg>
-            {cols.map((col,c) => (
-              <div key={"lbl"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>
-                {labelFor(col.round, col.ms.length)}
-              </div>
-            ))}
-            {cols.map((col,c) => col.ms.map((m,j) => (
-              <MatchBox key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
-            )))}
-            {f34 && f34.ms.map((m,j) => (
-              <React.Fragment key={"f34"+j}>
-                <div style={{position:"absolute",left:colX(finaleColIdx),top:finaleCenterY + BOX_H/2 + 14,width:BOX_W,textAlign:"center",fontSize:10,fontWeight:700,color:A.text,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>Finale 3°/4°</div>
-                <MatchBox m={m} x={colX(finaleColIdx)} top={finaleCenterY + BOX_H/2 + 32}/>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
+      <div style={{position:"relative",width:containerW,height:containerH,minWidth:containerW,flexShrink:0}}>
+        <svg width={containerW} height={containerH} style={{position:"absolute",left:0,top:0,pointerEvents:"none"}}>
+          {linePaths.map((d,i) => <path key={i} d={d} fill="none" stroke={A.soft} strokeWidth="1.5"/>)}
+        </svg>
+        {colLabels && cols.map((col,c) => (
+          <div key={"l"+c} style={{position:"absolute",left:colX(c),top:0,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{colLabels[c]||""}</div>
+        ))}
+        {cols.map((col,c) => col.map((m,j) => (
+          <Box key={c+"-"+j} m={m} x={colX(c)} top={centerY(c,j) - BOX_H/2}/>
+        )))}
+        {f34 && (
+          <>
+            <div style={{position:"absolute",left:colX(lastIdx),top:finaleCenterY + BOX_H/2 + 10,width:BOX_W,textAlign:"center",fontSize:9,fontWeight:700,color:A.sub,textTransform:"uppercase",letterSpacing:0.3,whiteSpace:"nowrap"}}>{f34Label || "3\u00b0/4\u00b0"}</div>
+            <Box m={f34} x={colX(lastIdx)} top={finaleCenterY + BOX_H/2 + 26}/>
+          </>
+        )}
       </div>
     );
   };
+
+  const renderMainDraw = () => {
+    const md = matches.filter(m => m.phase === "main_draw");
+    if (md.length === 0) return <div style={emptyStyle}>Main draw non ancora iniziato.</div>;
+    const groups = {};
+    md.forEach(m => { (groups[m.round] = groups[m.round] || []).push(m); });
+    const roundList = Object.entries(groups)
+      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+      .sort((a,b)=>a.minNo-b.minNo);
+    const f34g = roundList.find(g => isF34r(g.round));
+    const colsG = roundList.filter(g => !isF34r(g.round));
+    if (colsG.length === 0) return <div style={emptyStyle}>Main draw non ancora iniziato.</div>;
+    const cols = colsG.map(g => g.ms);
+    const colLabels = colsG.map(g => groupInfo("main_draw", null, g.round, g.ms.length, 0).label);
+    const f34 = f34g ? f34g.ms[0] : null;
+    return (
+      <div style={{overflowX:"auto",paddingBottom:10}}>
+        <Bracket cols={cols} f34={f34} colLabels={colLabels} boxW={132}/>
+      </div>
+    );
+  };
+
+  const renderPools = () => {
+    const pmatches = matches.filter(m => m.phase === "pool");
+    if (pmatches.length === 0) return <div style={emptyStyle}>Pool non ancora iniziate.</div>;
+    const byPool = {};
+    pmatches.forEach(m => { (byPool[m.pool] = byPool[m.pool] || []).push(m); });
+    const pools = Object.keys(byPool).sort();
+    return (
+      <div style={{display:"flex",flexWrap:"wrap",gap:18,alignItems:"flex-start"}}>
+        {pools.map(pl => {
+          const rows = byPool[pl];
+          const semis = rows.filter(m => isSemi(m.round)).sort((a,b)=>a.match_no-b.match_no);
+          if (semis.length === 0) return null;
+          const f12 = rows.find(m => isF12r(m.round));
+          const f34 = rows.find(m => isF34r(m.round)) || null;
+          const cols = f12 ? [semis, [f12]] : [semis];
+          const colLabels = f12 ? ["Semifinali", "Finale"] : ["Semifinali"];
+          return (
+            <div key={pl}>
+              <div style={{fontSize:12,fontWeight:700,color:A.text,marginBottom:6}}>Pool {pl}</div>
+              <Bracket cols={cols} f34={f34} colLabels={colLabels} f34Label={"3\u00b0/4\u00b0"} boxW={122}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderQualis = () => {
+    const qmatches = matches.filter(m => m.phase === "qualification");
+    if (qmatches.length === 0) return <div style={emptyStyle}>Qualificazioni non disponibili.</div>;
+    const byPer = {};
+    qmatches.forEach(m => { (byPer[m.round] = byPer[m.round] || []).push(m); });
+    const percorsi = Object.entries(byPer)
+      .map(([round, ms]) => ({ round, ms: [...ms].sort((a,b)=>a.match_no-b.match_no), minNo: Math.min(...ms.map(x=>x.match_no)) }))
+      .sort((a,b)=>a.minNo-b.minNo);
+    return (
+      <div style={{display:"flex",flexWrap:"wrap",gap:18,alignItems:"flex-start"}}>
+        {percorsi.map((p, pi) => {
+          const ms = p.ms;
+          let cols, colLabels;
+          if (ms.length >= 2) {
+            const r2 = ms[ms.length - 1];
+            const r1 = ms.slice(0, ms.length - 1);
+            cols = [r1, [r2]];
+            colLabels = ["Turno 1", "Turno 2"];
+          } else {
+            cols = [ms];
+            colLabels = ["Turno 1"];
+          }
+          return (
+            <div key={pi}>
+              <div style={{fontSize:12,fontWeight:700,color:A.text,marginBottom:6,maxWidth:270,lineHeight:1.25}}>{p.round}</div>
+              <Bracket cols={cols} colLabels={colLabels} boxW={122}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
 
   return (
     <div style={{fontFamily:SANS}}>
@@ -5332,11 +5399,37 @@ function PageRisultati({ event, accessToken, onBack }) {
         <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
       )}
 
-      {!loading && matches && matches.length > 0 && sections.map((sec, si) =>
-        (view === "bracket" && sec.phase === "main_draw")
-          ? renderBracket(sec, si)
-          : renderSection(sec, si)
-      )}
+      {!loading && view === "lista" && matches && matches.length > 0 &&
+        sections.map((sec, si) => renderSection(sec, si))}
+
+      {!loading && view === "bracket" && matches && matches.length > 0 && (() => {
+        const hasQ = matches.some(m => m.phase === "qualification");
+        const hasP = matches.some(m => m.phase === "pool");
+        const hasM = matches.some(m => m.phase === "main_draw");
+        const avail = { qualification: hasQ, pool: hasP, main_draw: hasM };
+        const def = hasM ? "main_draw" : hasP ? "pool" : "qualification";
+        const cur = (bphase && avail[bphase]) ? bphase : def;
+        const btns = [["qualification","Qualifiche"],["pool","Pool"],["main_draw","Main Draw"]];
+        return (
+          <div>
+            <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+              {btns.map(([ph,lab]) => {
+                const on = cur === ph, dis = !avail[ph];
+                return (
+                  <button key={ph} disabled={dis} onClick={() => setBphase(ph)}
+                    style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${on?A.accent:A.line}`,cursor:dis?"not-allowed":"pointer",fontFamily:SANS,fontSize:12,fontWeight:on?700:500,
+                      background:on?A.accent:"#FFFFFF",color:on?"#FFFFFF":(dis?A.soft:A.text),opacity:dis?0.55:1}}>
+                    {lab}
+                  </button>
+                );
+              })}
+            </div>
+            {cur === "main_draw" && renderMainDraw()}
+            {cur === "pool" && renderPools()}
+            {cur === "qualification" && renderQualis()}
+          </div>
+        );
+      })()}
     </div>
   );
 }
