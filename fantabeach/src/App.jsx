@@ -3044,7 +3044,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         </div>
       )}
 
-      <style>{`*{box-sizing:border-box;}button,input,select{font-family:Georgia,serif;}input::placeholder{color:${B.grayLight};}::-webkit-scrollbar{display:none;}`}</style>
+      <style>{`*{box-sizing:border-box;}button,input,select{font-family:Georgia,serif;}input::placeholder{color:${B.grayLight};}::-webkit-scrollbar{display:none;}.fb-btn3d{transition:transform .07s ease, box-shadow .07s ease;}.fb-btn3d:active:not(:disabled){transform:translateY(2px);box-shadow:none !important;}`}</style>
     </div>
   );
 }
@@ -3054,7 +3054,7 @@ function MenuPage({ title, emoji, onBack, children }) {
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif"}}>← Indietro</button>
+        <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
         <span style={{fontSize:20}}>{emoji}</span>
         <div style={{fontWeight:"bold",fontSize:17,color:B.dark}}>{title}</div>
       </div>
@@ -3451,7 +3451,7 @@ function StatPage({ title, emoji, onBack, children }) {
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{background:B.sandDark,padding:"16px",borderBottom:`1px solid ${B.sandDeep}`,flexShrink:0}}>
-        <button onClick={onBack} style={{background:"transparent",border:"none",color:B.gray,cursor:"pointer",fontSize:13,fontFamily:"Georgia,serif",marginBottom:8}}>← back</button>
+        <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:8,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:22}}>{emoji}</span>
           <div style={{fontWeight:"bold",fontSize:17,color:B.dark}}>{title}</div>
@@ -4285,11 +4285,13 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const mrDb = await supabase.from("match_results", accessToken);
+        // TUTTE le partite dell'atleta — ordiniamo lato JS (anno+evento), non per stringa event_id
         const own = await mrDb.select(
           "event_id,match_index,phase,result,score,is_bye,opponent,base_pts,bonus_pts,bonus_codes",
           `&player_id=eq.${a.id}&limit=500`
         );
         if (!Array.isArray(own) || own.length === 0) { if (!cancelled) setLastResults([]); return; }
+        // Ordina per anno (da events) desc, poi event_id desc, poi match_index desc; prendi le 5 piu' recenti
         const annoById = {};
         (events || []).forEach(e => { annoById[e.id] = e.anno || 0; });
         const sorted = [...own].sort((x, y) => {
@@ -4315,8 +4317,8 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           (Array.isArray(tRows) ? tRows : []).forEach(t => { titleByVis[t.vis_id] = t.title; });
         }
         const fullRows = Array.isArray(full) ? full : [];
-        // opponent e' VUOTO in match_results -> ricostruisco le squadre dal RISULTATO:
-        // compagni = stesso result della riga; avversari = result diverso (invertito).
+        // Ricostruisce le due squadre di una partita: opponent e' vuoto, quindi si usa il RISULTATO.
+        // Compagni = stesso result di Mattavelli; avversari = result invertito.
         const teamsOf = (row) => {
           const same = fullRows.filter(r =>
             r.event_id === row.event_id && r.match_index === row.match_index);
@@ -4345,21 +4347,25 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
     const load = async () => {
       try {
         const db = await supabase.from("player_history", accessToken);
+        // Prende tutte le righe ordinate per data — poi deduplicha per giorno lato JS
         const rows = await db.select("cost,ranking,synced_at",
           `&player_id=eq.${a.id}&order=synced_at.asc&limit=500`);
         if (Array.isArray(rows) && rows.length > 0) {
+          // Deduplica: tieni solo L'ULTIMA riga per ogni giorno
           const byDay = {};
           rows.forEach(r => {
-            const day = (r.synced_at || "").slice(0, 10);
-            byDay[day] = r;
+            const day = (r.synced_at || "").slice(0, 10); // "2026-05-13"
+            byDay[day] = r; // sovrascrive → tieni l'ultima del giorno
           });
+          // Ordina per giorno e prendi max 30
           const deduplicated = Object.values(byDay)
             .sort((a, b) => a.synced_at.localeCompare(b.synced_at))
             .slice(-30);
+          // Forza l'ultimo punto al valore corrente dell'atleta
           if (deduplicated.length > 0) {
             deduplicated[deduplicated.length - 1] = {
               ...deduplicated[deduplicated.length - 1],
-              cost: a.cost,
+              cost: a.cost, // valore corrente
               ranking: a.ranking,
             };
           }
@@ -4390,7 +4396,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
 
   return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Indietro</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Indietro</button>
 
       {/* HEADER ATLETA */}
       <div style={{background:B.white,border:`1px solid ${B.creamDark}`,borderRadius:14,padding:"18px 16px",marginBottom:12,textAlign:"center"}}>
@@ -4456,6 +4462,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           Andamento Prezzo {fullHistory===null&&<span style={{fontSize:9,color:B.gray,fontWeight:"normal"}}>⏳</span>}
         </div>
         {(() => {
+          // Dimensioni responsive — usa viewBox largo, si scala al 100% del contenitore
           const W = 360, H = 120, PAD = 28;
           const innerW = W - PAD * 2;
           const n = historyData.length;
@@ -4464,6 +4471,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
           const pts = historyData.map((h,i) => `${px(i)},${py(h.cost)}`).join(" ");
           const area = `${PAD},${H-26} ${pts} ${px(n-1)},${H-26}`;
 
+          // Mostra label solo primo, ultimo e punti con cambio valore
           const showLabel = (i) => {
             if (i === 0 || i === n-1) return true;
             return historyData[i].cost !== historyData[i-1].cost;
@@ -4480,11 +4488,13 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                 {historyData.map((h,i)=>{
                   const isLast = i === n-1;
                   const changed = i > 0 && h.cost !== historyData[i-1].cost;
+                  // Mostra cerchio su tutti i punti ma più piccolo sui punti invariati
                   const r = (isLast || changed) ? 5 : 2.5;
                   const fillColor = isLast ? B.orange : B.greenDark;
                   return (
                     <g key={i}>
                       <circle cx={px(i)} cy={py(h.cost)} r={r} fill={fillColor}/>
+                      {/* Mostra etichetta $ solo su primo, ultimo e cambio */}
                       {(i===0 || isLast || changed) && (
                         <text x={px(i)} y={py(h.cost)-9}
                           textAnchor={i===0?"start":isLast?"end":"middle"}
@@ -4497,6 +4507,7 @@ function AthleteProfile({a,onBack,isOwned,onBuy,onSell,budget,canTrade,accessTok
                   );
                 })}
               </svg>
+              {/* Label date — solo primo e ultimo */}
               <div style={{display:"flex",justifyContent:"space-between",marginTop:4,paddingLeft:PAD-4,paddingRight:PAD-4}}>
                 <div style={{fontSize:10,color:B.gray}}>{historyData[0]?.label}</div>
                 <div style={{fontSize:10,color:B.orange,fontWeight:"bold"}}>{historyData[n-1]?.label} (ora)</div>
@@ -4591,7 +4602,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
   if (matchResults === undefined) return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Calendario</button>
       <div style={{textAlign:"center",padding:"60px 20px",color:B.gray}}>
         <div style={{fontSize:32,marginBottom:10}}>⏳</div>
         <div>Caricamento risultati...</div>
@@ -4727,7 +4738,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 
   return (
     <div>
-      <button onClick={onBack} style={{background:B.grayPale,border:"none",color:B.gray,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:12,fontFamily:"Georgia,serif"}}>← Calendario</button>
+      <button onClick={onBack} className="fb-btn3d" style={{background:B.white,border:`1px solid ${B.creamDark}`,color:B.greenDark,padding:"8px 16px",borderRadius:12,cursor:"pointer",marginBottom:14,fontSize:13,fontWeight:"bold",fontFamily:"Georgia,serif",boxShadow:`0 3px 0 ${B.sandDeep}`}}>← Calendario</button>
       <div style={{background:B.greenDark,borderRadius:12,padding:"14px 16px",marginBottom:14,color:B.white}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
@@ -5162,9 +5173,9 @@ function PageRisultati({ event, accessToken, onBack }) {
     .sort((a, b) => a.w - b.w);
 
   const phaseMeta = {
-    main_draw:     { label: "Main Draw",  bg: "#E9F2EE", w: 0 },
-    pool:          { label: "Pool",       bg: "#FAF1E0", w: 1 },
-    qualification: { label: "Qualifiche", bg: "#EDEFF4", w: 2 },
+    main_draw:     { label: "Main Draw",  accent: "#2D5C4F", shadow: "#1E3E35", w: 0 },
+    pool:          { label: "Pool",       accent: "#C77D25", shadow: "#9C5F17", w: 1 },
+    qualification: { label: "Qualifiche", accent: "#5B6B8C", shadow: "#45526E", w: 2 },
   };
   const sections = [];
   const smap = {};
@@ -5177,11 +5188,11 @@ function PageRisultati({ event, accessToken, onBack }) {
   const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
 
   const renderSection = (sec, si) => {
-    const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+    const pm = phaseMeta[sec.phase] || { label: sec.phase, accent: "#8E8E93", shadow: "#6E6E73" };
     return (
       <div key={si} style={{marginBottom:26}}>
-        <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
-          <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+        <div style={{background:pm.accent,borderRadius:10,padding:"10px 15px",marginBottom:14,boxShadow:`0 2px 0 ${pm.shadow}`}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#FFFFFF",letterSpacing:0.8,textTransform:"uppercase"}}>{pm.label}</span>
         </div>
         {sec.groups.map((g, gi) => (
           <div key={gi} style={{marginBottom:16}}>
