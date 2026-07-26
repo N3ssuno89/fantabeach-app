@@ -4848,9 +4848,9 @@ const MatchRows = ({ matches }) => {
               return (
                 <button key={e.id}
                   onClick={()=>{
-                    if (selectedEventId === e.id) { setSelectedEventId(null); }
-                    else { setSelectedEventId(e.id); loadHistory(e.id); }
-                  }}
+  if (selectedEventId === e.id) { setSelectedEventId(null); setHistoryData(null); }
+  else { setSelectedEventId(e.id); loadHistory(e.id); }
+}}
                   style={{background:isSelected?B.greenDark:B.white,
                     border:`1px solid ${isSelected?B.greenDark:B.creamDark}`,
                     borderLeft:`4px solid ${isSelected?B.white:et.color}`,
