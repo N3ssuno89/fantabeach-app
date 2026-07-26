@@ -247,6 +247,145 @@ const EVENT_TYPE_META = {
   CoppaItalia: { label:"Coppa Italia", weight:1.5, color:"#D94F1E", bg:"#FDF0EB" },
   Finale:      { label:"Finale",       weight:1.7, color:"#7C3AED", bg:"#F3E8FF" },
 };
+
+// ─── MOTORE LIVE ────────────────────────────────────────────────────────────
+// Calcola righe in formato match_results dai dati grezzi fivb_matches.
+// Replica VERBATIM la logica di fivb-results (verificata su Termoli: 8/8).
+// Usato SOLO durante un torneo "ongoing": le pagine ricevono righe nello stesso
+// formato di match_results e non cambiano nulla nella visualizzazione.
+const LIVE_calcBonuses = (sets, setsWon, setsLost, isBye) => {
+  const codes = []; let base = 0;
+  if (isBye) { codes.push("bye"); base = 4; }
+  else if (setsWon === 2 && setsLost === 0) { codes.push("win20"); base = 4; }
+  else if (setsWon === 2 && setsLost === 1) { codes.push("win21"); base = 3; }
+  else if (setsWon === 1 && setsLost === 2) { codes.push("loss12"); base = 1; }
+  else if (setsWon === 0 && setsLost === 2) { codes.push("loss02"); base = 0; }
+  let bonus = 0;
+  if (sets && !isBye) {
+    for (let i = 0; i < sets.length && i < 2; i++) {
+      const [my, opp] = sets[i];
+      if (my != null && opp != null && my < opp && (opp - my) <= 2) { codes.push("closeSet"); bonus += 0.5; }
+    }
+  }
+  return { codes, base_pts: base, bonus_pts: bonus, total_pts: base + bonus };
+};
+
+const LIVE_mapPhase = (phase, round, isBye, isQualiFinal) => {
+  if (isBye) return "BYE POOL";
+  const r = (round || "").toLowerCase();
+  if (phase === "qualification") return isQualiFinal ? "QUALI 2" : "QUALI 1";
+  if (phase === "pool") {
+    if (r.includes("semifinale")) return "POOL 1";
+    if (r.includes("finale")) return "POOL 2";
+    return "POOL 1";
+  }
+  if (phase === "main_draw") {
+    if (r.includes("1") && r.includes("vincenti")) return "ROUND OF 12";
+    if (r.includes("2") && r.includes("vincenti")) return "QUARTER";
+    if (r.includes("semifinale")) return "SEMI";
+    if (r.includes("finale") && r.includes("1")) return "FINAL 1";
+    if (r.includes("finale") && r.includes("3")) return "FINAL 3";
+    return "ROUND OF 12";
+  }
+  return phase || "QUALI 1";
+};
+
+// matches: righe fivb_matches del torneo. nodeToId: {node->W/M-id}.
+// nodeToCoachId: {node->C-id} (opzionale). Restituisce righe formato match_results.
+// Aggiunge "live_in_corso": true se la partita NON è ancora finished (per colorazione).
+function LIVE_buildRows(eventId, matches, nodeToId, nodeToCoachId) {
+  // pre-calcolo QUALI: ultimo match_no per round di qualificazione = QUALI 2
+  const qualiMax = {};
+  for (const m of matches) {
+    if (m.phase === "qualification" && m.status !== "bye") {
+      const k = m.round || "";
+      const mn = Number(m.match_no);
+      if (qualiMax[k] == null || mn > qualiMax[k]) qualiMax[k] = mn;
+    }
+  }
+  const rows = [];
+  for (const m of matches) {
+    const isBye = m.status === "bye";
+    const finished = m.status === "finished" || isBye;
+    const inCorso = !finished; // partita non ancora conclusa
+    const isQualiFinal = m.phase === "qualification" && qualiMax[m.round || ""] === Number(m.match_no);
+    const phaseLabel = LIVE_mapPhase(m.phase, m.round, isBye, isQualiFinal);
+    const matchIndex = m.match_no;
+
+    if (isBye) {
+      const nodes = [m.team_a_p1_node, m.team_a_p2_node, m.team_b_p1_node, m.team_b_p2_node].filter(n => n != null);
+      for (const nd of nodes) {
+        if (!nodeToId[nd]) continue;
+        const b = LIVE_calcBonuses(null, 2, 0, true);
+        rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+          player_id: nodeToId[nd], player_name: null, result: "BYE", score: "", is_bye: true,
+          base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+          bonus_codes: b.codes, opponent: "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+          live_in_corso: false });
+      }
+      continue;
+    }
+
+    let sets = typeof m.sets === "string" ? (()=>{try{return JSON.parse(m.sets);}catch{return null;}})() : m.sets;
+    let setsA = 0, setsB = 0, scoreA = "", scoreB = "", pA = null, pB = null;
+    if (Array.isArray(sets) && sets.length > 0) {
+      sets = sets.map(s => [Number(s[0]), Number(s[1])]);
+      for (const [a,b] of sets) { if (a>b) setsA++; else if (b>a) setsB++; }
+      scoreA = sets.map(([a,b])=>`${a}-${b}`).join(" ");
+      scoreB = sets.map(([a,b])=>`${b}-${a}`).join(" ");
+      pA = sets.map(([a,b])=>[a,b]); pB = sets.map(([a,b])=>[b,a]);
+    } else if (m.result && /^\d+-\d+$/.test(m.result)) {
+      const [ra,rb] = m.result.split("-").map(Number);
+      setsA = ra; setsB = rb;
+    } else {
+      continue; // né set né result → niente da calcolare ancora
+    }
+
+    const teamA = [m.team_a_p1_node, m.team_a_p2_node].filter(n => n != null);
+    const teamB = [m.team_b_p1_node, m.team_b_p2_node].filter(n => n != null);
+    for (const nd of teamA) {
+      if (!nodeToId[nd]) continue;
+      const b = LIVE_calcBonuses(pA, setsA, setsB, false);
+      rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+        player_id: nodeToId[nd], player_name: null, result: `${setsA}-${setsB}`, score: scoreA, is_bye: false,
+        base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+        bonus_codes: b.codes, opponent: m.team_b_name || "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+        live_in_corso: inCorso });
+    }
+    for (const nd of teamB) {
+      if (!nodeToId[nd]) continue;
+      const b = LIVE_calcBonuses(pB, setsB, setsA, false);
+      rows.push({ event_id: eventId, phase: phaseLabel, match_index: matchIndex,
+        player_id: nodeToId[nd], player_name: null, result: `${setsB}-${setsA}`, score: scoreB, is_bye: false,
+        base_pts: b.base_pts, bonus_pts: b.bonus_pts, total_pts: b.total_pts,
+        bonus_codes: b.codes, opponent: m.team_a_name || "", coach_id: (nodeToCoachId && nodeToCoachId[nd]) || null,
+        live_in_corso: inCorso });
+    }
+  }
+  return rows;
+}
+
+// Costruisce node -> C-id (coach) replicando la logica di fivb-results:
+// fivb_entries.coach (stringa "COGNOME NOME") -> coaches.id, match su nome completo + primo token.
+function LIVE_buildCoachMap(entries, coachesRows) {
+  const coachNameToId = {};
+  (coachesRows || []).forEach(c => {
+    const n = (c.name || "").toUpperCase().trim();
+    if (!n) return;
+    coachNameToId[n] = c.id;
+    const tok = n.split(" ")[0];
+    if (tok && !(tok in coachNameToId)) coachNameToId[tok] = c.id;
+  });
+  const findCoach = (name) => name ? (coachNameToId[name.toUpperCase().trim()] || null) : null;
+  const nodeToCoachId = {};
+  (entries || []).forEach(e => {
+    if (e.node != null && e.coach) {
+      const cid = findCoach(e.coach);
+      if (cid) nodeToCoachId[e.node] = cid;
+    }
+  });
+  return nodeToCoachId;
+}
 // EVENTS caricato da Supabase (tabella events) — non più hardcoded
 // Fallback vuoto: viene popolato da loadEventsFromDB() al login
 const EVENTS_FALLBACK = []; // usato solo se Supabase non risponde
@@ -361,7 +500,7 @@ function JoinGate({ myJoin, league, showJoinForm, setShowJoinForm, joinTeamName,
             onKeyDown={e=>e.key==="Enter"&&onJoinRequest()}
             autoFocus
             style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${B.grayLight}`,background:B.white,color:B.dark,fontSize:14,fontFamily:"Georgia,serif",outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: compravendite lun 09:00 - gio 23:00. Mercato libero durante la settimana."}</div>
+          <div style={{fontSize:11,color:B.gray,marginBottom:14}}>{league.type==="classic"?"⚠️ Classic: puoi modificare finché l'admin non chiude le iscrizioni.":"ℹ️ Market: il mercato apre la domenica sera al termine della tappa e chiude giovedì alle 23:00."}</div>
           <button onClick={onJoinRequest} style={{width:"100%",padding:"12px",background:B.greenDark,border:"none",borderRadius:10,color:B.white,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",marginBottom:8}}>Invia Richiesta</button>
           <button onClick={()=>setShowJoinForm(false)} style={{width:"100%",padding:"10px",background:"transparent",border:`1px solid ${B.grayLight}`,borderRadius:10,color:B.gray,fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>Annulla</button>
         </div>
@@ -942,10 +1081,54 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const [lastSyncResultsOk, setLastSyncResultsOk] = useState(null);
   const [matchResultsData, setMatchResultsData] = useState({}); // event_id → array risultati
 
-  // Carica match_results da Supabase per un evento
+  // Carica match_results da Supabase per un evento.
+  // Se il torneo è "ongoing", calcola LIVE dai dati grezzi fivb_matches
+  // (stesso motore di fivb-results) invece di leggere match_results (fermo).
   const loadMatchResults = async (eventId) => {
     if (!accessToken || !eventId) return;
     try {
+      // 1. event_id -> vis_id
+      let visId = null;
+      try {
+        const mapDb = await supabase.from("event_tournament_map", accessToken);
+        const mapRows = await mapDb.select("vis_id", `&event_id=eq.${eventId}`);
+        visId = Array.isArray(mapRows) && mapRows[0] ? mapRows[0].vis_id : null;
+      } catch (_) { visId = null; }
+
+      // 2. se ho un vis_id, controllo se il torneo è ongoing
+      let ongoing = false;
+      if (visId != null) {
+        try {
+          const tDb = await supabase.from("fivb_tournaments", accessToken);
+          const tRows = await tDb.select("status", `&vis_id=eq.${visId}`);
+          ongoing = Array.isArray(tRows) && tRows[0] && tRows[0].status === "ongoing";
+        } catch (_) { ongoing = false; }
+      }
+
+      // 3a. TORNEO ONGOING -> calcolo live dal grezzo
+      if (ongoing && visId != null) {
+        const [mRows, pnmRows, entRows, coachRows] = await Promise.all([
+          supabase.from("fivb_matches", accessToken).then(db =>
+            db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
+              `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
+          supabase.from("player_node_map", accessToken).then(db =>
+            db.select("node,internal_id", `&limit=2000`)),
+          supabase.from("fivb_entries", accessToken).then(db =>
+            db.select("node,coach", `&tournament_vis_id=eq.${visId}`)),
+          supabase.from("coaches", accessToken).then(db =>
+            db.select("id,name", `&active=eq.true`)),
+        ]);
+        const matches = Array.isArray(mRows) ? mRows : [];
+        const nodeToId = {};
+        (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+        const nodeToCoachId = LIVE_buildCoachMap(Array.isArray(entRows) ? entRows : [], Array.isArray(coachRows) ? coachRows : []);
+        const liveRows = LIVE_buildRows(eventId, matches, nodeToId, nodeToCoachId);
+        console.log(`[matchResults LIVE] ${eventId}: ${liveRows.length} righe da fivb_matches`);
+        setMatchResultsData(prev => ({ ...prev, [eventId]: liveRows }));
+        return;
+      }
+
+      // 3b. TORNEO NON ongoing -> comportamento classico (match_results ufficiale)
       const db = await supabase.from("match_results", accessToken);
       const rows = await db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`);
       console.log(`[matchResults] ${eventId}:`, Array.isArray(rows) ? `${rows.length} righe OK` : JSON.stringify(rows).slice(0,100));
@@ -966,7 +1149,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   const loadUserData = async (token, userId) => {
     try {
       // Tutte le chiamate in parallelo — da 6 chiamate sequenziali a 3 parallele
-      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes, leagueSettingsRes] = await Promise.all([
+      const [profileRes, leaguesRes, rosterRes, lineupRes, coachesRes, eventsRes, coachSelectRes, leagueSettingsRes, lineupHistoryRes] = await Promise.all([
         supabase.from("profiles", token).then(db => db.select("role,username,display_name", `&id=eq.${userId}`)),
         supabase.from("user_leagues", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("rosters", token).then(db => db.select("*", `&user_id=eq.${userId}&sold_at=is.null`)),
@@ -975,6 +1158,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         supabase.from("events", token).then(db => db.select("*", "&order=anno.asc,id.asc")),
         supabase.from("coach_selections", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
         supabase.from("league_settings", token).then(db => db.select("*")),
+        supabase.from("lineup_history", token).then(db => db.select("*", `&user_id=eq.${userId}`)),
       ]);
 
       // ── League settings (status e marketOpen) da Supabase ──
@@ -1147,10 +1331,34 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           return active?.id || "E_PRESTAGIONE";
         };
 
+        // Trova l'ultima formazione 2026 dell'utente in lineup_history (event_id E00NN piu' alto)
+        const histAll = Array.isArray(lineupHistoryRes) ? lineupHistoryRes : [];
+        const ultimaFormazioneStorica = (lid) => {
+          const rowsLega = histAll.filter(h => h.league_id === lid && /^E\d{4}$/.test(h.event_id));
+          if (rowsLega.length === 0) return [];
+          const lastEvent = [...new Set(rowsLega.map(h => h.event_id))].sort().pop();
+          return rowsLega.filter(h => h.event_id === lastEvent);
+        };
+
         Object.keys(newLineups).forEach(lid => {
           const eventId = activeEventIdForLeague(lid);
           // Solo righe della lega + evento corrente — mai toccato lo storico
-          const rows = lineupRes.filter(l => l.league_id === lid && l.event_id === eventId);
+          let rows = lineupRes.filter(l => l.league_id === lid && l.event_id === eventId);
+
+          // PRE-COMPILAZIONE: se non c'e' formazione per l'evento attivo, usa l'ultima storica
+          // (solo visiva; il salvataggio/freeze scrive sull'evento attivo). Solo se rosa intatta.
+          if (rows.length === 0) {
+            const storiche = ultimaFormazioneStorica(lid);
+            if (storiche.length > 0) {
+              const idsStorici = storiche.map(h => h.player_id);
+              const tuttiPosseduti = rosterIds[lid]
+                ? idsStorici.every(id => rosterIds[lid].has(id))
+                : false;
+              // pre-compila SOLO se possiede ancora tutti gli atleti (coerente con auto-riporto)
+              if (tuttiPosseduti) rows = storiche;
+            }
+          }
+
           // Deduplica i titolari/capitano
           const starterIds = [...new Set(
             rows.filter(r => r.role === "titolare" || r.role === "capitano")
@@ -1238,15 +1446,32 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
   //   - Toggle marketOpen controlla tutto
   //   - In corso → sempre bloccato
   // Deadline: giovedì 23:00 → tutto bloccato automaticamente
+  // C'è un torneo che tocca QUESTO weekend per il genere della lega?
+  // Cerca un evento 2026 dello stesso genere con date_start da (oggi-3) a (oggi+4):
+  // copre sia il torneo imminente (venerdì) sia quello appena concluso (domenica).
+  const torneoQuestoWeekend = () => {
+    const oggi = new Date();
+    const da = new Date(oggi.getTime() - 3 * 86400000);
+    const a  = new Date(oggi.getTime() + 4 * 86400000);
+    return events.some(e => {
+      if ((e.anno || 2026) !== 2026) return false;
+      if ((e.gender || "").toUpperCase() !== league.gender) return false;
+      const ds = e.date_start || e.date || "";
+      if (!ds) return false;
+      const d = new Date(ds);
+      return d >= da && d <= a;
+    });
+  };
+
   const isDeadlinePassed = () => {
     const now = new Date();
     const day = now.getDay(); // 0=dom, 1=lun, 2=mar, 3=mer, 4=gio, 5=ven, 6=sab
     const hour = now.getHours();
-    if (day === 4 && hour >= 23) return true; // giovedì dopo le 23
-    if (day === 5 || day === 6 || day === 0) return true; // ven, sab, dom
-    return false;
+    const inFinestra = (day === 4 && hour >= 23) || day === 5 || day === 6 || day === 0;
+    if (!inFinestra) return false;
+    // Blocca nel weekend SOLO se c'è un torneo che tocca questo weekend
+    return torneoQuestoWeekend();
   };
-
   const canTrade = () => {
     if (myJoin !== "APPROVED") return false;
     if (tappaInCorso2026) return false; // tappa in corso → sempre bloccato
@@ -1278,7 +1503,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
 
   const handleBuy = async (a) => {
     if (myJoin!=="APPROVED") return showNotif("Non sei ancora approvato!","error");
-    if (!canTrade()) return showNotif(league.type==="classic"?"Iscrizioni chiuse!":"Mercato chiuso! Lun 09:00 - Gio 23:00","error");
+    if (!canTrade()) return showNotif(league.type==="classic"?"Iscrizioni chiuse!":"Mercato chiuso! Riapre la domenica sera a fine tappa.","error");
     if (roster.length>=5) return showNotif("Hai già 5 atleti nel roster!","error");
     if (budget<a.cost)    return showNotif("Crediti insufficienti!","error");
     if (isOwned(a))       return showNotif("Atleta già nel roster!","error");
@@ -1318,6 +1543,13 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
       const now = new Date().toISOString();
       const rdb = await supabase.from("rosters", accessToken);
       await rdb.update({ sold_at: now }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}&player_id=eq.${a.id}&sold_at=is.null`);
+      // Fix 3: rimuove il venduto dalla formazione dell'evento attivo (niente formazioni sporche al freeze)
+      const eventsForGenderSell = events.filter(e => (e.gender||"").toUpperCase() === league.gender.toUpperCase());
+      const activeEventSell = eventsForGenderSell.find(e => e.status === "In corso")
+        || eventsForGenderSell.find(e => e.status === "Planned") || null;
+      const sellEventId = activeEventSell?.id || "E_PRESTAGIONE";
+      const ldb = await supabase.from("lineups", accessToken);
+      await ldb.delete(`user_id=eq.${authUser.id}&league_id=eq.${leagueId}&player_id=eq.${a.id}&event_id=eq.${sellEventId}`);
       const udb = await supabase.from("user_leagues", accessToken);
       await udb.update({ budget: newBudget }, `user_id=eq.${authUser.id}&league_id=eq.${leagueId}`);
       const tdb = await supabase.from("transfer_history", accessToken);
@@ -1622,8 +1854,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             {hiddenPage==="prizes"&&<PagePremi onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="rules"&&<PageRegole onBack={()=>setHiddenPage(null)}/>}
             {hiddenPage==="terms"&&<PageTermini onBack={()=>setHiddenPage(null)}/>}
-            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}          </div>
-        )}
+            {hiddenPage==="history"&&<PageHistory authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}         
+            {hiddenPage==="formations"&&<PageLeagueFormations authUser={authUser} accessToken={accessToken} leagueId={leagueId} leagues={leagues} events={events} coachesList={coachesList} athletesData={athletes_data} onBack={()=>setHiddenPage(null)}/>}
+          </div>
+    )}
 
         {!hiddenPage&&(<div>
 
@@ -1651,7 +1885,7 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
                 ? `🔴 Mercato chiuso — ${activeTappa.name} in corso`
                 : league.type==="classic"
                   ? "🔒 Classic: mercato chiuso per tutta la stagione"
-                  : "🔒 Mercato chiuso — riapre lunedì 09:00";
+                  : "🔒 Mercato chiuso — riapre la domenica sera a fine tappa";
               return <div style={{background:B.orangePale,border:`1px solid ${B.orange}44`,borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:12,color:B.orange,display:"flex",alignItems:"center",gap:8}}>{msg}</div>;
             })()}
 
@@ -2300,13 +2534,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
         {tab===3&&(
           <div>
             {selectedEvent?(
-              <EventDetail
+              <PageRisultati
                 event={selectedEvent}
-                onBack={()=>setSelectedEvent(null)}
-                myRoster={roster}
-                matchResults={matchResultsData[selectedEvent.id]}
-                onLoad={()=>loadMatchResults(selectedEvent.id)}
-                athletes={athletes_data}/>
+                accessToken={accessToken}
+                onBack={()=>setSelectedEvent(null)}/>
             ):(
               <div>
                 {/* Filtro genere automatico dalla lega selezionata */}
@@ -2747,10 +2978,10 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
             <div style={{padding:"8px 0",flex:1}}>
                 {[
                   {icon:"👤", label:"Il mio profilo",  sub:"Dati e squadre",          sec:"profile"},
-                  {icon:"📊", label:"Storico Tappe", sub:"Punti per tappa e formazione", sec:"history"},
+                  {icon:"📊", label:"Storico Tappe", sub:"I tuoi punti, tappa per tappa", sec:"history"},
+                 {icon:"👥", label:"Formazioni di Lega", sub:"Sbircia le formazioni degli avversari", sec:"formations"},
                   {icon:"🏆", label:"Premi",            sub:"Cosa vinci e scalatura",   sec:"prizes"},
                   {icon:"📋", label:"Regole di gioco",  sub:"Punti, bonus e malus",     sec:"rules"},
-                  {icon:"📅", label:"Calendario",       sub:"9 tappe 2026",             sec:"cal"},
                   {icon:"📄", label:"Termini",          sub:"Regolamento ufficiale",    sec:"terms"},
                   ...(isAdmin?[
                     {icon:"🏐", label:"Stats Atleti",   sub:"Performance e ownership",  sec:"stats-atleti"},
@@ -3136,8 +3367,8 @@ function PageRegole({ onBack }) {
         {[
           {nome:"Classic F",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
           {nome:"Classic M",  tipo:"Classic",desc:"Roster bloccato dopo chiusura iscrizioni. Nessun cambio per tutta la stagione."},
-          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
-          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo lun 09:00 – gio 23:00. Acquista e vendi liberamente durante la settimana."},
+          {nome:"Market F",   tipo:"Market", desc:"Mercato attivo dalla domenica sera (fine tappa) a giovedì 23:00. Acquista e vendi liberamente."},
+          {nome:"Market M",   tipo:"Market", desc:"Mercato attivo dalla domenica sera (fine tappa) a giovedì 23:00. Acquista e vendi liberamente."},
         ].map((l,i)=>(
           <div key={i} style={{padding:"10px 0",borderBottom:i<3?`1px solid ${B.creamDark}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -3394,12 +3625,27 @@ function StatsAtleti({ onBack, accessToken, athletesData }) {
 
   async function loadAthleteStats(token) {
     try {
-      // Carica match_results tappe completate 2026
+      // Carica gli eventi 2026 completati PRIMA, per derivare gli id da caricare (dinamico).
+      // Il server PostgREST ha un tetto di 1000 righe: caricare tutta match_results con
+      // order=player_id tagliava le righe femminili (W dopo M). Filtrando per gli eventi
+      // reali e spezzando in gruppi sotto il tetto, ogni tappa nuova entra da sola.
+      const edb0 = await supabase.from("events", token);
+      const ev2026 = await edb0.select("id,gender", "&status=eq.Completato&anno=eq.2026");
+      const eventIdsM = (Array.isArray(ev2026)?ev2026:[]).filter(e => (e.gender||"").toUpperCase()==="M").map(e=>e.id);
+      const eventIdsF = (Array.isArray(ev2026)?ev2026:[]).filter(e => (e.gender||"").toUpperCase()==="F").map(e=>e.id);
       const db = await supabase.from("match_results", token);
-      const results = await db.select(
-        "player_id,player_name,total_pts,bonus_codes,event_id",
-        "&order=player_id.asc&limit=5000"
-      );
+      const loadResultsFor = async (ids) => {
+        if (ids.length === 0) return [];
+        const d = await supabase.from("match_results", token);
+        const r = await d.select("player_id,player_name,total_pts,bonus_codes,event_id",
+          `&event_id=in.(${ids.join(",")})&limit=1000`);
+        return Array.isArray(r) ? r : [];
+      };
+      const [resM, resF] = await Promise.all([
+        loadResultsFor(eventIdsM),
+        loadResultsFor(eventIdsF),
+      ]);
+      const results = [...resM, ...resF];
 
       // Carica roster per ownership (include anche venduti per nameMap)
       const rdb = await supabase.from("rosters", token);
@@ -4443,7 +4689,7 @@ function EventDetail({event, onBack, myRoster, matchResults, onLoad, athletes}) 
 }
 // ─── PAGINA STORICO TAPPE ─────────────────────────────────────
 function PageHistory({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
-  const [selectedLeague, setSelectedLeague] = React.useState(leagueId || "L001-F");
+  const selectedLeague = leagueId || "L001-F";
   const [selectedEventId, setSelectedEventId] = React.useState(null);
   const [historyData, setHistoryData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
@@ -4585,20 +4831,7 @@ const MatchRows = ({ matches }) => {
   return (
     <MenuPage title="Storico Tappe" emoji="📊" onBack={onBack}>
 
-      {/* Selettore lega */}
-      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {leagues.map(l => (
-          <button key={l.id} onClick={()=>setSelectedLeague(l.id)}
-            style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${selectedLeague===l.id?B.orange:B.creamDark}`,
-              background:selectedLeague===l.id?B.orange:B.white,
-              color:selectedLeague===l.id?B.white:B.dark,
-              fontWeight:selectedLeague===l.id?"bold":"normal",
-              fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            {l.name}
-          </button>
-        ))}
-      </div>
-
+      
       {/* Lista tappe completate */}
       {completedEvents.length === 0 ? (
         <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
@@ -4726,6 +4959,479 @@ const MatchRows = ({ matches }) => {
           )}
         </div>
       )}
+       </MenuPage>
+  );
+}
+   // ─── PAGINA FORMAZIONI DI LEGA (per tappa) ───────────────────
+// ─── DETTAGLIO RISULTATI TAPPA (dati reali API) — usato dal Calendario ───
+function PageRisultati({ event, accessToken, onBack }) {
+  const [matches, setMatches] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [view, setView] = React.useState("lista");   // "lista" | "bracket"
+
+  const A = { card:"#FFFFFF", line:"#ECECF0", text:"#1C1C1E", sub:"#8E8E93", soft:"#B0B0B8", accent:"#2D5C4F", track:"#EDEDF1" };
+  const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+  const et = (EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver);
+
+  React.useEffect(() => {
+    if (!accessToken || !event) return;
+    let cancelled = false;
+    setLoading(true); setMatches(null);
+    supabase.from("event_tournament_map", accessToken)
+      .then(db => db.select("vis_id", `&event_id=eq.${event.id}`))
+      .then(async rows => {
+        const vis = Array.isArray(rows) && rows[0] ? rows[0].vis_id : null;
+        if (!vis) { if (!cancelled) { setMatches([]); setLoading(false); } return; }
+        const ms = await supabase.from("fivb_matches", accessToken)
+          .then(db => db.select(
+            "match_no,phase,pool,round,team_a_name,team_b_name,result,sets,status",
+            `&tournament_vis_id=eq.${vis}&order=match_no.asc&limit=500`));
+        if (!cancelled) { setMatches(Array.isArray(ms) ? ms : []); setLoading(false); }
+      })
+      .catch(() => { if (!cancelled) { setMatches([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [accessToken, event && event.id]);
+
+  const groupInfo = (phase, pool, round, realCount, byeCount) => {
+    const r = round || "";
+    if (phase === "main_draw") {
+      if (/3°-4°|3-4/.test(r)) return { label: "Finale 3°/4° posto", w: 1 };
+      if (/1°-2°|1-2/.test(r) || r === "Finale") return { label: "Finale", w: 0 };
+      const teams = realCount * 2 + byeCount;
+      const byTeams = { 4:"Semifinali", 8:"Quarti di finale", 12:"Round of 12", 16:"Ottavi di finale", 24:"Round of 24", 32:"Sedicesimi di finale" };
+      return { label: byTeams[teams] || r, w: teams };
+    }
+    if (phase === "pool") {
+      const L = (pool || "?").toUpperCase();
+      return { label: `Pool ${L}`, w: 1000 + (L.charCodeAt(0) - 65) };
+    }
+    const po = { prima:1, seconda:2, terza:3, quarta:4, quinta:5, sesta:6, settima:7, ottava:8 };
+    const mm = r.match(/percorso\s+(\w+)\s+coppia/i);
+    const ord = mm ? (po[mm[1].toLowerCase()] || 99) : 99;
+    return { label: r || "Qualificazioni", w: 2000 + ord };
+  };
+
+  const gmap = {};
+  (matches || []).forEach(m => {
+    let key;
+    if (m.phase === "pool") key = `pool|${m.pool}`;
+    else if (m.phase === "main_draw") key = `md|${m.round}`;
+    else key = `qual|${m.round}`;
+    if (!gmap[key]) gmap[key] = { phase: m.phase, pool: m.pool, round: m.round, rows: [] };
+    gmap[key].rows.push(m);
+  });
+  const groups = Object.values(gmap)
+    .map(g => {
+      const real = g.rows.filter(m => m.status !== "bye");
+      const byes = g.rows.length - real.length;
+      return { ...g, rows: real, ...groupInfo(g.phase, g.pool, g.round, real.length, byes) };
+    })
+    .filter(g => g.rows.length > 0)
+    .sort((a, b) => a.w - b.w);
+
+  const phaseMeta = {
+    main_draw:     { label: "Main Draw",  bg: "#E9F2EE", w: 0 },
+    pool:          { label: "Pool",       bg: "#FAF1E0", w: 1 },
+    qualification: { label: "Qualifiche", bg: "#EDEFF4", w: 2 },
+  };
+  const sections = [];
+  const smap = {};
+  groups.forEach(g => {
+    if (!smap[g.phase]) { smap[g.phase] = { phase: g.phase, groups: [] }; sections.push(smap[g.phase]); }
+    smap[g.phase].groups.push(g);
+  });
+  sections.sort((a, b) => (phaseMeta[a.phase]?.w ?? 9) - (phaseMeta[b.phase]?.w ?? 9));
+
+  const setsTxt = (s) => Array.isArray(s) ? s.map(x => `${x[0]}\u2013${x[1]}`).join("   ") : "";
+
+  return (
+    <div style={{fontFamily:SANS}}>
+      <button onClick={onBack} style={{background:A.track,border:"none",color:A.sub,padding:"7px 14px",borderRadius:20,cursor:"pointer",marginBottom:14,fontSize:13,fontFamily:SANS}}>← Calendario</button>
+
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+        <div style={{fontSize:19,fontWeight:700,color:A.text}}>{event?.name || "Tappa"}</div>
+        <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:8,background:et.bg,color:et.color}}>{et.label} ×{et.weight}</span>
+      </div>
+
+      {/* toggle Lista / Bracket */}
+      <div style={{display:"flex",background:A.track,borderRadius:10,padding:3,marginBottom:20}}>
+        {[["lista","Lista"],["bracket","Bracket"]].map(([v,lab]) => {
+          const on = view === v;
+          return (
+            <button key={v} onClick={() => setView(v)}
+              style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",fontFamily:SANS,fontSize:13,fontWeight:on?600:500,
+                background:on?"#FFFFFF":"transparent",color:on?A.text:A.sub,boxShadow:on?"0 1px 3px rgba(0,0,0,0.10)":"none"}}>
+              {lab}
+            </button>
+          );
+        })}
+      </div>
+
+      {loading && <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Caricamento…</div>}
+
+      {!loading && view === "bracket" && (
+        <div style={{textAlign:"center",padding:"56px 20px",color:A.sub}}>
+          <div style={{fontSize:34,marginBottom:10}}>🗂️</div>
+          <div style={{fontSize:15,fontWeight:600,color:A.text,marginBottom:6}}>Bracket in arrivo</div>
+          <div style={{fontSize:13,lineHeight:1.5}}>La vista ad albero del tabellone è predisposta ma non ancora disegnata. Per ora usa la Lista.</div>
+        </div>
+      )}
+
+      {!loading && view === "lista" && matches && matches.length === 0 && (
+        <div style={{color:A.sub,fontSize:14,textAlign:"center",padding:"48px 0"}}>Nessuna partita disponibile per questa tappa.</div>
+      )}
+
+      {!loading && view === "lista" && sections.map((sec, si) => {
+        const pm = phaseMeta[sec.phase] || { label: sec.phase, bg: "#F2F2F7" };
+        return (
+          <div key={si} style={{marginBottom:26}}>
+            <div style={{background:pm.bg,borderRadius:10,padding:"9px 14px",marginBottom:12}}>
+              <span style={{fontSize:12,fontWeight:700,color:A.text,letterSpacing:0.6,textTransform:"uppercase"}}>{pm.label}</span>
+            </div>
+            {sec.groups.map((g, gi) => (
+              <div key={gi} style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:600,color:A.text,margin:"0 2px 8px"}}>{g.label}</div>
+                <div style={{background:A.card,borderRadius:14,border:`1px solid ${A.line}`,overflow:"hidden"}}>
+                  {g.rows.map((m, mi) => {
+                    const a = m.team_a_name || "—", b = m.team_b_name || "—";
+                    const parts = (m.result || "").split("-");
+                    const ra = parts[0] || "", rb = parts[1] || "";
+                    const sch = m.status === "scheduled" || !m.result;
+                    const aWin = !sch && ra > rb, bWin = !sch && rb > ra;
+                    return (
+                      <div key={mi} style={{padding:"13px 15px",borderTop:mi>0?`1px solid ${A.line}`:"none"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:14,color:A.text,fontWeight:aWin?600:400}}>{a}</span>
+                          <span style={{fontSize:15,fontWeight:700,color:aWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":ra}</span>
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:5}}>
+                          <span style={{fontSize:14,color:A.text,fontWeight:bWin?600:400}}>{b}</span>
+                          <span style={{fontSize:15,fontWeight:700,color:bWin?A.accent:A.soft,minWidth:16,textAlign:"right"}}>{sch?"":rb}</span>
+                        </div>
+                        {m.sets && <div style={{fontSize:12,color:A.soft,marginTop:7,fontVariantNumeric:"tabular-nums"}}>{setsTxt(m.sets)}</div>}
+                        {sch && <div style={{fontSize:12,color:"#C7A23A",marginTop:7}}>Da giocare</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PageLeagueFormations({ authUser, accessToken, leagueId, leagues, events, coachesList, athletesData, onBack }) {
+  const selectedLeague = leagueId || "L001-F";
+  const [selectedEventId, setSelectedEventId] = React.useState(null);
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [openUser, setOpenUser] = React.useState(null);
+
+  const league = leagues.find(l => l.id === selectedLeague);
+  const frozenEvents = events.filter(e =>
+    (e.status === "Completato" || e.status === "In corso") &&
+    (e.anno || 2026) === 2026 &&
+    (e.gender || "").toUpperCase() === (league?.gender || "F")
+  );
+
+  // Dettaglio partite per giocatore — copia locale dello stile di Storico Tappe
+  const MatchRows = ({ matches }) => {
+    if (!matches || matches.length === 0) return null;
+    return (
+      <div style={{marginTop:8,borderTop:`1px solid ${B.creamDark}`,paddingTop:6}}>
+        {matches.map((m,i) => {
+          const tot = (m.total_pts != null) ? m.total_pts : (m.base_pts||0) + (m.bonus_pts||0);
+          const win = (m.result||"").startsWith("2");
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0",borderBottom:i<matches.length-1?`1px solid ${B.creamDark}`:"none"}}>
+              <div style={{fontSize:9,color:B.gray,minWidth:62,flexShrink:0}}>{m.phase||"—"}</div>
+              <span style={{fontSize:10,fontWeight:"bold",flexShrink:0,padding:"1px 6px",borderRadius:4,
+                background:m.is_bye?B.greenPale:win?"#D1FAE5":"#FEE2E2",
+                color:m.is_bye?B.greenDark:win?"#065F46":"#DC2626"}}>
+                {m.is_bye?"BYE":(m.result||"—")}
+              </span>
+              <div style={{flex:1,minWidth:0,fontSize:10,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {m.is_bye?"—":(m.opponent||"—")}{m.score?` · ${m.score}`:""}
+              </div>
+              <div style={{fontSize:10,color:B.gray,flexShrink:0,minWidth:46,textAlign:"right"}}>
+                {m.base_pts>0?`+${m.base_pts}`:(m.base_pts||0)}{m.bonus_pts?` ${m.bonus_pts>0?"+":""}${m.bonus_pts}`:""}
+              </div>
+              <div style={{fontSize:11,fontWeight:"bold",flexShrink:0,minWidth:28,textAlign:"right",
+                color:tot>0?B.greenDark:tot<0?B.orange:B.gray}}>
+                {tot>0?`+${tot}`:tot}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const loadAll = async (eventId) => {
+    if (!accessToken) return;
+    setLoading(true); setData(null); setOpenUser(null);
+    try {
+      // Determina se il torneo è "ongoing" -> in tal caso calcola LIVE dal grezzo
+      let visId = null, ongoing = false;
+      try {
+        const mapDb = await supabase.from("event_tournament_map", accessToken);
+        const mapRows = await mapDb.select("vis_id", `&event_id=eq.${eventId}`);
+        visId = Array.isArray(mapRows) && mapRows[0] ? mapRows[0].vis_id : null;
+        if (visId != null) {
+          const tDb = await supabase.from("fivb_tournaments", accessToken);
+          const tRows = await tDb.select("status", `&vis_id=eq.${visId}`);
+          ongoing = Array.isArray(tRows) && tRows[0] && tRows[0].status === "ongoing";
+        }
+      } catch (_) { ongoing = false; }
+
+      let matchesPromise;
+      if (ongoing && visId != null) {
+        // LIVE: calcola righe formato match_results da fivb_matches + player_node_map + coach
+        matchesPromise = Promise.all([
+          supabase.from("fivb_matches", accessToken).then(db =>
+            db.select("match_no,phase,round,status,result,sets,team_a_name,team_b_name,team_a_p1_node,team_a_p2_node,team_b_p1_node,team_b_p2_node",
+              `&tournament_vis_id=eq.${visId}&order=match_no.asc&limit=500`)),
+          supabase.from("player_node_map", accessToken).then(db => db.select("node,internal_id", `&limit=2000`)),
+          supabase.from("fivb_entries", accessToken).then(db => db.select("node,coach", `&tournament_vis_id=eq.${visId}`)),
+          supabase.from("coaches", accessToken).then(db => db.select("id,name", `&active=eq.true`)),
+        ]).then(([mRows, pnmRows, entRows, coachRows]) => {
+          const nodeToId = {};
+          (Array.isArray(pnmRows) ? pnmRows : []).forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+          const nodeToCoachId = LIVE_buildCoachMap(Array.isArray(entRows) ? entRows : [], Array.isArray(coachRows) ? coachRows : []);
+          return LIVE_buildRows(eventId, Array.isArray(mRows) ? mRows : [], nodeToId, nodeToCoachId);
+        });
+      } else {
+        // UFFICIALE: match_results fermo
+        matchesPromise = supabase.from("match_results", accessToken).then(db => db.select("*", `&event_id=eq.${eventId}&order=match_index.asc`));
+      }
+
+      const [matchRes, lineupRes, profRes, ulRes] = await Promise.all([
+        matchesPromise,
+        supabase.from("lineup_history", accessToken).then(db => db.select("*", `&league_id=eq.${selectedLeague}&event_id=eq.${eventId}`)),
+        supabase.from("profiles", accessToken).then(db => db.select("id,username", `&limit=1000`)),
+        supabase.from("user_leagues", accessToken).then(db => db.select("user_id,team_name", `&league_id=eq.${selectedLeague}&limit=1000`)),
+      ]);
+      const matches = Array.isArray(matchRes) ? matchRes : [];
+      const lineup  = Array.isArray(lineupRes) ? lineupRes : [];
+      const profs   = Array.isArray(profRes) ? profRes : [];
+      const uls     = Array.isArray(ulRes) ? ulRes : [];
+      const nameByUser = Object.fromEntries(profs.map(p => [p.id, p.username]));
+      const teamByUser = Object.fromEntries(uls.map(u => [u.user_id, u.team_name]));
+
+      const event = events.find(e => e.id === eventId);
+      const et = EVENT_TYPE_META[event?.type] || EVENT_TYPE_META.Silver;
+
+      // match per giocatore (con dettaglio partite)
+      const byPlayer = {};
+      matches.forEach(m => {
+        if (!m.player_id) return;
+        if (!byPlayer[m.player_id]) byPlayer[m.player_id] = { player_id: m.player_id, player_name: m.player_name, matches: [] };
+        byPlayer[m.player_id].matches.push(m);
+      });
+
+      const athleteList = (league?.gender || "F").toUpperCase() === "F" ? (athletesData?.women || []) : (athletesData?.men || []);
+      const athleteMap = Object.fromEntries(athleteList.map(a => [a.id, a]));
+
+      // raggruppa lineup per utente
+      const byUser = {};
+      lineup.forEach(l => { (byUser[l.user_id] = byUser[l.user_id] || []).push(l); });
+
+      const users = Object.entries(byUser).map(([userId, rows]) => {
+        const players = rows.map(l => {
+          const pd = byPlayer[l.player_id] || { player_id: l.player_id, player_name: l.player_id, matches: [] };
+          const isCaptain = l.role === "capitano";
+          const isStarter = isCaptain || l.role === "titolare";
+          let rawPts = 0;
+          pd.matches.forEach(m => {
+            const coachWinPts = (m.bonus_codes || []).includes("coachWin") ? 0.5 : 0;
+            rawPts += (m.base_pts || 0) + (m.bonus_pts || 0) - coachWinPts;
+          });
+          const finalPts = Math.round(rawPts * (et.weight || 1) * (isCaptain ? 1.3 : 1) * 100) / 100;
+          const name = l.player_name || pd.player_name || athleteMap[l.player_id]?.name || l.player_id;
+          return { player_id: l.player_id, name, matches: pd.matches, isStarter, isCaptain, rawPts, finalPts };
+        });
+
+        // coach congelato
+        let coachPts = 0;
+        const frozenCoachRow = rows.find(l => l.coach_id);
+        const frozenCoachId = frozenCoachRow?.coach_id || null;
+        const coachInField = frozenCoachRow?.coach_in_field || false;
+        const coach = frozenCoachId ? coachesList.find(c => c.id === frozenCoachId) : null;
+        if (coach && coachInField) {
+          const won = {};
+          matches.filter(m => m.coach_id === frozenCoachId).forEach(m => {
+            const w = (m.result || "").startsWith("2") || m.is_bye;
+            if (w) won[m.match_index] = true;
+            else if (!(m.match_index in won)) won[m.match_index] = false;
+          });
+          coachPts = Object.values(won).filter(Boolean).length * 0.5;
+        }
+
+        const starters = players.filter(p => p.isStarter);
+        const bench = players.filter(p => !p.isStarter);
+        const total = Math.round((starters.reduce((s, p) => s + p.finalPts, 0) + coachPts) * 100) / 100;
+        return {
+          userId,
+          username: nameByUser[userId] || "—",
+          teamName: teamByUser[userId] || nameByUser[userId] || "—",
+          starters, bench,
+          coach: (coach && coachInField) ? coach : null,
+          coachInField, coachPts,
+          total,
+        };
+      }).sort((a, b) => b.total - a.total);
+
+      setData({ users, event, et });
+    } catch (e) { console.error("Errore formazioni lega:", e); }
+    setLoading(false);
+  };
+
+  React.useEffect(() => { setSelectedEventId(null); setData(null); setOpenUser(null); }, [selectedLeague]);
+
+  return (
+    <MenuPage title="Formazioni di Lega" emoji="👥" onBack={onBack}>
+
+      {frozenEvents.length === 0 ? (
+        <div style={{textAlign:"center",padding:"40px 20px",color:B.gray}}>
+          <div style={{fontSize:36,marginBottom:10}}>📅</div>
+          <div style={{fontSize:13,color:B.dark,fontWeight:"bold"}}>Nessuna tappa con formazioni congelate</div>
+          <div style={{fontSize:11,color:B.gray,marginTop:4}}>Le formazioni appaiono dopo la chiusura del mercato della tappa.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+            {frozenEvents.map(e => {
+              const et = EVENT_TYPE_META[e.type] || EVENT_TYPE_META.Silver;
+              const sel = selectedEventId === e.id;
+              return (
+                <button key={e.id} onClick={()=>{ setSelectedEventId(e.id); loadAll(e.id); }}
+                  style={{background:sel?B.greenDark:B.white,border:`1px solid ${sel?B.greenDark:B.creamDark}`,
+                    borderLeft:`4px solid ${sel?B.white:et.color}`,borderRadius:10,padding:"11px 14px",cursor:"pointer",
+                    fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:"bold",fontSize:13,color:sel?B.white:B.dark}}>{e.name}</div>
+                    <div style={{fontSize:10,color:sel?"rgba(255,255,255,.7)":B.gray,marginTop:2}}>{e.date_start||e.date}{e.status==="In corso"?" · in corso":""}</div>
+                  </div>
+                  <span style={{fontSize:10,padding:"2px 8px",borderRadius:8,fontWeight:"bold",background:sel?"rgba(255,255,255,.2)":et.bg,color:sel?B.white:et.color}}>×{et.weight}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {loading && <div style={{textAlign:"center",padding:"30px",color:B.gray,fontSize:12}}>⏳ Caricamento...</div>}
+
+          {data && !loading && (
+            data.users.length === 0 ? (
+              <div style={{textAlign:"center",padding:"20px",color:B.gray,fontSize:12}}>Nessuna formazione per questa tappa.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {data.users.map((u, i) => {
+                  const isOpen = openUser === u.userId;
+                  return (
+                    <div key={u.userId} style={{background:B.white,border:`1px solid ${isOpen?B.greenDark:B.creamDark}`,borderRadius:10,overflow:"hidden"}}>
+                      {/* Riga squadra cliccabile (accordion) */}
+                      <button onClick={()=>setOpenUser(isOpen?null:u.userId)}
+                        style={{width:"100%",border:"none",background:"transparent",cursor:"pointer",
+                          fontFamily:"Georgia,serif",display:"flex",alignItems:"center",gap:10,textAlign:"left",padding:"11px 13px"}}>
+                        <span style={{fontSize:12,fontWeight:"bold",color:B.gray,minWidth:22}}>{i+1}°</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:"bold",color:B.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.teamName}</div>
+                          <div style={{fontSize:10,color:B.gray,marginTop:1}}>{u.username}</div>
+                        </div>
+                        <div style={{fontSize:18,fontWeight:"bold",color:u.total>0?B.greenDark:B.gray}}>{u.total>0?`+${u.total}`:u.total}</div>
+                        <span style={{color:B.grayLight,fontSize:13,minWidth:14,textAlign:"right"}}>{isOpen?"▲":"▼"}</span>
+                      </button>
+
+                      {/* Anteprima titolari + coach (solo a tendina chiusa) */}
+                      {!isOpen && (
+                        <div style={{padding:"0 13px 11px 40px",fontSize:11,color:B.gray,lineHeight:1.6}}>
+                          {u.starters.map((p,j) => (
+                            <span key={p.player_id}>{p.isCaptain&&<span style={{color:B.yellow}}>★</span>}{p.name}{j<u.starters.length-1?" · ":""}</span>
+                          ))}
+                          {u.coach && <span> · 🧢 {u.coach.name}</span>}
+                        </div>
+                      )}
+
+                      {/* Dettaglio espanso */}
+                      {isOpen && (
+                        <div style={{padding:"4px 13px 13px",borderTop:`1px solid ${B.creamDark}`}}>
+                          {/* Titolari */}
+                          <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.greenDark,margin:"10px 0 8px"}}>⚡ Titolari</div>
+                          {u.starters.length === 0
+                            ? <div style={{fontSize:12,color:B.gray,marginBottom:10}}>Nessun titolare.</div>
+                            : u.starters.map(p => (
+                              <div key={p.player_id} style={{background:B.white,border:`1px solid ${B.greenDark}`,borderLeft:`3px solid ${p.isCaptain?B.yellow:B.greenDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>
+                                      {p.isCaptain&&<span style={{color:B.yellow,marginRight:4}}>★</span>}{p.name}
+                                    </div>
+                                    <div style={{fontSize:10,color:B.gray,marginTop:2}}>
+                                      {p.matches.length} {p.matches.length===1?"partita":"partite"}
+                                      {p.isCaptain&&<span style={{color:B.yellow,marginLeft:6}}>× 1.3 cap</span>}
+                                      {" · "}base {Math.round(p.rawPts*100)/100} pt × {data.et.weight}
+                                    </div>
+                                  </div>
+                                  <div style={{textAlign:"right",flexShrink:0}}>
+                                    <div style={{fontSize:18,fontWeight:"bold",color:p.finalPts>0?B.greenDark:B.gray}}>{p.finalPts>0?`+${p.finalPts}`:p.finalPts}</div>
+                                    <div style={{fontSize:9,color:B.gray}}>pt tappa</div>
+                                  </div>
+                                </div>
+                                <MatchRows matches={p.matches}/>
+                              </div>
+                            ))
+                          }
+
+                          {/* Coach */}
+                          {u.coach && (
+                            <div style={{background:B.yellowPale,border:`1px solid ${B.yellow}`,borderRadius:10,padding:"10px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:20}}>🧢</span>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:13,fontWeight:"bold",color:B.dark}}>{u.coach.name}</div>
+                                <div style={{fontSize:10,color:B.gray}}>Schierato</div>
+                              </div>
+                              <div style={{fontSize:18,fontWeight:"bold",color:u.coachPts>0?B.greenDark:B.gray}}>{u.coachPts>0?`+${u.coachPts}`:u.coachPts}</div>
+                            </div>
+                          )}
+
+                          {/* Panchina */}
+                          {u.bench.length > 0 && (
+                            <div>
+                              <div style={{fontSize:10,fontWeight:"bold",letterSpacing:2,textTransform:"uppercase",color:B.gray,margin:"4px 0 8px"}}>⏸ Panchina (non conteggiata)</div>
+                              {u.bench.map(p => (
+                                <div key={p.player_id} style={{background:B.grayPale,border:`1px solid ${B.creamDark}`,borderRadius:10,padding:"10px 12px",marginBottom:6,opacity:0.7}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:13,color:B.dark}}>{p.name}</div>
+                                      <div style={{fontSize:10,color:B.gray}}>{p.matches.length} {p.matches.length===1?"partita":"partite"} · base {Math.round(p.rawPts*100)/100} pt</div>
+                                    </div>
+                                    <div style={{fontSize:13,color:B.gray,flexShrink:0}}>({p.finalPts} pt)</div>
+                                  </div>
+                                  <MatchRows matches={p.matches}/>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Totale */}
+                          <div style={{background:B.greenDark,borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                            <div style={{color:"rgba(255,255,255,.9)",fontSize:13,fontWeight:"bold"}}>Totale tappa</div>
+                            <span style={{color:B.white,fontWeight:"bold",fontSize:20}}>{u.total>0?`+${u.total}`:u.total} pt</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+        </>
+      )}
+
     </MenuPage>
   );
 }
