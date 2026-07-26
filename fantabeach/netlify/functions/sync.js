@@ -16,7 +16,7 @@ exports.handler = async (event) => {
   try {
     // Legge player_history ordinato per data crescente: l'ultima riga per player_id vince (snapshot più recente)
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/player_history?select=player_id,player_name,gender,ranking,cost,ranking_prev,cost_prev,synced_at&order=synced_at.asc&limit=20000`,
+      `${SUPABASE_URL}/rest/v1/player_history?select=player_id,player_name,gender,ranking,cost,ranking_prev,cost_prev,synced_at&order=synced_at.desc&limit=20000`,
       { headers: readHeaders }
     );
     if (!res.ok) throw new Error(`player_history: HTTP ${res.status}`);
