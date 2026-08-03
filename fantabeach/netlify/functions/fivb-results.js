@@ -117,8 +117,9 @@ exports.handler = async (event) => {
 
     // player_node_map: node -> internal_id
     const pnmRows = await sbGet("player_node_map?select=node,internal_id&limit=100000");
-    const nodeToId = {};
-    pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+const nodeToId = {};
+pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+console.log(`[PNM] righe caricate: ${pnmRows.length}, 62540 presente: ${62540 in nodeToId}, M0540 node: ${JSON.stringify(pnmRows.find(r => r.internal_id === 'M0540'))}`);
 
     // Normalizza un nome per il match: maiuscole, no accenti/apostrofi, spazi singoli.
     // NON tocca le lettere (MARTIN != MARTINS resta diverso: errore di dato, va corretto in coaches).
