@@ -184,7 +184,10 @@ console.log(`[PNM] righe caricate: ${pnmRows.length}, 62540 presente: ${62540 in
       const missing = new Set();
       for (const m of matches) {
         for (const nd of [m.team_a_p1_node, m.team_a_p2_node, m.team_b_p1_node, m.team_b_p2_node]) {
-          if (nd != null && !(nd in nodeToId)) missing.add(nd);
+          if (nd != null && !(nd in nodeToId)) {
+            console.log(`[GUARDIA A] node mancante ${nd} (tipo ${typeof nd}) match ${m.match_no}`);
+            missing.add(nd);
+          }
         }
       }
       if (missing.size > 0) {
