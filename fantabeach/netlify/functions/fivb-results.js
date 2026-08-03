@@ -116,7 +116,7 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, note: "nessun evento da processare" }) };
 
     // player_node_map: node -> internal_id
-    const pnmRows = await sbGet("player_node_map?select=node,internal_id");
+    const pnmRows = await sbGet("player_node_map?select=node,internal_id&limit=100000");
     const nodeToId = {};
     pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
 
