@@ -1,38 +1,41 @@
 <!doctype html>
 <html lang="it">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#2D5C4F" />
-    <meta name="description" content="Coppie Game — pronostica le coppie 2027" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0F2B21" />
+    <meta name="description" content="Coppie Game — pronostica le coppie 2027 del beach volley" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
-    <title>Coppie Game</title>
-    <style>
-      * { box-sizing: border-box; }
-      html, body {
-        margin: 0; padding: 0; width: 100%; min-height: 100%;
-        background: #F5EFE3;
-        font-family: Georgia, serif;
-        -webkit-text-size-adjust: 100%;
-        -webkit-tap-highlight-color: transparent;
-      }
-      #game {
-        min-height: 100vh;
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        gap: 10px; padding: 24px; text-align: center;
-      }
-      h1 { margin: 0; font-size: 28px; color: #2D5C4F; }
-      p  { margin: 0; font-size: 13px; color: #6B7B74; }
-      a  { font-size: 13px; color: #E8541A; }
-      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-    </style>
+    <title>Coppie Game — FantaBeach</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="game">
-      <h1>Coppie Game</h1>
-      <p>Pagina provvisoria. Il gioco arriva qui.</p>
-      <a href="/">Torna a FantaBeach</a>
+    <div class="arena" aria-hidden="true">
+      <div class="sweep"></div>
+      <svg class="courtsvg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMax slice"><path d="M150 20 L250 20 L420 300 L-20 300 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
     </div>
+    <div class="app">
+      <header class="topbar">
+        <div class="gtoggle" role="group" aria-label="Circuito">
+          <button type="button" data-g="M" aria-pressed="true">Maschile</button>
+          <button type="button" data-g="F" aria-pressed="false">Femminile</button>
+        </div>
+        <button type="button" class="mine" id="mine" data-act="mine" aria-label="Le mie coppie">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="12" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 7v11.5A2.5 2.5 0 0 0 7 21h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span id="mine-n">0</span>
+        </button>
+      </header>
+      <div class="progress"><div class="ptrack"><div class="pfill" id="pfill"></div></div><span class="pmeta" id="pmeta">0/0</span></div>
+      <main class="stage" id="stage"></main>
+      <p class="sr" id="sr" aria-live="polite"></p>
+    </div>
+    <div id="sheet" class="sheet" hidden>
+      <div class="sheet-bg" data-act="close"></div>
+      <div id="sheet-panel" class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title"></div>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/game/main.js"></script>
   </body>
 </html>
