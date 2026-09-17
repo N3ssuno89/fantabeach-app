@@ -1,11 +1,24 @@
 // Costanti del Coppie Game. Il nome di lavoro sta qui e solo qui (SPEC §1).
 export const GAME_NAME = 'Coppie Game'
 
-// Sotto questa soglia di voti non si mostrano percentuali ma "Ancora pochi voti" (SPEC §6)
-export const MIN_VOTES = 20
+// Soglia sotto la quale non si mostrano percentuali ma "Ancora pochi voti".
+// Su staging basta un voto per vedere subito se i numeri girano; in produzione
+// restano 20 come da SPEC §6. La decisione è presa dal nome del sito.
+export function minVotes() {
+  let host = ''
+  try { host = String(window.location.hostname || '').toLowerCase() } catch (_) {}
+  const isStaging = host.includes('staging') || host === 'localhost' || host === '127.0.0.1'
+  return isStaging ? 1 : 20
+}
 
-// Stato di chi non ha ancora fatto login (SPEC §7)
+// Risposte date da anonimo dopo le quali si chiede il login (SPEC §8)
+export const FREE_ANSWERS = 3
+
+// Stato di chi non ha ancora fatto login (SPEC §8)
 export const STORAGE_KEY = 'coppiegame:v1'
 
-// Profilo da taggare sulle storie: segnaposto finché non c'è il vero username
+// Indirizzo scritto sulle immagini da condividere (SPEC §10)
+export const SHARE_URL = 'fantabeach.netlify.app/game'
+
+// Profilo da taggare: segnaposto finché non si decide quello vero
 export const SHARE_HANDLE = '@profilo'

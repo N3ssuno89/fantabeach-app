@@ -1,9 +1,12 @@
 // Coppie Game — flusso a pagina unica, dati reali, voti salvati sul telefono.
 // Login e scrittura su Supabase arrivano nel passo successivo.
 import './game.css'
-import { GAME_NAME, MIN_VOTES } from './config.js'
+import { GAME_NAME, minVotes, FREE_ANSWERS } from './config.js'
 import { configured } from './supabase.js'
-import { loadWorld, loadStats, pairKey } from './data.js'
+import * as db from './supabase.js'
+import * as session from './session.js'
+import { authSheetHTML, submitAuth } from './authui.js'
+import { loadWorld, loadStats, pairKey, idOf } from './data.js'
 import * as store from './store.js'
 import {
   $, esc, num, norm, cap, artN, tier, FEW_VOTES, ICON_X, ICON_V,
@@ -20,7 +23,18 @@ let DECK = { M: [], F: [] }
 const STATS = { M: null, F: null }
 
 const mk = () => ({ votes: {}, pairs: [], deferred: [], queue: [], mode: null, cur: {} })
-const S = { g: 'M', G: { M: mk(), F: mk() }, busy: false, lastFocus: null }
+const S = {
+  g: 'M',
+  G: { M: mk(), F: mk() },
+  busy: false,
+  lastFocus: null,
+  auth: null,        // { token, user, username } quando si è loggati
+  answers: 0,        // risposte sì/no date da anonimo: al terzo si chiede il login
+  authMode: 'login',
+}
+const MIN = () => minVotes()
+const isAuthed = () => Boolean(S.auth && S.auth.token)
+const nodeOf = id => ATH[id].node
 
 const gs = () => S.G[S.g]
 const mateWord = () => (S.g === 'M' ? 'compagno' : 'compagna')
@@ -29,7 +43,9 @@ const toTop = () => { try { window.scrollTo(0, 0) } catch (_) {} }
 
 // ---------- Persistenza locale ----------
 function persist() {
-  const out = {}
+  // Chi è loggato ha il database come memoria: niente copia locale da riconciliare
+  if (isAuthed()) return
+  const out = { answers: S.answers }
   for (const g of ['M', 'F']) {
     const st = S.G[g]
     out[g] = { votes: st.votes, pairs: st.pairs, deferred: st.deferred }
@@ -46,6 +62,7 @@ function restore() {
     st.pairs = saved[g].pairs.filter(x => ATH[x.a] && ATH[x.b])
     st.deferred = saved[g].deferred.filter(id => ATH[id])
   }
+  S.answers = saved.answers || 0
 }
 
 // ---------- Lettura del mondo ----------
@@ -72,7 +89,7 @@ function stayPct(p) {
   const v = s && s.vote[p.id]
   if (!v) return null
   const tot = v.stay + v.split
-  if (tot < MIN_VOTES) return null
+  if (tot < MIN()) return null
   return Math.round((v.stay / tot) * 100)
 }
 
@@ -80,8 +97,9 @@ function pairPct(a, b) {
   const s = STATS[ATH[a].g]
   if (!s) return null
   const tot = s.byNode[a] || 0
-  if (tot < MIN_VOTES) return null
-  return Math.max(1, Math.round(((s.pair[pairKey(a, b)] || 0) / tot) * 100))
+  if (tot < MIN()) return null
+  // Una coppia senza voti vale 0%, non 1%: non si inventa consenso che non c'è
+  return Math.round(((s.pair[pairKey(a, b)] || 0) / tot) * 100)
 }
 
 function pctFor(x) {
@@ -99,6 +117,40 @@ const pctLine = pct =>
     : pct < 10
       ? `Scelta controcorrente: solo ${artN(pct)}${pct}% la pensa come te.`
       : `${cap(artN(pct))}${pct}% la pensa come te.`
+
+// ---------- Scritture sul database ----------
+// Ogni chiamata è esplicita e non fa cadere il gioco: se il server rifiuta,
+// lo stato locale resta e l'utente vede un avviso.
+async function write(label, fn) {
+  if (!isAuthed()) return false
+  try {
+    await fn(S.auth.token)
+    return true
+  } catch (err) {
+    console.error(`[coppie-game] ${label}:`, err.message)
+    toast('Non sono riuscito a salvare. Riprova.')
+    return false
+  }
+}
+
+// Dopo un voto salvato le percentuali devono cambiare subito: si rileggono e si ridisegna
+async function refreshStats(g) {
+  STATS[g] = await loadStats(g)
+  if (S.g === g && !S.busy) render('none')
+}
+
+function remoteVote(pairId, choice) {
+  write('game_vote', t => db.vote(t, pairId, choice)).then(ok => { if (ok) refreshStats(S.g) })
+}
+function remoteSavePair(a, b) {
+  write('game_save_pair', t => db.savePair(t, nodeOf(a), nodeOf(b))).then(ok => { if (ok) refreshStats(S.g) })
+}
+function remoteUnvote(pairId) {
+  write('game_unvote', t => db.unvote(t, pairId)).then(ok => { if (ok) refreshStats(S.g) })
+}
+function remoteRemovePair(a, b) {
+  write('game_remove_pair', t => db.removePair(t, nodeOf(a), nodeOf(b))).then(ok => { if (ok) refreshStats(S.g) })
+}
 
 // ---------- Regole del gioco ----------
 function addPair(a, b) {
@@ -123,6 +175,7 @@ function removePair(i) {
   const x = st.pairs[i]
   if (!x) return
   st.pairs.splice(i, 1)
+  remoteRemovePair(x.a, x.b)
   if (x.kind === 'confermata') {
     const p = p26Of(x.a)
     if (p) delete st.votes[p.id]
@@ -151,6 +204,7 @@ function advance() {
     if (aP || bP) {
       st.votes[p.id] = 'split'
       persist()
+      remoteVote(p.id, 'split')
       if (aP && bP) continue
       const orphan = aP ? p.b : p.a
       if (st.deferred.indexOf(orphan) >= 0) continue
@@ -199,10 +253,20 @@ function viewPick(enter) {
     cardShell(soloCard(a, { sm: true }), { enter: enter || 'in-up', label: `${a.first} ${a.last}`, shadow: false }) +
     `<h1 class="q">Con chi gioca ${esc(a.short)}?</h1>` +
     `<input id="search" class="search" type="search" autocomplete="off" placeholder="Cerca per cognome" aria-label="Cerca per cognome" value="${esc(st.cur.q || '')}">` +
+    fewVotesHint(a.id) +
     `<div class="carousel" id="carousel" role="list" aria-label="Scegli ${S.g === 'M' ? 'il compagno' : 'la compagna'}"></div>` +
     `<div class="minor">${st.cur.undoPair ? '<button type="button" class="linkbtn" data-act="undo">Annulla il no</button>' : ''}` +
     '<button type="button" class="linkbtn" data-act="later">Decido dopo</button></div></div>'
   )
+}
+
+// Sotto soglia le card del carosello non portano percentuali: si dice perché, invece di lasciare il vuoto
+function fewVotesHint(pid) {
+  const s = STATS[S.g]
+  const tot = (s && s.byNode[pid]) || 0
+  if (tot >= MIN()) return ''
+  const n = MIN()
+  return `<p class="sub">${FEW_VOTES}: le percentuali compaiono con i primi ${n} ${n === 1 ? 'pronostico' : 'pronostici'}.</p>`
 }
 
 function candidates(pid) {
@@ -331,7 +395,7 @@ function communityHTML() {
       const [a, b] = k.split('|')
       return { a, b, c }
     })
-    .filter(o => ATH[o.a] && ATH[o.b] && o.c >= MIN_VOTES && !isPair26(o.a, o.b))
+    .filter(o => ATH[o.a] && ATH[o.b] && o.c >= MIN() && !isPair26(o.a, o.b))
     .sort((u, v) => v.c - u.c)
     .slice(0, 5)
   const maxC = news.length ? news[0].c : 1
@@ -363,9 +427,9 @@ function communityHTML() {
 
   const t = s.totals
   const intro = t
-    ? `${num(t.pairs)} pronostici da ${num(t.players)} persone. Compaiono solo coppie con almeno ${MIN_VOTES} voti.`
-    : `Compaiono solo coppie con almeno ${MIN_VOTES} voti.`
-  const none = `<li class="rrow"><span></span><span class="sub">${FEW_VOTES}.</span><span></span></li>`
+    ? `${num(t.pairs)} pronostici da ${num(t.players)} persone. Compaiono solo coppie con almeno ${MIN()} ${MIN() === 1 ? 'voto' : 'voti'}.`
+    : `Compaiono solo coppie con almeno ${MIN()} ${MIN() === 1 ? 'voto' : 'voti'}.`
+  const none = '<li class="rrow"><span></span><span class="sub">Nessuna coppia ha ancora abbastanza voti.</span><span></span></li>'
 
   return (
     '<section class="sec"><h2>Cosa pensa la community</h2>' +
@@ -376,20 +440,38 @@ function communityHTML() {
   )
 }
 
+// Atleti da sistemare: chi sta in una coppia 2026 votata "si separano" e non è
+// finito in nessuna coppia dell'utente (SPEC §6). Si deduce dai voti, non da una
+// lista locale: così sopravvive al login e alla rilettura dal database.
+function pendingAthletes() {
+  const st = gs()
+  const out = []
+  for (const p of P26[S.g]) {
+    if (st.votes[p.id] !== 'split') continue
+    for (const id of [p.a, p.b]) {
+      if (!isPlaced(id) && out.indexOf(id) < 0) out.push(id)
+    }
+  }
+  return out
+}
+
 function viewEnd() {
   const st = gs()
   const n = st.pairs.length
   const f = S.g === 'F'
-  const pend = st.deferred.filter(id => !isPlaced(id))
+  const pend = pendingAthletes()
   const pendHTML = pend.length
     ? `<div class="pending"><p>${pend.length === 1 ? '1 atleta ancora' : pend.length + ' atleti ancora'} senza ${mateWord()}.</p><div class="chips">` +
       pend.map(id => `<button type="button" class="pchip" data-pick="${id}">${esc(ATH[id].short)}</button>`).join('') +
       '</div></div>'
     : ''
+  const saveHTML = isAuthed()
+    ? `<div class="savebar"><p>Salvati sul tuo account${S.auth.username ? ' @' + esc(S.auth.username) : ''}. Nel 2027 ti mostriamo quante coppie avevi azzeccato.</p></div>`
+    : '<div class="savebar"><p>Vuoi ritrovarli nel 2027? Entra con l\'account FantaBeach.</p><button type="button" class="btn primary" data-act="auth">Entra e salva</button></div>'
   return (
     `<div class="endwrap"><h1>Le mie coppie 2027</h1><p class="sub">${n}${n === 1 ? ' coppia' : ' coppie'} nel ${f ? 'femminile' : 'maschile'}.</p>` +
     `<div class="tiles">${st.pairs.map((x, i) => tileHTML(x, i, false)).join('')}</div>${pendHTML}` +
-    communityHTML() +
+    saveHTML + communityHTML() +
     '</div>'
   )
 }
@@ -434,6 +516,91 @@ function render(enter) {
   if (st.mode === 'pick') renderCarousel()
 }
 
+// ---------- Login: gate alla terza risposta (SPEC §8) ----------
+// Chiudere il modale riporta alla card, ma l'azione successiva lo riapre.
+const gateClosed = () => !isAuthed() && S.answers >= FREE_ANSWERS
+
+function countAnswer() {
+  if (isAuthed()) return
+  S.answers += 1
+  persist()
+}
+
+function requireLogin() {
+  if (!gateClosed()) return false
+  openAuth()
+  return true
+}
+
+// Ricostruisce lo stato dai pronostici salvati sul database
+async function loadFromServer() {
+  const [votes, preds] = await Promise.all([
+    db.getMyVotes(S.auth.token),
+    db.getMyPredictions(S.auth.token),
+  ])
+  for (const g of ['M', 'F']) {
+    const st = S.G[g]
+    st.votes = {}
+    st.pairs = []
+    st.deferred = []
+    st.mode = null
+    st.cur = {}
+    st.queue = []
+  }
+  for (const r of votes || []) {
+    const p = P26.M.find(x => x.id === r.pair_id) || P26.F.find(x => x.id === r.pair_id)
+    if (p) S.G[ATH[p.a].g].votes[r.pair_id] = r.choice
+  }
+  for (const r of preds || []) {
+    let A = ATH[idOf(r.node_a)]
+    let B = ATH[idOf(r.node_b)]
+    if (!A || !B) continue
+    if (B.pos < A.pos) [A, B] = [B, A]
+    // chooser non è salvato sul database: si riparte da chi è più alto in ranking
+    S.G[A.g].pairs.push({ a: A.id, b: B.id, kind: r.kind, chooser: A.id })
+  }
+}
+
+// Dopo il login: game_sync con quello che c'è sul telefono, poi rilettura, poi pulizia
+async function enterSession(token, user, syncLocal) {
+  S.auth = { token, user, username: (user && user.user_metadata && user.user_metadata.username) || null }
+  if (!S.auth.username && user && user.id) {
+    S.auth.username = await session.getUsername(token, user.id)
+  }
+  if (syncLocal) {
+    const votes = []
+    const pairs = []
+    for (const g of ['M', 'F']) {
+      const st = S.G[g]
+      for (const [pair_id, choice] of Object.entries(st.votes)) votes.push({ pair_id, choice })
+      for (const x of st.pairs) pairs.push({ node_1: nodeOf(x.a), node_2: nodeOf(x.b) })
+    }
+    if (votes.length || pairs.length) {
+      try {
+        await db.sync(token, votes, pairs)
+      } catch (err) {
+        console.error('[coppie-game] game_sync:', err.message)
+        toast('Alcune risposte non sono state trasferite.')
+      }
+    }
+  }
+  try {
+    await loadFromServer()
+  } catch (err) {
+    console.error('[coppie-game] rilettura pronostici:', err.message)
+  }
+  store.clear()
+  S.answers = 0
+  advance()
+  render('none')
+  refreshStats(S.g)
+}
+
+function openAuth(msg) {
+  S.authMode = S.authMode || 'login'
+  openSheet(authSheetHTML(S.authMode, msg), '#au-email')
+}
+
 // ---------- Azioni ----------
 const lock = () => { S.busy = true }
 const unlock = () => { S.busy = false }
@@ -441,22 +608,28 @@ const unlock = () => { S.busy = false }
 function actYes() {
   const st = gs()
   if (S.busy || st.mode !== 'pair') return
+  if (requireLogin()) return
   const p = pairById(st.cur.pairId)
   lock()
   hideFloor()
   flyToCounter($('#card'), () => {
     addPair(p.a, p.b)
+    // game_vote('stay') salva anche la coppia confermata: una sola chiamata
+    remoteVote(p.id, 'stay')
+    countAnswer()
     advance()
     render('in-up')
     updateTop(true)
     unlock()
     announce(`${ATH[p.a].short} e ${ATH[p.b].short}: restano insieme`)
+    if (gateClosed()) openAuth()
   })
 }
 
 function actNo() {
   const st = gs()
   if (S.busy || st.mode !== 'pair') return
+  if (requireLogin()) return
   const p = pairById(st.cur.pairId)
   const card = $('#card')
   lock()
@@ -465,12 +638,15 @@ function actNo() {
     tear(card, () => {
       st.votes[p.id] = 'split'
       persist()
+      remoteVote(p.id, 'split')
+      countAnswer()
       st.queue = [p.b]
       st.mode = 'pick'
       st.cur = { pid: p.a, undoPair: p.id, q: '' }
       render('in-up')
       unlock()
       announce(`${ATH[p.a].short} e ${ATH[p.b].short}: si separano`)
+      if (gateClosed()) openAuth()
     })
   })
 }
@@ -478,6 +654,7 @@ function actNo() {
 function actCand(cid) {
   const st = gs()
   if (S.busy || st.mode !== 'pick') return
+  if (requireLogin()) return
   st.cur.cand = cid
   st.mode = 'confirm'
   render()
@@ -486,11 +663,13 @@ function actCand(cid) {
 function actConfirm() {
   const st = gs()
   if (S.busy || st.mode !== 'confirm') return
+  if (requireLogin()) return
   const a = st.cur.pid
   const b = st.cur.cand
   lock()
   merge(() => {
     const x = addPair(a, b)
+    remoteSavePair(a, b)
     st.queue = st.queue.filter(id => id !== b)
     st.mode = 'created'
     st.cur = { pair: x }
@@ -514,6 +693,7 @@ function actLater() {
   const st = gs()
   const pid = st.cur.pid
   if (S.busy || !pid) return
+  if (requireLogin()) return
   if (st.deferred.indexOf(pid) < 0) st.deferred.push(pid)
   persist()
   lock()
@@ -525,8 +705,10 @@ function actUndo() {
   const st = gs()
   const pid = st.cur.undoPair
   if (S.busy || !pid) return
+  if (requireLogin()) return
   delete st.votes[pid]
   persist()
+  remoteUnvote(pid)
   st.queue = []
   st.mode = 'pair'
   st.cur = { pairId: pid }
@@ -561,7 +743,7 @@ function openMine(refreshOnly) {
     '<div class="grab" aria-hidden="true" data-sheet="mine"></div><h3 id="sheet-title">Le mie coppie</h3>' +
     `<p class="sheet-sub">${n ? `${n}${n === 1 ? ' coppia' : ' coppie'} nel ${S.g === 'F' ? 'femminile' : 'maschile'}. Tocca la × per toglierne una.` : 'Ancora nessuna coppia: rispondi alla prima card.'}</p>` +
     (n ? `<div class="tiles">${st.pairs.map((x, i) => tileHTML(x, i, true)).join('')}</div>` : '') +
-    '<div class="sheet-foot"><span></span><button type="button" class="btn" data-act="close">Chiudi</button></div>'
+    `<div class="sheet-foot">${isAuthed() ? '<button type="button" class="linkish" data-act="logout">Esci</button>' : '<span></span>'}<button type="button" class="btn" data-act="close">Chiudi</button></div>`
   if (refreshOnly) { panel.innerHTML = html; fit(panel); return }
   openSheet(html, '[data-act="close"]')
   fit(panel)
@@ -591,7 +773,7 @@ document.addEventListener('click', e => {
   }
   if (d.cand !== undefined) { actCand(d.cand); return }
   if (d.pick !== undefined) {
-    if (S.busy) return
+    if (S.busy || requireLogin()) return
     st.mode = 'pick'
     st.cur = { pid: d.pick, q: '' }
     render('in-up')
@@ -612,13 +794,55 @@ document.addEventListener('click', e => {
     case 'change': if (!S.busy) { st.mode = 'pick'; delete st.cur.cand; render('none') } break
     case 'confirm': actConfirm(); break
     case 'continue': actContinue(); break
-    case 'orphan-pick': if (!S.busy) { st.mode = 'pick'; st.cur = { pid: st.cur.pid, q: '' }; render('none') } break
+    case 'orphan-pick': if (!S.busy && !requireLogin()) { st.mode = 'pick'; st.cur = { pid: st.cur.pid, q: '' }; render('none') } break
     case 'later': actLater(); break
     case 'undo': actUndo(); break
     case 'mine': openMine(false); break
+    case 'auth': openAuth(); break
+    case 'auth-switch':
+      S.authMode = S.authMode === 'signup' ? 'login' : 'signup'
+      openAuth()
+      break
+    case 'logout': doLogout(); break
     case 'close': closeSheet(); break
   }
 })
+
+// Invio del modale di accesso
+document.addEventListener('submit', async e => {
+  if (!e.target || e.target.id !== 'authform') return
+  e.preventDefault()
+  const btn = $('#au-submit')
+  const msg = $('#au-msg')
+  const email = ($('#au-email') || {}).value || ''
+  const password = ($('#au-password') || {}).value || ''
+  const username = ($('#au-username') || {}).value || ''
+  btn.disabled = true
+  msg.textContent = 'Un attimo...'
+  const res = await submitAuth(S.authMode, { email, password, username })
+  if (res.error) {
+    btn.disabled = false
+    msg.textContent = res.error
+    return
+  }
+  closeSheet()
+  await enterSession(res.token, res.user, true)
+  toast('Pronostici salvati sul tuo account')
+})
+
+async function doLogout() {
+  const token = S.auth && S.auth.token
+  S.auth = null
+  if (token) await session.signOut(token)
+  session.clearToken()
+  for (const g of ['M', 'F']) S.G[g] = mk()
+  S.answers = 0
+  store.clear()
+  closeSheet()
+  advance()
+  render('none')
+  toast('Sei uscito')
+}
 
 document.addEventListener('input', e => {
   if (e.target && e.target.id === 'search') { gs().cur.q = e.target.value; renderCarousel() }
@@ -672,6 +896,15 @@ async function boot() {
   }
   if (!DECK.M.length) S.g = 'F'
   restore()
+
+  // Chi è già loggato sull'app non vede mai il modale: si riparte dalla sua sessione
+  const live = await session.restore()
+  if (live) {
+    const hasLocal = ['M', 'F'].some(g => Object.keys(S.G[g].votes).length || S.G[g].pairs.length)
+    await enterSession(live.token, live.user, hasLocal)
+    session.startAutoRefresh(t => { if (S.auth) S.auth.token = t })
+  }
+
   render('in-up')
   await ensureStats(S.g)
   render('none')

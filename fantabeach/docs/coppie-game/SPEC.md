@@ -53,23 +53,31 @@ Percorsi reali nel repository:
 Lettura pubblica: `game_athletes` (circa 227 righe) e `game_pairs` (94 righe), entrambe sotto il limite di 1000 righe.
 Pronostici: `game_votes` e `game_predictions`; ogni utente legge solo i propri.
 
-| Funzione | Chi | Quando |
+I nomi degli argomenti sono quelli reali delle funzioni SQL. PostgREST usa quelli:
+nel corpo della chiamata vanno scritti con il prefisso `p_`, non con il nome della colonna.
+
+| Funzione (nomi reali degli argomenti) | Chi | Quando |
 |---|---|---|
-| `game_vote(pair_id, 'stay' o 'split')` | loggati | risposta a una card |
-| `game_unvote(pair_id)` | loggati | «Annulla il no» |
-| `game_save_pair(node_1, node_2)` | loggati | conferma di una coppia; toglie da sola le coppie in conflitto |
-| `game_remove_pair(node_1, node_2)` | loggati | «Togli» dalla lista |
-| `game_sync(votes, pairs)` | loggati | subito dopo il login, per le risposte date da anonimo |
-| `game_vote_stats(gender)` | tutti | percentuali resta o si separa |
-| `game_pair_stats(gender)` | tutti | voti per coppia: percentuali del carosello e classifica delle nuove coppie |
-| `game_totals(gender)` | tutti | numeri in testa alla sezione community |
+| `game_vote(p_pair_id, p_choice)` — `'stay'` o `'split'` | loggati | risposta a una card. Con `'stay'` chiama da sola `game_save_pair` |
+| `game_unvote(p_pair_id)` | loggati | «Annulla il no» |
+| `game_save_pair(p_node_1, p_node_2)` | loggati | conferma di una coppia; toglie da sola le coppie in conflitto |
+| `game_remove_pair(p_node_1, p_node_2)` | loggati | «Togli» dalla lista |
+| `game_sync(p_votes, p_pairs)` | loggati | subito dopo il login, per le risposte date da anonimo |
+| `game_vote_stats(p_gender)` | tutti | percentuali resta o si separa |
+| `game_pair_stats(p_gender)` | tutti | voti per coppia: percentuali del carosello e classifica delle nuove coppie |
+| `game_totals(p_gender)` | tutti | numeri in testa alla sezione community |
+
+Corpo di `game_sync`: `p_votes` è `[{"pair_id":"p15154-15163","choice":"split"}]`,
+`p_pairs` è `[{"node_1":15154,"node_2":14287}]`. Massimo 200 elementi per lista.
 
 Regole lato client:
 - **Mazzo**: `game_pairs` con `in_deck = true`, ordinato per `deck_order`.
 - **Coppia 2026 di un atleta**: la riga di `game_pairs` che lo contiene (al massimo una).
-- **Percentuale «restano»**: stay / (stay + split). Sotto i 20 voti mostrare «Ancora pochi voti».
-- **Percentuale del compagno X per l'atleta A**: voti della coppia A-X diviso la somma dei voti di tutte le coppie con A. Sotto i 20 voti, «Ancora pochi voti».
-- **Community**: mostrare solo coppie con almeno 20 voti.
+- **Percentuale «restano»**: stay / (stay + split). Sotto soglia mostrare «Ancora pochi voti».
+- **Soglia**: 20 voti in produzione, 1 voto su staging. La decide il nome del sito: se l'indirizzo contiene `staging` la soglia è 1.
+- Una coppia con zero voti vale **0%**, non 1%.
+- **Percentuale del compagno X per l'atleta A**: voti della coppia A-X diviso la somma dei voti di tutte le coppie con A. Sotto soglia, sopra il carosello, la riga «Ancora pochi voti: le percentuali compaiono con i primi N pronostici».
+- **Community**: mostrare solo coppie sopra soglia. Se non ce n'è nessuna, scrivere «Nessuna coppia ha ancora abbastanza voti» invece di lasciare la lista vuota.
 - **Atleti da sistemare**: atleti di coppie votate «split» che non sono in nessuna coppia dell'utente (le funzioni segnano già come separate le coppie 2026 toccate da una scelta).
 
 ## 7. Flusso (una sola pagina, come nell'anteprima)

@@ -5,7 +5,7 @@ import { STORAGE_KEY } from './config.js'
 const empty = () => ({ votes: {}, pairs: [], deferred: [] })
 
 export function emptyState() {
-  return { M: empty(), F: empty() }
+  return { M: empty(), F: empty(), answers: 0 }
 }
 
 export function load() {
@@ -30,6 +30,7 @@ export function load() {
     if (Array.isArray(src.pairs)) state[g].pairs = src.pairs.filter(x => x && x.a && x.b)
     if (Array.isArray(src.deferred)) state[g].deferred = src.deferred.filter(id => typeof id === 'string')
   }
+  if (Number.isFinite(parsed && parsed.answers)) state.answers = parsed.answers
   return state
 }
 

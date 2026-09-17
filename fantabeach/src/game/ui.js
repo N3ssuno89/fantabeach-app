@@ -1,5 +1,4 @@
 // Pezzi di interfaccia: figure, card e righe. HTML e classi vengono dall'anteprima approvata.
-import { MIN_VOTES } from './config.js'
 
 export const $ = s => document.querySelector(s)
 
@@ -12,8 +11,11 @@ export const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(
 
 export const cap = s => s.charAt(0).toUpperCase() + s.slice(1)
 
-// "l'8%" invece di "il 8%"
-export const artN = n => (n === 1 || n === 8 || n === 11 || (n >= 80 && n <= 89) ? "l'" : 'il ')
+// "l'8%" invece di "il 8%", "lo 0%" invece di "il 0%"
+export const artN = n => {
+  if (n === 0) return 'lo '
+  return n === 1 || n === 8 || n === 11 || (n >= 80 && n <= 89) ? "l'" : 'il '
+}
 
 export function tier(r) {
   if (r <= 5) return ['top', 'Top Player']
@@ -24,7 +26,6 @@ export function tier(r) {
 }
 
 export const FEW_VOTES = 'Ancora pochi voti'
-export { MIN_VOTES }
 
 export const ICON_X =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>'
