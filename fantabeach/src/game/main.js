@@ -1,7 +1,7 @@
 // Coppie Game — flusso a pagina unica, dati reali, voti salvati sul telefono.
 // Login e scrittura su Supabase arrivano nel passo successivo.
 import './game.css'
-import { GAME_NAME, minVotes, FREE_ANSWERS } from './config.js'
+import { GAME_NAME, minVotes, FREE_ANSWERS, SHARE_HANDLE } from './config.js'
 import { configured } from './supabase.js'
 import * as db from './supabase.js'
 import * as session from './session.js'
@@ -109,8 +109,9 @@ function pctFor(x) {
     const p = p26Of(x.a)
     return p ? stayPct(p) : null
   }
-  const c = x.chooser || x.a
-  return pairPct(c, c === x.a ? x.b : x.a)
+  // Sempre dall'atleta più alto in ranking (x.a), sia da anonimo sia da loggati:
+  // il database non registra chi ha scelto, così il numero non cambia dopo l'accesso.
+  return pairPct(x.a, x.b)
 }
 
 const pctLine = pct =>
@@ -164,9 +165,9 @@ function addPair(a, b) {
   if (same) st.votes[pa.id] = 'stay'
   const A = ATH[a]
   const B = ATH[b]
+  // x.a è sempre l'atleta più alto in ranking: le percentuali si calcolano da lui
   const x = B.pos < A.pos ? { a: b, b: a } : { a, b }
   x.kind = same ? 'confermata' : 'nuova'
-  x.chooser = a
   st.pairs.push(x)
   persist()
   return x
@@ -316,7 +317,10 @@ function viewConfirm() {
   const st = gs()
   const a = ATH[st.cur.pid]
   const b = ATH[st.cur.cand]
-  const pct = pairPct(a.id, b.id)
+  // Stessa regola della card finale e della storia: si conta dall'atleta più alto in ranking
+  const hi = a.pos <= b.pos ? a : b
+  const lo = hi === a ? b : a
+  const pct = pairPct(hi.id, lo.id)
   return (
     `<div class="pairup"><div class="slot a">${cardShell(soloCard(a, { sm: true }), { id: 'cardA', float: false, shadow: false, label: `${a.first} ${a.last}` })}</div>` +
     `<div class="slot b">${cardShell(soloCard(b, { sm: true }), { id: 'cardB', float: false, shadow: false, enter: 'in-right', label: `${b.first} ${b.last}` })}</div></div>` +
@@ -561,8 +565,7 @@ async function loadFromServer() {
     let B = ATH[idOf(r.node_b)]
     if (!A || !B) continue
     if (B.pos < A.pos) [A, B] = [B, A]
-    // chooser non è salvato sul database: si riparte da chi è più alto in ranking
-    S.G[A.g].pairs.push({ a: A.id, b: B.id, kind: r.kind, chooser: A.id })
+    S.G[A.g].pairs.push({ a: A.id, b: B.id, kind: r.kind })
   }
 }
 
@@ -765,13 +768,18 @@ const SHARE_ICON =
 const shareNote = t => { const n = $('#share-note'); if (n) n.textContent = t }
 
 function shareBlockHTML() {
+  const link = gameLinkText()
   return (
     '<div class="story-wrap" id="story-slot"><div class="story-img loading"><span>Preparo l\'immagine</span></div></div>' +
+    // Il segnaposto sta qui, davanti a chi condivide: sull'immagine lo leggerebbero i suoi follower
+    `<p class="micro">Nella storia tagga ${SHARE_HANDLE} e aggiungi lo sticker Link: è facoltativo.</p>` +
     '<div class="share-actions">' +
     '<button type="button" class="btn primary" data-act="do-share" disabled>Condividi nella storia</button>' +
     '<button type="button" class="btn ghost" data-act="copy-link">Copia il link</button>' +
     '</div>' +
-    '<p class="micro" id="share-note">Nella storia aggiungi lo sticker Link e incolla l\'indirizzo: è facoltativo.</p>'
+    // Il link resta a vista e selezionabile: se gli appunti non funzionano si copia a mano
+    `<p class="micro"><span id="share-link" style="user-select:text;-webkit-user-select:text;word-break:break-all">${esc(link)}</span></p>` +
+    '<p class="micro" id="share-note"></p>'
   )
 }
 
@@ -861,7 +869,7 @@ async function doShare() {
   if (outcome === 'shared') {
     shareNote(copied
       ? 'Link copiato: nella storia aggiungi lo sticker Link e incollalo.'
-      : 'Per il link usa il tasto «Copia il link» qui sotto.')
+      : 'Tieni premuto sul link per copiarlo.')
     return
   }
   if (outcome === 'cancelled') return
@@ -932,7 +940,7 @@ document.addEventListener('click', e => {
     case 'copy-link':
       copyLink().then(ok => shareNote(ok
         ? 'Link copiato: nella storia aggiungi lo sticker Link e incollalo.'
-        : 'Copia a mano questo indirizzo: ' + gameLinkText()))
+        : 'Tieni premuto sul link per copiarlo.'))
       break
     case 'close': closeSheet(); break
   }

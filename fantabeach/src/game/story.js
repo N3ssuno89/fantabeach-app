@@ -1,6 +1,6 @@
 // Immagine 1080x1920 per le storie. Stessa card del gioco, disegnata su canvas.
 // Le figure sono sempre sagome: in questa versione nessuno ha la foto.
-import { SHARE_URL, SHARE_HANDLE } from './config.js'
+import { SHARE_URL } from './config.js'
 import { num, tier } from './ui.js'
 
 const W = 1080
@@ -319,7 +319,8 @@ function storyBase(ctx) {
   if (LOGO) ctx.drawImage(LOGO, 92, 73, lw, lh)
 }
 
-// L'indirizzo è quello della SPEC §10. Il profilo da taggare è ancora un segnaposto.
+// L'indirizzo è quello della SPEC §10. Il profilo da taggare NON va qui:
+// l'immagine la leggono i follower di chi condivide, non chi condivide.
 function storyFooter(ctx, g, username) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
@@ -331,9 +332,7 @@ function storyFooter(ctx, g, username) {
   ctx.fillText(SHARE_URL, W / 2, 1798)
   ctx.fillStyle = 'rgba(243,236,221,.7)'
   setFont(ctx, '500', 28, UI)
-  ctx.fillText(`Pronostico di @${username}, non una notizia ufficiale.`, W / 2, 1852)
-  setFont(ctx, '500', 26, UI)
-  ctx.fillText(`Tagga ${SHARE_HANDLE}`, W / 2, 1892)
+  ctx.fillText(`Pronostico di @${username}, non una notizia ufficiale.`, W / 2, 1878)
 }
 
 const newCanvas = () => {
