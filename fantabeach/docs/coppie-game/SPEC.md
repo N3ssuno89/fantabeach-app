@@ -16,7 +16,7 @@ Obiettivo di business: portare nuovi iscritti a FantaBeach prima della stagione 
 
 | File | Contenuto |
 |---|---|
-| `01_schema.sql` | tabelle `game_*`, RLS, funzioni, bucket foto (già approvato da Emanuele) |
+| `01_schema.sql` | tabelle `game_*`, RLS, funzioni, bucket foto (già approvato e già lanciato su staging, 9 prove su 9 OK) |
 | `02_seed_2026.sql` | atleti e coppie 2026 dai dati FIVB; si può rilanciare senza toccare voti e foto |
 | `03_verifica_staging.sql` | prove di sicurezza e logica, un blocco alla volta |
 | `anteprima-riferimento.html` | anteprima funzionante: riferimento per HTML, CSS, animazioni e canvas delle storie |
@@ -29,14 +29,26 @@ Obiettivo di business: portare nuovi iscritti a FantaBeach prima della stagione 
 - Le statistiche si leggono dalle funzioni di statistica, mai scaricando tabelle intere (limite righe di PostgREST).
 - Nell'anteprima i voti della community sono simulati (`VOTERS`, `pairCount`, `stayPct`): in produzione vanno sostituiti dai dati reali.
 
-## 4. Architettura
+## 4. Passo 0: prima di scrivere codice
 
-1. **Vite multi-page**: `game.html` + `src/game/`, separati dall'app. Nel build servono entrambi gli input, `index.html` e `game.html`.
-2. **Netlify**: regola `/game  /game.html  200` prima del fallback dell'app. Controllare che `/game` non apra FantaBeach e che l'app funzioni come prima.
-3. **Sessione**: stesso progetto Supabase e stessa sessione dell'app. Prima di scrivere codice, leggere come `App.jsx` crea il client e dove salva il token, e fare esattamente lo stesso: stesso dominio significa che chi è loggato sull'app deve risultare loggato anche su `/game`.
-4. **Link** dalla home dell'app a `/game`.
+Repository `N3ssuno89/fantabeach-app`, branch `staging`. L'app sta nella cartella `fantabeach/` (base di Netlify); questa specifica è in `fantabeach/docs/coppie-game/`.
 
-## 5. Dati
+**Database già pronto**: su staging (progetto Supabase `buaiuvmsdtdqlogesonl`) `01_schema.sql` e `02_seed_2026.sql` sono già stati eseguiti e le 9 prove di `03_verifica_staging.sql` sono tutte OK. Non eseguire SQL e non collegarti a Supabase da Claude Code: se vedi un progetto in pausa, non è quello di staging.
+
+1. **Allineare `staging` a `main`**. Oggi `staging` è indietro: su `main` ci sono correzioni che mancano, per esempio `fivb-results.js` che legge `player_node_map` con `limit=100000` e `fivb-tournaments` ogni ora in `netlify.toml`. Fare il merge di `main` in `staging`; nei conflitti sulle funzioni FIVB e su `netlify.toml` tenere la versione di `main`.
+2. **Funzioni di prova senza protezione**, presenti solo su `staging`: `fivb-probe.js` (inoltra qualsiasi richiesta all'API FIVB con il token di Emanuele), `fivb-bridge.js` (con `?write=1` scrive in `player_node_map`), `fivb-score.js` (scrive in `fivb_player_scores`), `fivb-test.js`. Non devono arrivare su `main`. Chiedere a Emanuele se cancellarle o proteggerle: non decidere da solo.
+
+## 5. Architettura
+
+Percorsi reali nel repository:
+1. **Pagina separata**: `fantabeach/game.html` e il codice in `fantabeach/src/game/`, separati dall'app.
+2. **Vite**: in `fantabeach/vite.config.js` aggiungere `build.rollupOptions.input` con `index.html` e `game.html`.
+3. **Netlify**: in `fantabeach/netlify.toml` aggiungere, **prima** della regola esistente `/*` → `/index.html`, la regola `from = "/game"`, `to = "/game.html"`, `status = 200`. Controllare che `/game` non apra l'app e che l'app funzioni come prima.
+4. **Sessione**: `App.jsx` non usa supabase-js. Usa un client REST fatto a mano con le variabili `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` e salva il login in `localStorage` alle chiavi `fb_access_token` e `fb_refresh_token` (intorno alla riga 108). Il gioco deve usare le stesse chiavi e la stessa logica di rinnovo del token: chi è loggato sull'app deve risultare loggato su `/game`, e viceversa. Estrarre la logica in un modulo condiviso è possibile solo senza cambiare il comportamento di `App.jsx`.
+5. **Chiamate alle funzioni**: `POST {VITE_SUPABASE_URL}/rest/v1/rpc/<nome_funzione>` con gli header `apikey` (chiave anon) e `Authorization: Bearer <fb_access_token>`; per chi non è loggato, `Bearer <chiave anon>`.
+6. **Link** dalla home dell'app a `/game`.
+
+## 6. Dati
 
 Lettura pubblica: `game_athletes` (circa 227 righe) e `game_pairs` (94 righe), entrambe sotto il limite di 1000 righe.
 Pronostici: `game_votes` e `game_predictions`; ogni utente legge solo i propri.
@@ -60,7 +72,7 @@ Regole lato client:
 - **Community**: mostrare solo coppie con almeno 20 voti.
 - **Atleti da sistemare**: atleti di coppie votate «split» che non sono in nessuna coppia dell'utente (le funzioni segnano già come separate le coppie 2026 toccate da una scelta).
 
-## 6. Flusso (una sola pagina, come nell'anteprima)
+## 7. Flusso (una sola pagina, come nell'anteprima)
 
 - Card della coppia 2026: «Si separano» o «Restano», anche con lo swipe.
 - **No**: X e strappo, poi scelta del compagno per l'atleta più alto in ranking (carosello e ricerca), conferma, card nuova, «Condividi» o «Continua», poi «E [secondo atleta]?» con «Scegli» o «Decido dopo».
@@ -70,29 +82,29 @@ Regole lato client:
 - Maschile e femminile sono due partite separate.
 - Il testo «mercato» non deve comparire da nessuna parte.
 
-## 7. Login
+## 8. Login
 
 - Da anonimo lo stato vive in `localStorage` alla chiave `coppiegame:v1` (voti, coppie, rimandati, per genere).
 - **Gate**: alla terza risposta (sì o no) o al tocco su «Condividi» si apre il modale «Entra» / «Registrati», con email e password come nell'app. Chiudere il modale riporta alla card, ma l'azione successiva lo riapre.
-- **Registrazione**: `supabase.auth.signUp({ email, password, options: { data: { signup_source: 'coppie_game' } } })`, poi il profilo creato come fa l'app. Lo username è obbligatorio perché compare sulla storia.
+- **Registrazione**: la stessa chiamata `auth/v1/signup` che usa `App.jsx`, aggiungendo nel corpo `"data": { "signup_source": "coppie_game" }`, poi il profilo creato come fa l'app. Lo username è obbligatorio perché compare sulla storia.
 - **Dopo il login**: chiamare `game_sync` con i dati locali, rileggere voti e coppie dal database e svuotare il `localStorage`.
 - Chi è già loggato sull'app non vede mai il modale.
 - **Conferma email**: non deve bloccare l'accesso. Su prod è così dal 26 maggio 2026 (tutte le iscrizioni successive risultano confermate subito); nei due giorni in cui era obbligatoria, 9 iscritti su 22 non sono mai entrati. Non riattivarla e verificare su staging che valga lo stesso.
 
-## 8. Card, foto e sagome
+## 9. Card, foto e sagome
 
 - HTML e CSS della card si prendono dall'anteprima (`.cborder`, `.vX`, `.pair`, `.solo`, `.mini`, `.tl`).
 - **Foto**: bucket pubblico `game-players`, file `<node>.png`, nome del file in `game_athletes.photo_path`. Per disegnarle nel canvas usare `img.crossOrigin = 'anonymous'`.
 - **Formato richiesto**: PNG senza sfondo, dalla vita in su, testa sempre alla stessa altezza, almeno 1000 px di altezza.
 - **Senza foto**: sagoma scura in controluce. Eliminare dall'anteprima tutto ciò che disegna volti (`lookOf`, pelle, capelli, occhiali): in produzione restano solo foto o sagome.
 
-## 9. Condivisione
+## 10. Condivisione
 
 - Immagine 1080x1920 generata nel canvas come in `renderPairStory` e `renderMarketStory`, con «@username» preso dal profilo e l'indirizzo `fantabeach.netlify.app/game`.
 - «Condividi»: `navigator.share({ files })` quando disponibile. Altrimenti l'immagine a schermo con «Tieni premuto per salvarla» e un pulsante di download.
 - Sull'immagine resta la frase «Pronostico di @username, non una notizia ufficiale».
 
-## 10. Test su staging (criteri di accettazione)
+## 11. Test su staging (criteri di accettazione)
 
 1. `01`, `02` e i blocchi di `03` su staging con gli esiti attesi scritti nel file.
 2. `/game` si apre e l'app FantaBeach funziona come prima.
@@ -105,23 +117,24 @@ Regole lato client:
 9. Con «riduci movimento» attivo il flusso funziona senza animazioni.
 10. Nessun errore in console.
 
-## 11. Rilascio
+## 12. Rilascio
 
-1. `01_schema.sql` e `02_seed_2026.sql` su prod (valori attesi alla fine del `02`).
-2. Merge e deploy, poi link dalla home.
-3. Iscritti arrivati dal gioco:
+1. Controllare che nel merge verso `main` non ci siano le funzioni di prova del passo 0.
+2. `01_schema.sql` e `02_seed_2026.sql` su prod (valori attesi alla fine del `02`).
+3. Merge e deploy, poi link dalla home.
+4. Iscritti arrivati dal gioco:
 
 ```sql
 select count(*) from auth.users where raw_user_meta_data->>'signup_source' = 'coppie_game';
 ```
 
-## 12. Fuori da questa specifica
+## 13. Fuori da questa specifica
 
 - Verifica e punteggio dei pronostici nel 2027: i dati restano salvati con la data.
 - Raccolta e scontorno delle foto.
 - Notifiche.
 
-## 13. Decisioni aperte: chiederle a Emanuele, non deciderle
+## 14. Decisioni aperte: chiederle a Emanuele, non deciderle
 
 - Nome definitivo e indirizzo.
 - Dominio da mostrare sulla storia, se ne esiste uno personalizzato.
