@@ -116,9 +116,10 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, note: "nessun evento da processare" }) };
 
     // player_node_map: node -> internal_id
-    const pnmRows = await sbGet("player_node_map?select=node,internal_id");
-    const nodeToId = {};
-    pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+    const pnmRows = await sbGet("player_node_map?select=node,internal_id&limit=100000");
+const nodeToId = {};
+pnmRows.forEach(r => { if (r.node != null) nodeToId[r.node] = r.internal_id; });
+console.log(`[PNM] righe caricate: ${pnmRows.length}, 62540 presente: ${62540 in nodeToId}, M0540 node: ${JSON.stringify(pnmRows.find(r => r.internal_id === 'M0540'))}`);
 
     // Normalizza un nome per il match: maiuscole, no accenti/apostrofi, spazi singoli.
     // NON tocca le lettere (MARTIN != MARTINS resta diverso: errore di dato, va corretto in coaches).
@@ -183,7 +184,10 @@ exports.handler = async (event) => {
       const missing = new Set();
       for (const m of matches) {
         for (const nd of [m.team_a_p1_node, m.team_a_p2_node, m.team_b_p1_node, m.team_b_p2_node]) {
-          if (nd != null && !(nd in nodeToId)) missing.add(nd);
+          if (nd != null && !(nd in nodeToId)) {
+            console.log(`[GUARDIA A] node mancante ${nd} (tipo ${typeof nd}) match ${m.match_no}`);
+            missing.add(nd);
+          }
         }
       }
       if (missing.size > 0) {
