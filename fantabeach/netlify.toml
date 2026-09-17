@@ -41,6 +41,12 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Coppie Game: deve stare PRIMA del fallback /* dell'app
+[[redirects]]
+  from = "/game"
+  to = "/game.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -1844,6 +1844,11 @@ function FantaBeach({ accessToken, authUser, onLogout }) {
           {myJoin==="APPROVED"&&<span style={{color:B.gray,fontSize:10}}>{roster.length}/5 atleti · {lineup.length}/3 titolari{captain?" · ★ Cap":""}</span>}
         </div>
 
+        <a href="/game" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",marginBottom:10,borderRadius:10,border:`1px solid ${B.orange}`,background:B.orangePale,color:B.orange,textDecoration:"none",fontFamily:"Georgia,serif",fontSize:12,fontWeight:"bold"}}>
+          <span style={{flex:1}}>Coppie Game — pronostica le coppie 2027</span>
+          <span style={{color:B.orangeLight}}>›</span>
+        </a>
+
         {myJoin==="APPROVED"&&(
           <div style={{display:"flex",gap:5,paddingBottom:14,alignItems:"center"}}>
             {Array.from({length:5}).map((_,i)=>(
