@@ -15,6 +15,8 @@ import {
 import {
   hideFloor, bindTilt, bindSwipe, bindCoverflow, slash, tear, flyToCounter, dropOut, merge, burst,
 } from './anim.js'
+import { renderPairStory, renderAllPairsStory } from './story.js'
+import { shareStory, copyLink, canvasToBlob, download, slug, gameLink as gameLinkText } from './share.js'
 
 let ATH = {}
 let LIST = { M: [], F: [] }
@@ -342,7 +344,8 @@ function viewCreated() {
     }) +
     `<h1 class="q">Team ${esc(A.short)}/<wbr>${esc(B.short)}</h1>` +
     `<p class="sub">${pctLine(pct)}</p>` +
-    '<div class="btns"><button type="button" class="btn primary" data-act="continue">Continua</button></div>'
+    '<div class="btns"><button type="button" class="btn" data-act="continue">Continua</button>' +
+    '<button type="button" class="btn primary" data-act="share-created">Condividi nella storia</button></div>'
   )
 }
 
@@ -376,6 +379,7 @@ function tileHTML(x, i, withRemove) {
     `<div class="figs">${figSpan(A, 'a')}${figSpan(B, 'b')}</div>` +
     `<span class="tname">${esc(A.short)}/<wbr>${esc(B.short)}</span><span class="tkind">${conf ? 'Restano insieme' : 'Nuova coppia'}</span>` +
     '</div></div>' +
+    `<button type="button" class="tbtn share" data-act="share-row" data-i="${i}" aria-label="Condividi ${esc(pairName(x))}">${SHARE_ICON}</button>` +
     (withRemove ? `<button type="button" class="tbtn rm" data-rm="${i}" aria-label="Togli ${esc(pairName(x))}">×</button>` : '') +
     '</div>'
   )
@@ -471,6 +475,7 @@ function viewEnd() {
   return (
     `<div class="endwrap"><h1>Le mie coppie 2027</h1><p class="sub">${n}${n === 1 ? ' coppia' : ' coppie'} nel ${f ? 'femminile' : 'maschile'}.</p>` +
     `<div class="tiles">${st.pairs.map((x, i) => tileHTML(x, i, false)).join('')}</div>${pendHTML}` +
+    (n ? '<div class="btns" style="max-width:none"><button type="button" class="btn primary" data-act="share-all">Condividi le mie coppie</button></div>' : '') +
     saveHTML + communityHTML() +
     '</div>'
   )
@@ -727,6 +732,8 @@ function openSheet(html, focusSel) {
 }
 
 function closeSheet() {
+  share.token++
+  share.blob = null
   $('#sheet').hidden = true
   document.body.style.overflow = ''
   if (S.lastFocus && document.contains(S.lastFocus)) {
@@ -742,11 +749,125 @@ function openMine(refreshOnly) {
   const html =
     '<div class="grab" aria-hidden="true" data-sheet="mine"></div><h3 id="sheet-title">Le mie coppie</h3>' +
     `<p class="sheet-sub">${n ? `${n}${n === 1 ? ' coppia' : ' coppie'} nel ${S.g === 'F' ? 'femminile' : 'maschile'}. Tocca la × per toglierne una.` : 'Ancora nessuna coppia: rispondi alla prima card.'}</p>` +
-    (n ? `<div class="tiles">${st.pairs.map((x, i) => tileHTML(x, i, true)).join('')}</div>` : '') +
+    (n ? `<div class="tiles">${st.pairs.map((x, i) => tileHTML(x, i, true)).join('')}</div>` +
+      '<div class="btns" style="max-width:none"><button type="button" class="btn primary" data-act="share-all">Condividi le mie coppie</button></div>' : '') +
     `<div class="sheet-foot">${isAuthed() ? '<button type="button" class="linkish" data-act="logout">Esci</button>' : '<span></span>'}<button type="button" class="btn" data-act="close">Chiudi</button></div>`
   if (refreshOnly) { panel.innerHTML = html; fit(panel); return }
   openSheet(html, '[data-act="close"]')
   fit(panel)
+}
+
+// ---------- Condivisione (SPEC §10) ----------
+const share = { token: 0, blob: null, filename: '' }
+const SHARE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+const shareNote = t => { const n = $('#share-note'); if (n) n.textContent = t }
+
+function shareBlockHTML() {
+  return (
+    '<div class="story-wrap" id="story-slot"><div class="story-img loading"><span>Preparo l\'immagine</span></div></div>' +
+    '<div class="share-actions">' +
+    '<button type="button" class="btn primary" data-act="do-share" disabled>Condividi nella storia</button>' +
+    '<button type="button" class="btn ghost" data-act="copy-link">Copia il link</button>' +
+    '</div>' +
+    '<p class="micro" id="share-note">Nella storia aggiungi lo sticker Link e incolla l\'indirizzo: è facoltativo.</p>'
+  )
+}
+
+async function mountStory(tok, canvas, filename, alt) {
+  if (tok !== share.token) return
+  const slot = $('#story-slot')
+  if (!slot) return
+  const img = new Image()
+  img.className = 'story-img'
+  img.alt = alt
+  img.src = canvas.toDataURL('image/png')
+  slot.innerHTML = ''
+  slot.appendChild(img)
+  share.filename = filename
+  const blob = await canvasToBlob(canvas)
+  if (tok !== share.token) return
+  share.blob = blob
+  const b = $('[data-act="do-share"]')
+  if (b) b.disabled = !blob
+}
+
+// Il profilo mostrato sulla storia è quello di chi gioca (SPEC §10)
+const storyUsername = () => (S.auth && S.auth.username) || 'giocatore'
+
+function openShareSheet(title, sub, build) {
+  if (!isAuthed()) { openAuth(); return }
+  const tok = ++share.token
+  share.blob = null
+  openSheet(
+    '<div class="grab" aria-hidden="true" data-sheet="share"></div>' +
+    `<h3 id="sheet-title">${title}</h3><p class="sheet-sub">${sub}</p>` +
+    shareBlockHTML() +
+    '<div class="sheet-foot"><span></span><button type="button" class="btn ghost" data-act="close">Fatto</button></div>',
+    '[data-act="close"]'
+  )
+  build().then(({ canvas, filename, alt }) => mountStory(tok, canvas, filename, alt)).catch(err => {
+    console.error('[coppie-game] immagine storia:', err.message)
+    shareNote('Non riesco a preparare l\'immagine. Riprova.')
+  })
+}
+
+function sharePair(x) {
+  const A = ATH[x.a]
+  const B = ATH[x.b]
+  const conf = x.kind === 'confermata'
+  const pct = pctFor(x)
+  const p = p26Of(x.a)
+  const stats = conf && p
+    ? [[p.tappe, 'tappe insieme'], [p.partite, 'partite insieme'], [num(p.punti), 'punti insieme']]
+    : [[num(A.pts + B.pts), 'punti 2026 in due'], [pct == null ? '—' : pct + '%', 'della community'], [`#${A.pos} #${B.pos}`, 'ranking']]
+  const line = pct == null
+    ? 'Ancora pochi voti sulla community'
+    : pct < 10
+      ? `Solo ${artN(pct)}${pct}% la pensa come me`
+      : `${cap(artN(pct))}${pct}% la pensa come me`
+  openShareSheet(
+    `Team ${esc(A.short)}/${esc(B.short)}`,
+    conf ? 'Per te restano insieme nel 2027.' : 'Nuova coppia nel tuo pronostico 2027.',
+    async () => ({
+      canvas: await renderPairStory({
+        A, B, confermata: conf, stats, pctLine: line, gender: S.g, username: storyUsername(),
+      }),
+      filename: `fantabeach-pronostico-${slug(A.short)}-${slug(B.short)}.png`,
+      alt: `Storia: il mio pronostico 2027, Team ${A.short}/${B.short}`,
+    })
+  )
+}
+
+function shareAll() {
+  const st = gs()
+  if (!st.pairs.length) return
+  const rows = st.pairs.map(x => ({ A: ATH[x.a], B: ATH[x.b], confermata: x.kind === 'confermata' }))
+  openShareSheet(
+    'Le mie coppie 2027',
+    `${rows.length}${rows.length === 1 ? ' coppia' : ' coppie'} nel ${S.g === 'F' ? 'femminile' : 'maschile'}.`,
+    async () => ({
+      canvas: await renderAllPairsStory({ gender: S.g, rows, username: storyUsername() }),
+      filename: 'fantabeach-coppie-2027.png',
+      alt: 'Storia: le mie coppie 2027',
+    })
+  )
+}
+
+async function doShare() {
+  if (!share.blob) return
+  const { outcome, copied } = await shareStory(share.blob, share.filename)
+  if (outcome === 'shared') {
+    shareNote(copied
+      ? 'Link copiato: nella storia aggiungi lo sticker Link e incollalo.'
+      : 'Per il link usa il tasto «Copia il link» qui sotto.')
+    return
+  }
+  if (outcome === 'cancelled') return
+  // Niente condivisione di file su questo browser
+  shareNote('Tieni premuto per salvarla.')
+  download(share.blob, share.filename)
 }
 
 let tt = null
@@ -804,6 +925,15 @@ document.addEventListener('click', e => {
       openAuth()
       break
     case 'logout': doLogout(); break
+    case 'share-created': if (st.cur.pair) sharePair(st.cur.pair); break
+    case 'share-row': if (st.pairs[+d.i]) sharePair(st.pairs[+d.i]); break
+    case 'share-all': shareAll(); break
+    case 'do-share': doShare(); break
+    case 'copy-link':
+      copyLink().then(ok => shareNote(ok
+        ? 'Link copiato: nella storia aggiungi lo sticker Link e incollalo.'
+        : 'Copia a mano questo indirizzo: ' + gameLinkText()))
+      break
     case 'close': closeSheet(); break
   }
 })
