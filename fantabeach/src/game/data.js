@@ -42,6 +42,7 @@ export async function loadWorld() {
       pos: r.ranking_pos,
       pts: Number(r.fb_points) || 0,
       g: r.gender,
+      photo: Boolean(r.photo_path),
     }
     ATH[a.id] = a
     if (LIST[a.g]) LIST[a.g].push(a)
@@ -77,9 +78,18 @@ export async function loadWorld() {
     if (p.inDeck) DECK[r.gender].push(p)
   }
 
-  // Il mazzo è ordinato dal database (deck_order), non da una regola del client
+  // Ordine del mazzo: prima le coppie con la foto a entrambi, poi quelle senza
+  // foto a nessuno dei due, per ultime le miste (una card con una foto e una
+  // sagoma sembra rotta). Dentro ogni gruppo resta il deck_order del database.
+  const gruppo = p => {
+    const a = ATH[p.a].photo
+    const b = ATH[p.b].photo
+    if (a && b) return 0
+    if (!a && !b) return 1
+    return 2
+  }
   for (const g of ['M', 'F']) {
-    DECK[g].sort((u, v) => (u.order ?? 1e9) - (v.order ?? 1e9))
+    DECK[g].sort((u, v) => gruppo(u) - gruppo(v) || (u.order ?? 1e9) - (v.order ?? 1e9))
   }
 
   return { ATH, LIST, P26, DECK }
