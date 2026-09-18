@@ -109,15 +109,16 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
-// Stesso riquadro quadrato della sagoma, immagine contenuta e non deformata,
-// appoggiata in basso come nel DOM (object-position: center bottom).
+// Esattamente il riquadro della figura, centrata, senza zoom e senza deformarla.
+// Dove c'è la foto il busto non viene disegnato: resterebbe dietro e si vedrebbe
+// attorno all'atleta.
 function drawFigure(ctx, a, x, y, s) {
   const img = photoOf(a)
   if (img && img.naturalWidth && img.naturalHeight) {
     const k = Math.min(s / img.naturalWidth, s / img.naturalHeight)
     const w = img.naturalWidth * k
     const h = img.naturalHeight * k
-    ctx.drawImage(img, x + (s - w) / 2, y + (s - h), w, h)
+    ctx.drawImage(img, x + (s - w) / 2, y + (s - h) / 2, w, h)
     return
   }
   ctx.save()
@@ -128,10 +129,26 @@ function drawFigure(ctx, a, x, y, s) {
   ctx.restore()
 }
 
+// Dissolvenza sul fondo, come la maschera CSS della card: il taglio in basso
+// sfuma invece di finire con una linea netta dove il terreno è ancora
+// semitrasparente. Solo per le foto: il busto sfuma già da solo.
+function fadeBottom(c, size) {
+  const ctx = c.getContext('2d')
+  ctx.save()
+  ctx.globalCompositeOperation = 'destination-out'
+  const g = ctx.createLinearGradient(0, size * 0.8, 0, size)
+  g.addColorStop(0, 'rgba(0,0,0,0)')
+  g.addColorStop(1, 'rgba(0,0,0,1)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, size * 0.8, size, size * 0.2)
+  ctx.restore()
+}
+
 function figureCanvas(a, size) {
   const c = document.createElement('canvas')
   c.width = c.height = Math.ceil(size)
   drawFigure(c.getContext('2d'), a, 0, 0, size)
+  if (photoOf(a)) fadeBottom(c, size)
   return c
 }
 

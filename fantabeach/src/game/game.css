@@ -301,7 +301,13 @@ button:disabled{cursor:default;opacity:.5}
 .ptile .tbtn.rm{top:48px;bottom:auto}
 .stage .cardwrap .card3d{border-radius:28px}
 
-/* Foto degli atleti: stesso riquadro della sagoma, senza deformarla.
-   La sagoma resta sotto e ricompare da sola se l'immagine non si carica. */
-.fig .ph{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center bottom}
+/* Foto degli atleti: esattamente il riquadro della figura, senza zoom e senza
+   deformarle (sono gia' allineate nel file: quadrate, testa al 20%, mento al 60%).
+   Il fondo sfuma cosi' il taglio non finisce con una linea netta: il terreno,
+   che sta sopra (z-index 3 contro 2), li' e' ancora semitrasparente. */
+/* Nel flusso come lo era l'SVG: e' l'immagine a dare l'altezza al contenitore,
+   che altrimenti collasserebbe a zero non avendo piu' la sagoma dentro. */
+.fig .ph{display:block;width:100%;height:auto;aspect-ratio:1/1;object-fit:contain;object-position:center;
+  -webkit-mask-image:linear-gradient(to bottom,#000 80%,transparent 100%);
+  mask-image:linear-gradient(to bottom,#000 80%,transparent 100%)}
 .orb .ph{position:absolute;left:9%;bottom:-3%;width:82%;aspect-ratio:1/1;object-fit:contain}

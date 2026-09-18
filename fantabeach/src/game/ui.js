@@ -44,8 +44,10 @@ const BUST =
 export const figureSVG = () =>
   `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="${BUST}" fill="var(--sil)" fill-opacity=".85"/></svg>`
 
-// La sagoma resta sempre sotto: se la foto non arriva si toglie l'immagine e
-// resta lei, senza riquadri vuoti e senza icone di immagine rotta.
+// Dove c'è la foto la sagoma non viene disegnata: resterebbe dietro e si
+// vedrebbe attorno all'atleta. Il ripiego non è più una sagoma nascosta sotto:
+// se l'immagine non si carica, la sagoma viene messa al suo posto in quel
+// momento (gestore più sotto).
 const photoImg = a => {
   const src = photoUrl(a.photo_path)
   return src ? `<img class="ph" src="${esc(src)}" alt="" aria-hidden="true">` : ''
@@ -54,12 +56,18 @@ const photoImg = a => {
 const hasPhoto = a => Boolean(a && a.photo_path)
 
 export const figSpan = (a, cls) =>
-  `<span class="fig ${cls}${hasPhoto(a) ? '' : ' sil'}">${figureSVG(a)}${photoImg(a)}</span>`
+  hasPhoto(a)
+    ? `<span class="fig ${cls}">${photoImg(a)}</span>`
+    : `<span class="fig ${cls} sil">${figureSVG(a)}</span>`
 
 export const orbHTML = a =>
-  `<span class="orb t-${tier(a.pos)[0]}${hasPhoto(a) ? '' : ' sil'}" aria-hidden="true">${figureSVG(a)}${photoImg(a)}</span>`
+  hasPhoto(a)
+    ? `<span class="orb t-${tier(a.pos)[0]}" aria-hidden="true">${photoImg(a)}</span>`
+    : `<span class="orb t-${tier(a.pos)[0]} sil" aria-hidden="true">${figureSVG(a)}</span>`
 
 // L'evento error non risale, quindi si ascolta in fase di cattura, una volta sola.
+// Al posto dell'immagine che non arriva si mette la sagoma: niente riquadri
+// vuoti, niente icona di immagine rotta.
 if (typeof document !== 'undefined') {
   document.addEventListener(
     'error',
@@ -68,7 +76,10 @@ if (typeof document !== 'undefined') {
       if (!el || el.tagName !== 'IMG' || !el.classList.contains('ph')) return
       const box = el.parentNode
       el.remove()
-      if (box && box.classList) box.classList.add('sil')
+      if (box && box.classList) {
+        box.classList.add('sil')
+        if (!box.querySelector('svg')) box.insertAdjacentHTML('afterbegin', figureSVG())
+      }
     },
     true
   )
