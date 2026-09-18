@@ -20,5 +20,5 @@ export const STORAGE_KEY = 'coppiegame:v1'
 // Indirizzo scritto sulle immagini da condividere (SPEC §10)
 export const SHARE_URL = 'fantabeach.netlify.app/game'
 
-// Profilo da taggare: segnaposto finché non si decide quello vero
-export const SHARE_HANDLE = '@profilo'
+// Profilo da taggare nelle storie
+export const SHARE_HANDLE = '@zioema.official'
