@@ -16,6 +16,7 @@ import {
   hideFloor, bindTilt, bindSwipe, bindCoverflow, slash, tear, flyToCounter, dropOut, merge, burst,
 } from './anim.js'
 import { renderPairStory, renderAllPairsStory } from './story.js'
+import { prefetchPhotos } from './prefetch.js'
 import { shareStory, copyLink, canvasToBlob, download, slug, gameLink as gameLinkText } from './share.js'
 
 let ATH = {}
@@ -272,19 +273,29 @@ function fewVotesHint(pid) {
   return `<p class="sub">${FEW_VOTES}: le percentuali compaiono con i primi ${n} ${n === 1 ? 'pronostico' : 'pronostici'}.</p>`
 }
 
-function candidates(pid) {
+// Candidati per un atleta, senza filtro di ricerca: e' l'ordine con cui uscirebbero
+// nel carosello. Serve sia al carosello vero sia al precaricamento.
+function candidatiPer(pid) {
   const st = gs()
   const p = p26Of(pid)
   const mate = p ? mateOf(p, pid) : null
-  const qn = norm((st.cur.q || '').trim())
   return LIST[S.g]
     .filter(x => {
       if (x.id === pid || isPlaced(x.id)) return false
-      if (x.id === mate && st.votes[p.id] === 'split') return false
-      return !qn || norm(x.last + ' ' + x.first).indexOf(qn) > -1 || norm(x.first + ' ' + x.last).indexOf(qn) > -1
+      if (x.id === mate && p && st.votes[p.id] === 'split') return false
+      return true
     })
     .map(x => ({ a: x, pct: pairPct(pid, x.id) }))
     .sort((u, v) => (v.pct || 0) - (u.pct || 0) || u.a.pos - v.a.pos)
+    .map(o => o.a)
+}
+
+function candidates(pid) {
+  const st = gs()
+  const qn = norm((st.cur.q || '').trim())
+  return candidatiPer(pid)
+    .filter(x => !qn || norm(x.last + ' ' + x.first).indexOf(qn) > -1 || norm(x.first + ' ' + x.last).indexOf(qn) > -1)
+    .map(x => ({ a: x, pct: pairPct(pid, x.id) }))
 }
 
 function renderCarousel() {
@@ -485,6 +496,47 @@ function viewEnd() {
   )
 }
 
+// Quante coppie e quanti candidati guardare avanti
+const PREFETCH_COPPIE = 2
+const PREFETCH_CANDIDATI = 6
+
+// Le prossime coppie del mazzo che l'utente vedrebbe rispondendo "restano".
+// Si saltano quelle gia' votate e quelle con un atleta gia' sistemato, come fa advance().
+function prossimeCoppie(escludi, quante) {
+  const st = gs()
+  const out = []
+  for (const p of DECK[S.g]) {
+    if (out.length >= quante) break
+    if (p.id === escludi || st.votes[p.id]) continue
+    if (isPlaced(p.a) || isPlaced(p.b)) continue
+    out.push(p)
+  }
+  return out
+}
+
+// Mentre l'utente guarda una card si scaricano le foto che vedrebbe subito dopo,
+// su entrambi i rami: le prossime coppie del mazzo se risponde "restano", i primi
+// candidati del carosello se risponde "si separano".
+function prefetchProssime() {
+  const st = gs()
+  const atleti = []
+
+  if (st.mode === 'pair') {
+    const p = pairById(st.cur.pairId)
+    if (!p) return
+    for (const q of prossimeCoppie(p.id, PREFETCH_COPPIE)) atleti.push(ATH[q.a], ATH[q.b])
+    // Su "si separano" la scelta tocca all'atleta piu' alto in ranking della coppia
+    for (const o of candidatiPer(p.a).slice(0, PREFETCH_CANDIDATI)) atleti.push(o)
+  } else if (st.mode === 'orphan' && st.cur.pid) {
+    for (const q of prossimeCoppie(null, PREFETCH_COPPIE)) atleti.push(ATH[q.a], ATH[q.b])
+    for (const o of candidatiPer(st.cur.pid).slice(0, PREFETCH_CANDIDATI)) atleti.push(o)
+  } else {
+    return
+  }
+
+  prefetchPhotos(atleti.filter(Boolean))
+}
+
 function updateTop(bump) {
   const st = gs()
   const deck = DECK[S.g]
@@ -523,6 +575,8 @@ function render(enter) {
   bindTilt($('#card'))
   if (st.mode === 'pair') bindSwipe(actNo, actYes, () => S.busy)
   if (st.mode === 'pick') renderCarousel()
+  // Dopo aver disegnato: le foto che servono adesso hanno gia' la precedenza
+  prefetchProssime()
 }
 
 // ---------- Login: gate alla terza risposta (SPEC §8) ----------
