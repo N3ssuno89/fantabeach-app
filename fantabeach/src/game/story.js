@@ -1,6 +1,7 @@
 // Immagine 1080x1920 per le storie. Stessa card del gioco, disegnata su canvas.
 // Le figure sono sempre sagome: in questa versione nessuno ha la foto.
 import { SHARE_URL } from './config.js'
+import { photoUrl } from './supabase.js'
 import { num, tier } from './ui.js'
 
 const W = 1080
@@ -14,6 +15,8 @@ const TCOL = {
   value: { c: '#FF6B2C', d: '#40190A' },
   out: { c: '#9AA59F', d: '#26312C' },
 }
+// Busto in controluce: figura di chi non ha la foto, e ripiego per chi ce l'ha
+// ma la cui immagine non arriva in tempo.
 const BUST =
   'M10 100 C11 84 22 72 42 70 L42 59 C36 55 32 48 32 39 C32 27 40 19 50 19 C60 19 68 27 68 39 C68 48 64 55 58 59 L58 70 C78 72 89 84 90 100 Z'
 
@@ -50,6 +53,36 @@ export function assetsReady() {
   return ready
 }
 
+// ---------- Foto per il canvas ----------
+// crossOrigin anonymous: senza, il canvas diventa "sporco" e toDataURL/toBlob
+// fallirebbero, cioè si romperebbe la condivisione (SPEC §9).
+const PHOTOS = new Map()
+
+function loadPhoto(path) {
+  if (!path) return Promise.resolve(null)
+  if (PHOTOS.has(path)) return Promise.resolve(PHOTOS.get(path))
+  return new Promise(res => {
+    const im = new Image()
+    im.crossOrigin = 'anonymous'
+    im.onload = () => { PHOTOS.set(path, im); res(im) }
+    im.onerror = () => { PHOTOS.set(path, null); res(null) }
+    im.src = photoUrl(path)
+  })
+}
+
+// Si caricano prima di disegnare, ma senza bloccare: dopo due secondi si va
+// avanti con le sagome invece di tenere ferma la condivisione.
+async function preloadPhotos(atleti) {
+  const paths = [...new Set(atleti.map(a => a && a.photo_path).filter(Boolean))]
+  if (!paths.length) return
+  await Promise.race([
+    Promise.all(paths.map(loadPhoto)),
+    new Promise(r => setTimeout(r, 2000)),
+  ])
+}
+
+const photoOf = a => (a && a.photo_path && PHOTOS.get(a.photo_path)) || null
+
 const setFont = (ctx, spec, size, family) => { ctx.font = `${spec} ${size}px ${family}` }
 
 function fitFont(ctx, text, spec, size, maxW, family, min) {
@@ -76,7 +109,17 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
-function drawFigure(ctx, x, y, s) {
+// Stesso riquadro quadrato della sagoma, immagine contenuta e non deformata,
+// appoggiata in basso come nel DOM (object-position: center bottom).
+function drawFigure(ctx, a, x, y, s) {
+  const img = photoOf(a)
+  if (img && img.naturalWidth && img.naturalHeight) {
+    const k = Math.min(s / img.naturalWidth, s / img.naturalHeight)
+    const w = img.naturalWidth * k
+    const h = img.naturalHeight * k
+    ctx.drawImage(img, x + (s - w) / 2, y + (s - h), w, h)
+    return
+  }
   ctx.save()
   ctx.translate(x, y)
   ctx.scale(s / 100, s / 100)
@@ -85,10 +128,10 @@ function drawFigure(ctx, x, y, s) {
   ctx.restore()
 }
 
-function figureCanvas(size) {
+function figureCanvas(a, size) {
   const c = document.createElement('canvas')
   c.width = c.height = Math.ceil(size)
-  drawFigure(c.getContext('2d'), 0, 0, size)
+  drawFigure(c.getContext('2d'), a, 0, 0, size)
   return c
 }
 
@@ -107,7 +150,7 @@ function drawOrb(ctx, a, cx, cy, R) {
   ctx.arc(cx, cy, R, 0, Math.PI * 2)
   ctx.clip()
   const fs = R * 1.72
-  drawFigure(ctx, cx - fs / 2, cy + R * 1.02 - fs, fs)
+  drawFigure(ctx, a, cx - fs / 2, cy + R * 1.02 - fs, fs)
   ctx.restore()
   ctx.beginPath()
   ctx.arc(cx, cy, R, 0, Math.PI * 2)
@@ -194,15 +237,15 @@ function drawPosterCard(ctx, A, B, x, y, w, o) {
   ctx.fillStyle = gl
   ctx.fillRect(x, y, w, h)
 
-  const fig = (cxp, drop, fw) => {
-    const fc = figureCanvas(fw)
+  const fig = (a, cxp, drop, fw) => {
+    const fc = figureCanvas(a, fw)
     ctx.save()
     ctx.shadowColor = 'rgba(255,214,140,.9)'
     ctx.shadowBlur = 12 * s
     ctx.drawImage(fc, x + w * cxp - fw / 2, y + h * (0.05 + drop), fw, fw)
     ctx.restore()
   }
-  if (B) { fig(0.7, 0.02, w * 0.82); fig(0.3, 0, w * 0.82) } else fig(0.5, -0.01, w * 0.96)
+  if (B) { fig(B, 0.7, 0.02, w * 0.82); fig(A, 0.3, 0, w * 0.82) } else fig(A, 0.5, -0.01, w * 0.96)
 
   const gd = ctx.createLinearGradient(0, y + h * 0.63, 0, y + h)
   gd.addColorStop(0, 'rgba(6,58,45,0)')
@@ -344,7 +387,7 @@ const newCanvas = () => {
 
 // Storia di una coppia. stats e pct arrivano già calcolati da main.js.
 export async function renderPairStory({ A, B, confermata, stats, pctLine, gender, username }) {
-  await assetsReady()
+  await Promise.all([assetsReady(), preloadPhotos([A, B])])
   const c = newCanvas()
   const ctx = c.getContext('2d')
   storyBase(ctx)
@@ -373,7 +416,7 @@ export async function renderPairStory({ A, B, confermata, stats, pctLine, gender
 
 // Storia con tutte le coppie dell'utente. Il titolo non usa la parola vietata (SPEC §7).
 export async function renderAllPairsStory({ gender, rows, username }) {
-  await assetsReady()
+  await Promise.all([assetsReady(), preloadPhotos(rows.flatMap(r => [r.A, r.B]))])
   const c = newCanvas()
   const ctx = c.getContext('2d')
   storyBase(ctx)

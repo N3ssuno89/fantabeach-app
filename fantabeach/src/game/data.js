@@ -42,7 +42,7 @@ export async function loadWorld() {
       pos: r.ranking_pos,
       pts: Number(r.fb_points) || 0,
       g: r.gender,
-      photo: Boolean(r.photo_path),
+      photo_path: r.photo_path || null,
     }
     ATH[a.id] = a
     if (LIST[a.g]) LIST[a.g].push(a)
@@ -82,8 +82,8 @@ export async function loadWorld() {
   // foto a nessuno dei due, per ultime le miste (una card con una foto e una
   // sagoma sembra rotta). Dentro ogni gruppo resta il deck_order del database.
   const gruppo = p => {
-    const a = ATH[p.a].photo
-    const b = ATH[p.b].photo
+    const a = Boolean(ATH[p.a].photo_path)
+    const b = Boolean(ATH[p.b].photo_path)
     if (a && b) return 0
     if (!a && !b) return 1
     return 2

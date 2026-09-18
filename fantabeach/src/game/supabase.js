@@ -7,6 +7,10 @@ const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export const configured = Boolean(URL && ANON)
 
+// Foto degli atleti: bucket pubblico game-players, file indicato da photo_path
+export const photoUrl = path =>
+  path ? `${URL}/storage/v1/object/public/game-players/${encodeURIComponent(path)}` : null
+
 const headers = () => ({
   apikey: ANON,
   Authorization: `Bearer ${ANON}`,

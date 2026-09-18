@@ -1,4 +1,6 @@
 // Pezzi di interfaccia: figure, card e righe. HTML e classi vengono dall'anteprima approvata.
+import { photoUrl } from './supabase.js'
+
 
 export const $ = s => document.querySelector(s)
 
@@ -34,16 +36,43 @@ export const ICON_V =
 
 const SHINE = '<span class="shine" aria-hidden="true"></span>'
 
-// Busto in controluce: in questo passo nessuno ha la foto, quindi tutti sagoma (SPEC §8)
+// Busto in controluce: è la figura di chi non ha la foto, ed è anche il ripiego
+// per chi ce l'ha ma non si carica (SPEC §9).
 const BUST =
   'M10 100 C11 84 22 72 42 70 L42 59 C36 55 32 48 32 39 C32 27 40 19 50 19 C60 19 68 27 68 39 C68 48 64 55 58 59 L58 70 C78 72 89 84 90 100 Z'
 
 export const figureSVG = () =>
   `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="${BUST}" fill="var(--sil)" fill-opacity=".85"/></svg>`
 
-export const figSpan = (a, cls) => `<span class="fig ${cls} sil">${figureSVG(a)}</span>`
+// La sagoma resta sempre sotto: se la foto non arriva si toglie l'immagine e
+// resta lei, senza riquadri vuoti e senza icone di immagine rotta.
+const photoImg = a => {
+  const src = photoUrl(a.photo_path)
+  return src ? `<img class="ph" src="${esc(src)}" alt="" aria-hidden="true">` : ''
+}
 
-export const orbHTML = a => `<span class="orb t-${tier(a.pos)[0]} sil" aria-hidden="true">${figureSVG(a)}</span>`
+const hasPhoto = a => Boolean(a && a.photo_path)
+
+export const figSpan = (a, cls) =>
+  `<span class="fig ${cls}${hasPhoto(a) ? '' : ' sil'}">${figureSVG(a)}${photoImg(a)}</span>`
+
+export const orbHTML = a =>
+  `<span class="orb t-${tier(a.pos)[0]}${hasPhoto(a) ? '' : ' sil'}" aria-hidden="true">${figureSVG(a)}${photoImg(a)}</span>`
+
+// L'evento error non risale, quindi si ascolta in fase di cattura, una volta sola.
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'error',
+    e => {
+      const el = e.target
+      if (!el || el.tagName !== 'IMG' || !el.classList.contains('ph')) return
+      const box = el.parentNode
+      el.remove()
+      if (box && box.classList) box.classList.add('sil')
+    },
+    true
+  )
+}
 
 const nameBlock = a => `<span class="surname">${esc(a.last)}</span><span class="first">${esc(a.first)}</span>`
 
